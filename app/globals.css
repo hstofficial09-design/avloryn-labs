@@ -1,0 +1,265 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Design tokens — light is default, .dark overrides
+   HSL channels so Tailwind alpha modifiers work
+   ============================================================ */
+@layer base {
+  :root {
+    /* Luxury ivory / pearl — warm whites, espresso text, no colour spots */
+    --background: 40 30% 98%;
+    --subtle: 38 24% 95.5%;
+    --foreground: 30 8% 11%;
+    --muted: 38 18% 92.5%;
+    --muted-foreground: 32 7% 38%;
+    --faint: 32 6% 56%;
+    --card: 0 0% 100%;
+    --card-2: 40 26% 98%;
+    --border: 36 14% 89%;
+    --border-strong: 34 10% 80%;
+    --accent: 32 10% 22%; /* graphite — used for focus rings (a11y) */
+    --gold: 38 36% 55%; /* champagne — minimal warm luxe accent */
+    --gold-soft: 40 44% 88%;
+    --danger: 8 52% 48%;
+
+    /* neutral "metal" sheen tones (no hue) used for fine details */
+    --grad-a: 38 18% 99%;
+    --grad-b: 32 10% 82%;
+    --grad-c: 30 8% 60%;
+
+    /* real depth — layered shadows + lit top edge */
+    --shadow-card:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.9),
+      0 1px 2px rgba(38, 32, 26, 0.04),
+      0 10px 24px -10px rgba(38, 32, 26, 0.12),
+      0 30px 60px -28px rgba(38, 32, 26, 0.16);
+    --shadow-card-hover:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.9),
+      0 2px 4px rgba(38, 32, 26, 0.05),
+      0 18px 40px -14px rgba(38, 32, 26, 0.16),
+      0 48px 96px -36px rgba(38, 32, 26, 0.26);
+    --shadow-float:
+      0 24px 70px -28px rgba(38, 32, 26, 0.35),
+      0 60px 120px -50px rgba(38, 32, 26, 0.3);
+  }
+
+  .dark {
+    /* Luxury warm charcoal */
+    --background: 30 8% 6%;
+    --subtle: 30 7% 8.5%;
+    --foreground: 40 20% 96%;
+    --muted: 32 6% 14%;
+    --muted-foreground: 36 8% 64%;
+    --faint: 34 6% 46%;
+    --card: 30 7% 10%;
+    --card-2: 30 8% 8%;
+    --border: 34 8% 18%;
+    --border-strong: 34 8% 28%;
+    --accent: 38 16% 82%;
+    --gold: 40 46% 64%; /* champagne — a touch brighter on charcoal */
+    --gold-soft: 38 22% 24%;
+    --danger: 8 58% 62%;
+
+    --grad-a: 36 10% 24%;
+    --grad-b: 34 8% 16%;
+    --grad-c: 32 6% 40%;
+
+    --shadow-card:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.06),
+      0 2px 4px rgba(0, 0, 0, 0.4),
+      0 18px 44px -16px rgba(0, 0, 0, 0.72);
+    --shadow-card-hover:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.08),
+      0 28px 70px -22px rgba(0, 0, 0, 0.82);
+    --shadow-float:
+      0 30px 80px -28px rgba(0, 0, 0, 0.8),
+      0 70px 130px -50px rgba(0, 0, 0, 0.6);
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "ss01", "cv01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    transition: background-color 0.5s var(--ease, cubic-bezier(0.22, 1, 0.36, 1)),
+      color 0.5s var(--ease, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+
+  ::selection {
+    background-color: hsl(var(--foreground));
+    color: hsl(var(--background));
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--accent));
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  /* respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+/* ============================================================
+   Reusable component utilities
+   ============================================================ */
+@layer components {
+  /* refined dark "metal" sheen for emphasis — no colour */
+  .text-gradient {
+    background-image: linear-gradient(
+      180deg,
+      hsl(var(--foreground)),
+      hsl(var(--foreground) / 0.62)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .glass {
+    background-color: hsl(var(--background) / 0.72);
+    backdrop-filter: saturate(150%) blur(20px);
+    -webkit-backdrop-filter: saturate(150%) blur(20px);
+  }
+
+  /* Luxury surface — vertical white→ivory gradient, lit top edge,
+     and a layered drop shadow for genuine depth. */
+  .card-lux {
+    background-image: linear-gradient(180deg, hsl(var(--card)), hsl(var(--card-2)));
+    border: 1px solid hsl(var(--border));
+    box-shadow: var(--shadow-card);
+    transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.5s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.4s ease;
+  }
+
+  .card-lux-hover:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-card-hover);
+    border-color: hsl(var(--border-strong));
+  }
+
+  .ring-hairline {
+    box-shadow: inset 0 0 0 1px hsl(var(--border));
+  }
+
+  /* fine grid texture for hero */
+  .bg-grid {
+    background-image: linear-gradient(
+        to right,
+        hsl(var(--foreground) / 0.022) 1px,
+        transparent 1px
+      ),
+      linear-gradient(to bottom, hsl(var(--foreground) / 0.022) 1px, transparent 1px);
+    background-size: 78px 78px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 28%, #000 15%, transparent 72%);
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 28%, #000 15%, transparent 72%);
+  }
+
+  /* soft neutral light pool — replaces the coloured orbs */
+  .light-pool {
+    background: radial-gradient(
+      circle at center,
+      hsl(var(--foreground) / 0.05) 0%,
+      hsl(var(--foreground) / 0.02) 35%,
+      transparent 70%
+    );
+  }
+  .dark .light-pool {
+    background: radial-gradient(
+      circle at center,
+      hsl(0 0% 100% / 0.05) 0%,
+      hsl(0 0% 100% / 0.02) 35%,
+      transparent 70%
+    );
+  }
+
+  .eyebrow {
+    @apply inline-flex items-center gap-2 text-[0.78rem] font-medium tracking-[0.12em] uppercase text-muted-foreground;
+  }
+
+  /* readable long-form styling for legal / blog pages */
+  .legal-prose {
+    @apply text-[1.02rem] leading-[1.75] text-muted-foreground;
+  }
+  .legal-prose h2 {
+    @apply mt-12 mb-3 text-[1.4rem] font-[560] tracking-[-0.02em] text-foreground;
+  }
+  .legal-prose h3 {
+    @apply mt-8 mb-2 text-[1.1rem] font-[540] text-foreground;
+  }
+  .legal-prose p {
+    @apply my-4 text-pretty;
+  }
+  .legal-prose ul {
+    @apply my-4 list-disc space-y-2 pl-6 marker:text-faint;
+  }
+  .legal-prose a {
+    @apply text-foreground underline decoration-border-strong underline-offset-4 transition-colors hover:decoration-foreground;
+  }
+  .legal-prose strong {
+    @apply font-[540] text-foreground;
+  }
+  .legal-prose h2:first-child {
+    @apply mt-0;
+  }
+  .legal-prose h4 {
+    @apply mt-6 mb-2 text-[1rem] font-[560] text-foreground;
+  }
+  .legal-prose blockquote {
+    @apply my-7 border-l-2 border-gold pl-5 text-foreground;
+  }
+  .legal-prose blockquote p {
+    @apply font-serif text-[1.2rem] italic;
+  }
+  .legal-prose figure {
+    @apply my-8;
+  }
+  .legal-prose hr {
+    @apply my-10 border-border;
+  }
+
+  .section-label {
+    @apply text-[0.74rem] font-medium tracking-[0.18em] uppercase text-faint;
+  }
+}
+
+/* utility helpers */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

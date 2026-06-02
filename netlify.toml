@@ -1,0 +1,12 @@
+# Netlify build config for the Next.js 16 app.
+# The Next.js runtime plugin handles publish dir, SSR, API routes, ISR and
+# image handling — do NOT set `publish` manually (it breaks routing).
+
+[build]
+  command = "next build"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
