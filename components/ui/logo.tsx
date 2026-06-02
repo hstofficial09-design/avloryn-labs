@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-/** Abstract orbit mark — a node orbiting a core. "Technology orbits people." */
+/** Avloryn Labs gold monogram, shown as a rounded app-icon badge. */
 export function LogoMark({
   size = 26,
   className,
@@ -9,22 +9,18 @@ export function LogoMark({
   className?: string;
 }) {
   return (
-    <svg
-      viewBox="0 0 32 32"
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/logo.png"
+      alt=""
       width={size}
       height={size}
-      className={className}
       aria-hidden="true"
-      fill="none"
-    >
-      <path
-        d="M16 5a11 11 0 1 0 10.4 7.3"
-        stroke="currentColor"
-        strokeWidth="2.3"
-        strokeLinecap="round"
-      />
-      <circle cx="25" cy="7" r="3.2" fill="currentColor" />
-    </svg>
+      className={cn(
+        "rounded-[26%] object-cover ring-1 ring-black/10 dark:ring-white/10",
+        className
+      )}
+    />
   );
 }
 

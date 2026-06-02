@@ -50,15 +50,7 @@ export const metadata: Metadata = {
     title: "Avloryn Labs",
     description: "We build intelligent software products that work the way people do.",
   },
-  icons: {
-    icon: [
-      {
-        url:
-          "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%230a0a0b'/%3E%3Cpath d='M16 7a9 9 0 1 0 8.49 6' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3Ccircle cx='23' cy='9' r='3.1' fill='white'/%3E%3C/svg%3E",
-        type: "image/svg+xml",
-      },
-    ],
-  },
+  // Favicon + apple-icon are auto-detected from app/icon.png and app/apple-icon.png
 };
 
 export const viewport: Viewport = {
