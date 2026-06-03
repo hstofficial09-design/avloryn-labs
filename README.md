@@ -86,10 +86,8 @@ placeholders — update the handles before launch.
 
 ## Deploy
 
-Hosted on **Netlify** (site `avloryn-labs`) with CI/CD: every push to `main` on the
-GitHub repo auto-builds and deploys via `@netlify/plugin-nextjs`. Do **not** use
-`netlify deploy --build` (manual CLI 404s this Next 16 app). Server env vars (Supabase,
-Resend, Sanity) are set in the Netlify site settings.
+Optimised for **Vercel**: push the folder to a repo and import it, or run
+`npx vercel`. No environment variables are required for the static site.
 
 ---
 
