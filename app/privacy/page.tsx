@@ -27,8 +27,8 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Basic usage analytics</strong> — privacy-friendly, aggregated metrics (such as
-          page views and performance) collected via Vercel Analytics. These do not use
-          cross-site tracking cookies and do not identify you personally.
+          page views and performance) collected server-side by our hosting provider. These do not
+          use cross-site tracking cookies and do not identify you personally.
         </li>
       </ul>
 
