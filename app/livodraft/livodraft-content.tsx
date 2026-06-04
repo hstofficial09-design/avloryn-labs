@@ -5,6 +5,7 @@ import { fadeUp, stagger, VIEWPORT_SOFT, EASE } from "@/lib/motion";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Button, ArrowRight } from "@/components/ui/button";
 import { Magnetic } from "@/components/ui/magnetic";
+import { LivodraftWordmark } from "@/components/ui/livodraft-wordmark";
 import { FAQS } from "./data";
 
 const CREATE = [
@@ -66,9 +67,7 @@ export function LivodraftContent() {
             className="max-w-3xl"
           >
             <motion.div variants={fadeUp}>
-              <span className="text-[2.4rem] font-[600] leading-none tracking-[-0.035em] sm:text-[3.1rem]">
-                Livo<span className="text-gold">Draft</span>
-              </span>
+              <LivodraftWordmark className="text-[2.4rem] leading-none sm:text-[3.1rem]" />
             </motion.div>
 
             <motion.span variants={fadeUp} className="eyebrow mt-7">

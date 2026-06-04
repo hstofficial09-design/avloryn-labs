@@ -12,14 +12,14 @@ export default function TermsPage() {
     <LegalShell title="Terms of Use" updated="June 2026">
       <p>
         These Terms of Use (&ldquo;Terms&rdquo;) govern your access to and use of the{" "}
-        <strong>Avloryn Labs</strong> website at{" "}
+        <strong>Avloryn Labs LLP</strong> website at{" "}
         <a href="https://avloryn.com">avloryn.com</a> (the &ldquo;Site&rdquo;). By using the
         Site, you agree to these Terms. If you do not agree, please do not use the Site.
       </p>
 
       <h2>About this Site</h2>
       <p>
-        Avloryn Labs is an early-stage product company. This Site is informational — it
+        Avloryn Labs LLP is an early-stage product company. This Site is informational — it
         describes who we are, what we&rsquo;re building, and how to get in touch or request
         early access to our products, including <strong>Livodraft</strong> (currently in private
         beta). Access to any product is offered separately and may be subject to its own terms.
@@ -43,7 +43,7 @@ export default function TermsPage() {
 
       <h2>Intellectual property</h2>
       <p>
-        The Avloryn name, logo, content, and design are owned by Avloryn Labs and protected by
+        The Avloryn name, logo, content, and design are owned by Avloryn Labs LLP and protected by
         applicable laws. You may not copy, reproduce, or use them without our prior written
         permission, except as allowed for ordinary, personal viewing of the Site.
       </p>
@@ -57,7 +57,7 @@ export default function TermsPage() {
 
       <h2>Limitation of liability</h2>
       <p>
-        To the maximum extent permitted by law, Avloryn Labs shall not be liable for any
+        To the maximum extent permitted by law, Avloryn Labs LLP shall not be liable for any
         indirect, incidental, or consequential damages arising from your use of, or inability to
         use, the Site.
       </p>

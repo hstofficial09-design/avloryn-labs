@@ -47,7 +47,7 @@ export function Footer() {
         </div>
 
         <div className="mt-12 flex flex-col items-start justify-between gap-4 border-t border-border pt-7 text-[0.85rem] text-faint sm:flex-row sm:items-center">
-          <p>© {year} Avloryn Labs</p>
+          <p>© {year} Avloryn Labs LLP</p>
           <nav aria-label="Legal" className="flex items-center gap-5">
             {LEGAL_LINKS.map((l) => (
               <a key={l.href} href={l.href} className="transition-colors hover:text-foreground">

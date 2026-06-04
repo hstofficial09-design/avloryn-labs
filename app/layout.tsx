@@ -68,6 +68,7 @@ const orgSchema = {
   "@context": "https://schema.org",
   "@type": "Organization",
   name: "Avloryn Labs",
+  legalName: "Avloryn Labs LLP",
   url: SITE_URL,
   description:
     "Avloryn Labs builds intelligent software products designed to simplify work, reduce effort, and help people focus on what truly matters.",

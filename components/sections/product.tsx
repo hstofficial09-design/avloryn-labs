@@ -5,6 +5,7 @@ import { EASE, VIEWPORT_SOFT } from "@/lib/motion";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Button, ArrowRight } from "@/components/ui/button";
 import { Magnetic } from "@/components/ui/magnetic";
+import { LivodraftWordmark } from "@/components/ui/livodraft-wordmark";
 
 export function Product() {
   return (
@@ -45,7 +46,9 @@ export function Product() {
                   </svg>
                 </span>
                 <div>
-                  <h3 className="text-2xl font-[560] tracking-[-0.02em]">Livodraft</h3>
+                  <h3 className="text-2xl">
+                    <LivodraftWordmark />
+                  </h3>
                   <span className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[0.72rem] font-medium text-muted-foreground">
                     <span className="relative flex h-1.5 w-1.5">
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-60" />

@@ -12,7 +12,7 @@ export default function PrivacyPage() {
   return (
     <LegalShell title="Privacy Policy" updated="June 2026">
       <p>
-        This Privacy Policy explains how <strong>Avloryn Labs</strong> (&ldquo;Avloryn,&rdquo;
+        This Privacy Policy explains how <strong>Avloryn Labs LLP</strong> (&ldquo;Avloryn,&rdquo;
         &ldquo;we,&rdquo; &ldquo;us&rdquo;) collects, uses, and protects information when you
         visit <a href="https://avloryn.com">avloryn.com</a> or contact us. We keep this simple
         on purpose: we collect as little as possible, and we never sell your data.
