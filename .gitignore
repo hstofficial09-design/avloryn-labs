@@ -32,3 +32,12 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# internal coordination / command docs — local only, never pushed
+# (maintained by the CGO / content / developer chats; not part of the public site)
+/cgo.md
+/CONTENT_OPS.md
+/CONTENT_WRITER.md
+/DEVELOPER.md
+/DEVELOPER_PLAN.md
+/NEW_CHAT_PROMPT.md
