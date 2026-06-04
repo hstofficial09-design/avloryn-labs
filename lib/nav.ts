@@ -2,6 +2,7 @@
 export const NAV_LINKS = [
   { label: "Philosophy", href: "/#philosophy" },
   { label: "Product", href: "/#product" },
+  { label: "LivoDraft", href: "/livodraft" },
   { label: "Vision", href: "/#vision" },
   { label: "Values", href: "/#values" },
   { label: "Story", href: "/#story" },

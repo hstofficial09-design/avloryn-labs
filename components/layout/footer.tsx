@@ -3,6 +3,7 @@ import { LogoMark } from "@/components/ui/logo";
 const FOOTER_LINKS = [
   { label: "Philosophy", href: "/#philosophy" },
   { label: "Product", href: "/#product" },
+  { label: "LivoDraft", href: "/livodraft" },
   { label: "Vision", href: "/#vision" },
   { label: "Journal", href: "/blog" },
   { label: "Contact", href: "/#contact" },

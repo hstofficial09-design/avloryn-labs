@@ -72,6 +72,9 @@ export function Product() {
                     Request Early Access <ArrowRight />
                   </Button>
                 </Magnetic>
+                <Button href="/livodraft" variant="secondary">
+                  Explore LivoDraft <ArrowRight />
+                </Button>
                 <span className="text-[0.85rem] text-faint">Limited invitations</span>
               </div>
             </div>
