@@ -26,9 +26,12 @@ export default function PrivacyPage() {
           reason you&rsquo;re reaching out, and any message you send through our form.
         </li>
         <li>
-          <strong>Basic usage analytics</strong> — privacy-friendly, aggregated metrics (such as
-          page views and performance) collected server-side by our hosting provider. These do not
-          use cross-site tracking cookies and do not identify you personally.
+          <strong>Basic usage analytics</strong> — we use Google Analytics 4 to understand, in
+          aggregate, how the Site is used (such as page views, referrers, and approximate
+          location). Analytics cookies are set <em>only if you accept</em> them via our cookie
+          banner; if you decline, no analytics cookies are stored on your device. IP addresses
+          are anonymised, and we do not use this data to identify you personally. You can change
+          your choice at any time by clearing the Site&rsquo;s cookies in your browser.
         </li>
       </ul>
 
