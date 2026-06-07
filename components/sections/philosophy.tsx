@@ -6,7 +6,7 @@ import { fadeUp, VIEWPORT_SOFT } from "@/lib/motion";
 export function Philosophy() {
   return (
     <section id="philosophy" className="scroll-mt-24 py-28 sm:py-36">
-      <div className="container max-w-5xl">
+      <div className="container">
         <motion.p
           variants={fadeUp}
           initial="hidden"
