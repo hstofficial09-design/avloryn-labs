@@ -1,31 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { EASE, fadeUp, VIEWPORT_SOFT } from "@/lib/motion";
-
-const LINE_A = "We believe technology should adapt to people.";
-const LINE_B = "Not force people to adapt to technology.";
-
-function Words({ text, muted }: { text: string; muted?: boolean }) {
-  return (
-    <span className="inline">
-      {text.split(" ").map((word, i) => (
-        <span key={i} className="inline-block overflow-hidden align-bottom">
-          <motion.span
-            className={"inline-block " + (muted ? "text-muted-foreground" : "")}
-            initial={{ y: "100%", opacity: 0 }}
-            whileInView={{ y: "0%", opacity: 1 }}
-            viewport={{ once: true, amount: 0.6 }}
-            transition={{ duration: 0.7, ease: EASE, delay: i * 0.045 }}
-          >
-            {word}
-          </motion.span>
-          {" "}
-        </span>
-      ))}
-    </span>
-  );
-}
+import { fadeUp, VIEWPORT_SOFT } from "@/lib/motion";
 
 export function Philosophy() {
   return (
@@ -41,17 +17,27 @@ export function Philosophy() {
           Philosophy
         </motion.p>
 
-        <blockquote className="mt-8 text-quote font-[460] text-balance">
-          <Words text={LINE_A} />
+        <motion.blockquote
+          variants={fadeUp}
+          initial="hidden"
+          whileInView="visible"
+          viewport={VIEWPORT_SOFT}
+          transition={{ delay: 0.08 }}
+          className="mt-4 text-quote font-[460] text-balance"
+        >
+          We believe technology should adapt to people.
           <br />
-          <Words text={LINE_B} muted />
-        </blockquote>
+          <span className="text-muted-foreground">
+            Not force people to adapt to technology.
+          </span>
+        </motion.blockquote>
 
         <motion.p
           variants={fadeUp}
           initial="hidden"
           whileInView="visible"
           viewport={VIEWPORT_SOFT}
+          transition={{ delay: 0.16 }}
           className="mt-10 max-w-2xl text-pretty text-[1.075rem] leading-relaxed text-muted-foreground"
         >
           The best software disappears. It does not demand attention, training, or
