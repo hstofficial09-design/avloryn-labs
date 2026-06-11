@@ -1,0 +1,35 @@
+name: Supabase keep-alive
+
+# Why: the Supabase free tier pauses a project after ~7 days of no activity. This
+# workflow sends one tiny read to the database every 2 days so the inactivity timer
+# never reaches 7 days and the project never pauses. It does NOT touch the website,
+# does NOT modify data — it just reads one row's id. Free; uses no Netlify credits.
+#
+# Secrets required (already set in repo → Settings → Secrets → Actions):
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+on:
+  schedule:
+    - cron: "0 6 */2 * *"   # every 2 days at 06:00 UTC
+  workflow_dispatch: {}       # lets us run it manually to test
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase (read one row)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${SUPABASE_URL%/}/rest/v1/waitlist?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}")
+          echo "Supabase responded: HTTP $code"
+          # 2xx = healthy read (keeps project awake). Fail only on server/network errors.
+          if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
+            echo "Keep-alive ping OK."
+          else
+            echo "Keep-alive ping got HTTP $code"; exit 1
+          fi
