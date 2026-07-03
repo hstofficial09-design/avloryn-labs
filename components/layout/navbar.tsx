@@ -102,7 +102,7 @@ export function Navbar() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="mx-3 overflow-hidden rounded-3xl glass ring-hairline p-3 shadow-lift lg:hidden"
+            className="mx-3 overflow-hidden rounded-3xl glass-solid ring-hairline p-3 shadow-lift lg:hidden"
           >
             <nav className="flex flex-col" aria-label="Mobile">
               {NAV_LINKS.map((link, i) => (

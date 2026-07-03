@@ -151,6 +151,15 @@
     -webkit-backdrop-filter: saturate(150%) blur(20px);
   }
 
+  /* Like .glass but OPAQUE — for panels that sit OVER page content (e.g. the mobile
+     menu), so content behind can never bleed through and it stays readable on every
+     browser/device regardless of backdrop-filter support or "reduce transparency". */
+  .glass-solid {
+    background-color: hsl(var(--card));
+    backdrop-filter: saturate(150%) blur(20px);
+    -webkit-backdrop-filter: saturate(150%) blur(20px);
+  }
+
   /* Luxury surface — vertical white→ivory gradient, lit top edge,
      and a layered drop shadow for genuine depth. */
   .card-lux {
