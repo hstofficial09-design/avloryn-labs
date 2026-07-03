@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-/** Avloryn Labs gold monogram, shown as a rounded app-icon badge. */
+/** Avloryn Labs gold "A" mark (transparent PNG), shown bare — no badge/ring. */
 export function LogoMark({
   size = 26,
   className,
@@ -11,15 +11,12 @@ export function LogoMark({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/logo.png"
+      src="/avloryn-mark.png"
       alt=""
       width={size}
       height={size}
       aria-hidden="true"
-      className={cn(
-        "rounded-[26%] object-cover ring-1 ring-black/10 dark:ring-white/10",
-        className
-      )}
+      className={cn("object-contain", className)}
     />
   );
 }

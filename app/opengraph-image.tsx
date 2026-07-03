@@ -1,4 +1,11 @@
 import { ImageResponse } from "next/og";
+import { readFileSync } from "fs";
+import { join } from "path";
+
+// Inline the transparent gold "A" mark as a data URI (Node runtime, build-time read).
+const markSrc = `data:image/png;base64,${readFileSync(
+  join(process.cwd(), "public/avloryn-mark.png")
+).toString("base64")}`;
 
 export const alt = "Avloryn Labs — intelligent software products for people";
 export const size = { width: 1200, height: 630 };
@@ -42,15 +49,8 @@ export default function OpengraphImage() {
 
         {/* top: mark + wordmark */}
         <div style={{ display: "flex", alignItems: "center", gap: "18px" }}>
-          <svg width="44" height="44" viewBox="0 0 32 32" fill="none">
-            <path
-              d="M16 5a11 11 0 1 0 10.4 7.3"
-              stroke={warmWhite}
-              strokeWidth="2.4"
-              strokeLinecap="round"
-            />
-            <circle cx="25" cy="7" r="3.4" fill={gold} />
-          </svg>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={markSrc} width={52} height={46} alt="" />
           <span
             style={{
               color: warmWhite,
