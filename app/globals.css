@@ -85,9 +85,14 @@
   html {
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
+    /* Universal guard: nothing can cause horizontal scroll on any device.
+       `clip` (not `hidden`) so it never creates a scroll container or breaks
+       position: sticky (used in the Story section). */
+    overflow-x: clip;
   }
 
   body {
+    overflow-x: clip;
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     font-feature-settings: "ss01", "cv01", "cv11";

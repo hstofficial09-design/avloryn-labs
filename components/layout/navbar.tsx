@@ -47,7 +47,7 @@ export function Navbar() {
 
         <nav
           aria-label="Primary"
-          className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 md:flex"
+          className="hidden flex-1 items-center justify-center gap-1 lg:flex"
         >
           {NAV_LINKS.map((link) => (
             <a
@@ -62,7 +62,7 @@ export function Navbar() {
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <div className="hidden md:block">
+          <div className="hidden lg:block">
             <Magnetic>
               <Button href="/#contact" size="md">
                 Become an Early Tester
@@ -75,7 +75,7 @@ export function Navbar() {
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
-            className="relative grid h-10 w-10 place-items-center rounded-full ring-hairline md:hidden"
+            className="relative grid h-10 w-10 place-items-center rounded-full ring-hairline lg:hidden"
           >
             <span className="sr-only">Menu</span>
             <span
@@ -102,7 +102,7 @@ export function Navbar() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="mx-3 overflow-hidden rounded-3xl glass ring-hairline p-3 shadow-lift md:hidden"
+            className="mx-3 overflow-hidden rounded-3xl glass ring-hairline p-3 shadow-lift lg:hidden"
           >
             <nav className="flex flex-col" aria-label="Mobile">
               {NAV_LINKS.map((link, i) => (

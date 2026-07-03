@@ -63,34 +63,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Input is too long." }, { status: 400 });
   }
 
-  // Store the lead.
-  const supabase = getSupabaseAdmin();
-  if (!supabase) {
-    console.error("[contact] Supabase env not configured");
-    return NextResponse.json(
-      { ok: false, error: "The form isn't available right now. Please email us directly." },
-      { status: 503 }
-    );
-  }
+  // Capture the lead. We must NOT lose it if one channel is down — so we email
+  // Hardev FIRST (primary, always-available), then save to Supabase best-effort.
+  // This makes a Supabase free-tier auto-pause harmless: the form never 500s and
+  // the lead always reaches the inbox.
+  let emailed = false;
+  let saved = false;
 
-  const { error: dbError } = await supabase.from("waitlist").insert({
-    name: cleanName,
-    email: cleanEmail,
-    intent: cleanIntent || null,
-    message: cleanMessage,
-    source: "avloryn.com",
-  });
-
-  if (dbError) {
-    console.error("[contact] insert failed:", dbError.message);
-    return NextResponse.json(
-      { ok: false, error: "We couldn't save your message. Please try again." },
-      { status: 500 }
-    );
-  }
-
-  // Notify Hardev (best-effort — the lead is already saved, so a mail hiccup
-  // shouldn't fail the user's submission).
+  // 1) Notify Hardev via email — the primary capture path.
   const resendKey = process.env.RESEND_API_KEY;
   if (resendKey) {
     const from = process.env.CONTACT_FROM_EMAIL || "Avloryn Labs <onboarding@resend.dev>";
@@ -109,11 +89,52 @@ export async function POST(req: Request) {
           `Intent: ${cleanIntent || "—"}\n\n` +
           `Message:\n${cleanMessage}\n`,
       });
+      emailed = true;
     } catch (e) {
       console.error("[contact] email send failed:", e);
     }
   } else {
     console.warn("[contact] RESEND_API_KEY missing — skipping notification email");
+  }
+
+  // 2) Save to Supabase — BEST-EFFORT. If the free-tier project is paused/unreachable
+  // it fails fast (4s timeout guard so a hung connection can't delay the response);
+  // we never fail the submission because of it — the email already captured the lead.
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    try {
+      const { error: dbError } = await supabase
+        .from("waitlist")
+        .insert({
+          name: cleanName,
+          email: cleanEmail,
+          intent: cleanIntent || null,
+          message: cleanMessage,
+          source: "avloryn.com",
+        })
+        .abortSignal(AbortSignal.timeout(4000));
+      if (dbError) {
+        console.error("[contact] insert failed (non-fatal):", dbError.message);
+      } else {
+        saved = true;
+      }
+    } catch (e) {
+      console.error("[contact] insert threw (Supabase likely paused, non-fatal):", e);
+    }
+  } else {
+    console.error("[contact] Supabase env not configured");
+  }
+
+  // Success as long as the lead was captured somewhere; only error if BOTH failed.
+  if (!emailed && !saved) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "We couldn't send your message right now. Please email hardev@avloryn.com directly.",
+      },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({ ok: true });

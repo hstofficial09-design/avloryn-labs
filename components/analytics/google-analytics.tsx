@@ -1,4 +1,7 @@
+"use client";
+
 import Script from "next/script";
+import { usePathname } from "next/navigation";
 
 /**
  * Google Analytics 4 with Consent Mode v2.
@@ -10,10 +13,16 @@ import Script from "next/script";
  *
  * Renders nothing unless NEXT_PUBLIC_GA_ID is set, keeping local dev clean.
  * The Measurement ID (G-XXXXXXXXXX) is public by design.
+ *
+ * Skips the Sanity Studio (/studio) entirely — the owner's own CMS editing
+ * must NOT pollute site analytics.
  */
 export function GoogleAnalytics() {
   const gaId = process.env.NEXT_PUBLIC_GA_ID;
+  const pathname = usePathname();
   if (!gaId) return null;
+  // Don't load GA inside the Sanity Studio (owner's backend editing).
+  if (pathname?.startsWith("/studio")) return null;
 
   return (
     <>

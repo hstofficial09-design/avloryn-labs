@@ -258,7 +258,8 @@ function Field({
 
 function inputCls(hasError: boolean) {
   return (
-    "w-full rounded-xl border bg-background px-4 py-3 text-[0.98rem] text-foreground placeholder:text-faint " +
+    // text-base (16px) is intentional: inputs under 16px make iOS Safari auto-zoom on focus.
+    "w-full rounded-xl border bg-background px-4 py-3 text-base text-foreground placeholder:text-faint " +
     "transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent " +
     (hasError ? "border-[hsl(var(--danger))]" : "border-border")
   );

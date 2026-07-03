@@ -88,7 +88,7 @@ export function Subscribe() {
               type="email"
               autoComplete="email"
               placeholder="you@email.com"
-              className="h-12 flex-1 rounded-full border border-border bg-background px-5 text-[0.98rem] text-foreground placeholder:text-faint transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+              className="h-12 flex-1 rounded-full border border-border bg-background px-5 text-base text-foreground placeholder:text-faint transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
             <button
               type="submit"
