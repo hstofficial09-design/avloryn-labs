@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     template: "%s · Avloryn Labs",
   },
   description:
-    "Avloryn Labs builds intelligent software products designed to simplify work, reduce effort, and help people focus on what truly matters. Currently building Livodraft (Private Beta).",
+    "Avloryn Labs builds intelligent software products designed to simplify work, reduce effort, and help people focus on what truly matters. Livodraft, our academic drafting studio, is now live.",
   applicationName: "Avloryn Labs",
   keywords: [
     "Avloryn Labs",

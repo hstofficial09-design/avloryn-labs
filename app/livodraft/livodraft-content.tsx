@@ -75,7 +75,7 @@ export function LivodraftContent() {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-60" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-gold" />
               </span>
-              Private Beta · Limited invitations
+              Now live
             </motion.span>
 
             <motion.h1
@@ -96,8 +96,8 @@ export function LivodraftContent() {
 
             <motion.div variants={fadeUp} className="mt-9">
               <Magnetic>
-                <Button href="/#contact" size="lg">
-                  Request Early Access <ArrowRight />
+                <Button href="https://livodraft.com" size="lg" target="_blank" rel="noopener noreferrer">
+                  Try LivoDraft <ArrowRight />
                 </Button>
               </Magnetic>
             </motion.div>
@@ -275,12 +275,12 @@ export function LivodraftContent() {
             className="mx-auto max-w-2xl text-center"
           >
             <h2 className="text-heading font-[560] text-balance">
-              Join the early testers shaping LivoDraft.
+              Start your first draft on LivoDraft.
             </h2>
             <div className="mt-8 flex justify-center">
               <Magnetic>
-                <Button href="/#contact" size="lg">
-                  Request Early Access <ArrowRight />
+                <Button href="https://livodraft.com" size="lg" target="_blank" rel="noopener noreferrer">
+                  Try LivoDraft <ArrowRight />
                 </Button>
               </Magnetic>
             </div>

@@ -64,8 +64,8 @@ export function Navbar() {
           <ThemeToggle />
           <div className="hidden lg:block">
             <Magnetic>
-              <Button href="/#contact" size="md">
-                Become an Early Tester
+              <Button href="https://livodraft.com" size="md" target="_blank" rel="noopener noreferrer">
+                Explore LivoDraft
               </Button>
             </Magnetic>
           </div>
@@ -118,8 +118,8 @@ export function Navbar() {
                   {link.label}
                 </motion.a>
               ))}
-              <Button href="/#contact" onClick={() => setOpen(false)} className="mt-2 w-full">
-                Become an Early Tester
+              <Button href="https://livodraft.com" target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)} className="mt-2 w-full">
+                Explore LivoDraft
               </Button>
             </nav>
           </motion.div>

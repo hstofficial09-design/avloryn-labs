@@ -105,8 +105,8 @@ export function Hero() {
           >
             <motion.span variants={{ hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0 } }}>
               <Magnetic>
-                <Button href="#contact" size="lg">
-                  Become an Early Tester
+                <Button href="https://livodraft.com" size="lg" target="_blank" rel="noopener noreferrer">
+                  Explore LivoDraft
                 </Button>
               </Magnetic>
             </motion.span>
@@ -124,7 +124,7 @@ export function Hero() {
             className="mt-10 flex flex-wrap items-center gap-x-4 gap-y-2 text-[0.9rem] text-faint"
           >
             <span>
-              <strong className="font-[500] text-foreground">Livodraft</strong> · Private Beta
+              <strong className="font-[500] text-foreground">Livodraft</strong> · Now live
             </span>
             <span aria-hidden="true" className="h-3 w-px bg-border-strong" />
             <span>More products in development</span>

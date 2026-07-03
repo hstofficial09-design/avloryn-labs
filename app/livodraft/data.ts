@@ -3,7 +3,7 @@
 export const FAQS = [
   {
     q: "Is LivoDraft free?",
-    a: "LivoDraft is in Private Beta. Request early access for an invitation.",
+    a: "LivoDraft is live at livodraft.com, where you'll find current pricing and any launch offers.",
   },
   {
     q: "Which documents can it create?",
@@ -22,8 +22,8 @@ export const FAQS = [
     a: "Yes. It follows Indian academic formatting standards.",
   },
   {
-    q: "How do I become an early tester?",
-    a: "Request early access on this page. We're inviting a small group during Private Beta.",
+    q: "How do I start?",
+    a: "Head to livodraft.com and create your document. Questions? Use the contact form.",
   },
   {
     q: "Is my work private?",

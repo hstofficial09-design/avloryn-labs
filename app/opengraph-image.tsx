@@ -105,7 +105,7 @@ export default function OpengraphImage() {
             }}
           />
           <span style={{ color: muted, fontSize: "26px", letterSpacing: "0.01em" }}>
-            Livodraft · Private Beta
+            Livodraft · Now live
           </span>
         </div>
       </div>

@@ -7,7 +7,7 @@ import { FAQS } from "./data";
 const SITE_URL = "https://avloryn.com";
 
 const DESCRIPTION =
-  "An AI-assisted academic drafting studio for Indian students. Get a structured, formatted, referenced Word document built to your university's standards. Now in Private Beta.";
+  "An AI-assisted academic drafting studio for Indian students. Get a structured, formatted, referenced Word document built to your university's standards. Now live.";
 
 export const metadata: Metadata = {
   // Absolute title keeps the owner-approved wording exact (no "· Avloryn Labs" suffix).
@@ -38,8 +38,8 @@ const softwareLd = {
   publisher: { "@type": "Organization", name: "Avloryn Labs", url: SITE_URL },
   offers: {
     "@type": "Offer",
-    availability: "https://schema.org/PreOrder",
-    name: "Private Beta — early access by invitation",
+    availability: "https://schema.org/OnlineOnly",
+    name: "Available now",
   },
 };
 

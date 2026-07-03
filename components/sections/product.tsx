@@ -54,7 +54,7 @@ export function Product() {
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-60" />
                       <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-gold" />
                     </span>
-                    Private Beta
+                    Now live
                   </span>
                 </div>
               </div>
@@ -66,19 +66,20 @@ export function Product() {
               </p>
 
               <p className="mt-4 text-[0.95rem] text-faint">
-                Quietly in development. Opening to a small group of early testers.
+                Now live for Indian students — draft, format, and reference your
+                thesis, paper, or report.
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-4">
                 <Magnetic>
-                  <Button href="#contact">
-                    Request Early Access <ArrowRight />
+                  <Button href="https://livodraft.com" target="_blank" rel="noopener noreferrer">
+                    Try LivoDraft <ArrowRight />
                   </Button>
                 </Magnetic>
                 <Button href="/livodraft" variant="secondary">
                   Explore LivoDraft <ArrowRight />
                 </Button>
-                <span className="text-[0.85rem] text-faint">Limited invitations</span>
+                <span className="text-[0.85rem] text-faint">Available now</span>
               </div>
             </div>
 

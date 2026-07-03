@@ -87,7 +87,7 @@ export function Contact() {
             variants={fadeUp}
             className="mt-5 max-w-md text-pretty text-[1.05rem] leading-relaxed text-muted-foreground"
           >
-            Whether you want early access to Livodraft, a conversation, or simply to
+            Whether you&apos;re using Livodraft, want a conversation, or simply to
             follow the journey — we&apos;d like to hear from you.
           </motion.p>
 
@@ -178,7 +178,7 @@ export function Contact() {
                 <Field label="I'm reaching out about" htmlFor="cf-intent">
                   <div className="relative">
                     <select id="cf-intent" name="intent" className={inputCls(false) + " appearance-none pr-10"}>
-                      <option value="early-access">Early access to Livodraft</option>
+                      <option value="early-access">A question about Livodraft</option>
                       <option value="general">A general conversation</option>
                       <option value="partnership">Partnership or press</option>
                       <option value="other">Something else</option>
