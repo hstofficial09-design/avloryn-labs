@@ -21,7 +21,7 @@ export default function TermsPage() {
       <p>
         Avloryn Labs LLP is an early-stage product company. This Site is informational — it
         describes who we are, what we&rsquo;re building, and how to get in touch or request
-        early access to our products, including <strong>Livodraft</strong> (live at
+        early access to our products, including <strong>LivoDraft</strong> (live at
         livodraft.com). Access to any product is offered separately and may be subject to its own terms.
       </p>
 

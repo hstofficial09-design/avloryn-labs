@@ -43,7 +43,7 @@ export function Vision() {
               </span>
               Today
             </span>
-            <h3 className="mt-3 text-2xl font-[560] tracking-[-0.02em]">Livodraft</h3>
+            <h3 className="mt-3 text-2xl font-[560] tracking-[-0.02em]">LivoDraft</h3>
             <p className="mt-2 text-muted-foreground">
               Academic research &amp; writing, end to end.
             </p>

@@ -9,6 +9,7 @@ import { POST_QUERY, SLUGS_QUERY } from "@/sanity/lib/queries";
 import { urlForImage } from "@/sanity/lib/image";
 import type { Post } from "@/sanity/lib/types";
 import { formatDate } from "@/lib/date";
+import { SITE_URL, ORG_ID, breadcrumbLd } from "@/lib/seo";
 
 export const revalidate = 60; // ISR
 
@@ -62,16 +63,35 @@ export default async function PostPage({ params }: Params) {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Article",
+    "@id": `${SITE_URL}/blog/${slug}#article`,
     headline: post.title,
     datePublished: post.publishedAt || undefined,
+    dateModified: post.publishedAt || undefined,
     description: post.excerpt || undefined,
     image: post.coverImage
       ? urlForImage(post.coverImage).width(1200).height(630).url()
       : undefined,
-    author: { "@type": "Organization", name: post.author || "Avloryn Labs" },
-    publisher: { "@type": "Organization", name: "Avloryn Labs" },
-    mainEntityOfPage: { "@type": "WebPage", "@id": `https://avloryn.com/blog/${slug}` },
+    // Named person for EEAT when we have one; otherwise the brand entity.
+    author: post.author
+      ? { "@type": "Person", name: post.author }
+      : { "@id": ORG_ID },
+    // Publisher carries an inline logo (required for Article rich results) AND
+    // links to the site-wide Organization entity via its stable @id.
+    publisher: {
+      "@type": "Organization",
+      "@id": ORG_ID,
+      name: "Avloryn Labs",
+      logo: { "@type": "ImageObject", url: `${SITE_URL}/avloryn-mark.png` },
+    },
+    isPartOf: { "@id": `${SITE_URL}/#website` },
+    inLanguage: "en",
+    mainEntityOfPage: { "@type": "WebPage", "@id": `${SITE_URL}/blog/${slug}` },
   };
+
+  const breadcrumb = breadcrumbLd([
+    { name: "Journal", path: "/blog" },
+    { name: post.title, path: `/blog/${slug}` },
+  ]);
 
   return (
     <>
@@ -132,6 +152,10 @@ export default async function PostPage({ params }: Params) {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumb) }}
       />
     </>
   );

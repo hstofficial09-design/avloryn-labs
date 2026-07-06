@@ -124,7 +124,7 @@ export function Hero() {
             className="mt-10 flex flex-wrap items-center gap-x-4 gap-y-2 text-[0.9rem] text-faint"
           >
             <span>
-              <strong className="font-[500] text-foreground">Livodraft</strong> · Now live
+              <strong className="font-[500] text-foreground">LivoDraft</strong> · Now live
             </span>
             <span aria-hidden="true" className="h-3 w-px bg-border-strong" />
             <span>More products in development</span>

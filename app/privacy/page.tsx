@@ -37,7 +37,7 @@ export default function PrivacyPage() {
 
       <h2>How we use it</h2>
       <ul>
-        <li>To respond to your message and, where relevant, to add you to the Livodraft early-access waitlist.</li>
+        <li>To respond to your message and, where relevant, to add you to the LivoDraft updates list.</li>
         <li>To send you product updates or an invitation when access opens — only in connection with your request.</li>
         <li>To understand, in aggregate, how the site is used so we can improve it.</li>
       </ul>

@@ -7,8 +7,24 @@ import { POSTS_QUERY } from "@/sanity/lib/queries";
 import { urlForImage } from "@/sanity/lib/image";
 import type { PostCard } from "@/sanity/lib/types";
 import { formatDate } from "@/lib/date";
+import { SITE_URL, ORG_ID, WEBSITE_ID, breadcrumbLd } from "@/lib/seo";
 
 export const revalidate = 60; // ISR — new posts appear within ~1 min, no redeploy
+
+const blogLd = {
+  "@context": "https://schema.org",
+  "@type": "Blog",
+  "@id": `${SITE_URL}/blog#blog`,
+  url: `${SITE_URL}/blog`,
+  name: "Journal — Avloryn Labs",
+  description:
+    "Notes from Avloryn Labs on building intelligent software that works the way people do.",
+  isPartOf: { "@id": WEBSITE_ID },
+  publisher: { "@id": ORG_ID },
+  inLanguage: "en",
+};
+
+const blogBreadcrumb = breadcrumbLd([{ name: "Journal", path: "/blog" }]);
 
 export const metadata: Metadata = {
   title: "Journal",
@@ -100,6 +116,14 @@ export default async function BlogIndexPage() {
         </section>
       </main>
       <Footer />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(blogLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(blogBreadcrumb) }}
+      />
     </>
   );
 }
