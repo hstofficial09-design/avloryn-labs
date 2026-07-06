@@ -9,10 +9,31 @@ import { Vision } from "@/components/sections/vision";
 import { Values } from "@/components/sections/values";
 import { Story } from "@/components/sections/story";
 import { Contact } from "@/components/sections/contact";
+import { SITE_URL, ORG_ID, WEBSITE_ID } from "@/lib/seo";
+
+// Homepage WebPage node — ties this page to the site-wide Organization + WebSite
+// entities (defined in app/layout.tsx) via their stable @id.
+const webPageLd = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "@id": `${SITE_URL}/#webpage`,
+  url: `${SITE_URL}/`,
+  name: "Avloryn Labs — Intelligent software product company",
+  description:
+    "Avloryn Labs is an independent Indian software product company. We build intelligent tools that reduce effort — including LivoDraft, our AI-assisted academic drafting studio.",
+  isPartOf: { "@id": WEBSITE_ID },
+  about: { "@id": ORG_ID },
+  primaryImageOfPage: { "@id": `${SITE_URL}/#logo` },
+  inLanguage: "en",
+};
 
 export default function HomePage() {
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageLd) }}
+      />
       <Preloader />
       <ScrollProgress />
       <Navbar />

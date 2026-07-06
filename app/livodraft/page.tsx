@@ -3,8 +3,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { LivodraftContent } from "./livodraft-content";
 import { FAQS } from "./data";
-
-const SITE_URL = "https://avloryn.com";
+import { SITE_URL, ORG_ID, WEBSITE_ID, breadcrumbLd } from "@/lib/seo";
 
 const DESCRIPTION =
   "An AI-assisted academic drafting studio for Indian students. Get a structured, formatted, referenced Word document built to your university's standards. Now live.";
@@ -30,18 +29,35 @@ export const metadata: Metadata = {
 const softwareLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
+  "@id": `${SITE_URL}/livodraft#software`,
   name: "LivoDraft",
   applicationCategory: "EducationalApplication",
   operatingSystem: "Web",
   url: `${SITE_URL}/livodraft`,
   description: DESCRIPTION,
-  publisher: { "@type": "Organization", name: "Avloryn Labs", url: SITE_URL },
+  publisher: { "@id": ORG_ID },
+  provider: { "@id": ORG_ID },
   offers: {
     "@type": "Offer",
     availability: "https://schema.org/OnlineOnly",
     name: "Available now",
   },
 };
+
+const webPageLd = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "@id": `${SITE_URL}/livodraft#webpage`,
+  url: `${SITE_URL}/livodraft`,
+  name: "LivoDraft — AI-assisted academic drafting studio for Indian students",
+  description: DESCRIPTION,
+  isPartOf: { "@id": WEBSITE_ID },
+  about: { "@id": `${SITE_URL}/livodraft#software` },
+  primaryImageOfPage: { "@id": `${SITE_URL}/#logo` },
+  inLanguage: "en",
+};
+
+const breadcrumbLd_ = breadcrumbLd([{ name: "LivoDraft", path: "/livodraft" }]);
 
 const faqLd = {
   "@context": "https://schema.org",
@@ -68,6 +84,14 @@ export default function LivodraftPage() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd_) }}
       />
     </>
   );

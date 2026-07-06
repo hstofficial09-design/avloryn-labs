@@ -8,7 +8,7 @@ export function Story() {
     <section id="story" className="scroll-mt-24 py-28 sm:py-36">
       <div className="container grid gap-12 lg:grid-cols-[0.32fr_0.68fr] lg:gap-16">
         <div>
-          <motion.p
+          <motion.h2
             variants={fadeUp}
             initial="hidden"
             whileInView="visible"
@@ -16,7 +16,7 @@ export function Story() {
             className="section-label lg:sticky lg:top-28"
           >
             Founding story
-          </motion.p>
+          </motion.h2>
         </div>
 
         <motion.div

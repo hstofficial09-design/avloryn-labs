@@ -7,7 +7,7 @@ export function Philosophy() {
   return (
     <section id="philosophy" className="scroll-mt-24 py-28 sm:py-36">
       <div className="container">
-        <motion.p
+        <motion.h2
           variants={fadeUp}
           initial="hidden"
           whileInView="visible"
@@ -15,7 +15,7 @@ export function Philosophy() {
           className="section-label"
         >
           Philosophy
-        </motion.p>
+        </motion.h2>
 
         <motion.blockquote
           variants={fadeUp}
