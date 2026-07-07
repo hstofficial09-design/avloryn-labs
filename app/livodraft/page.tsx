@@ -37,11 +37,6 @@ const softwareLd = {
   description: DESCRIPTION,
   publisher: { "@id": ORG_ID },
   provider: { "@id": ORG_ID },
-  offers: {
-    "@type": "Offer",
-    availability: "https://schema.org/OnlineOnly",
-    name: "Available now",
-  },
 };
 
 const webPageLd = {

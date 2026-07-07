@@ -125,14 +125,6 @@ const entityGraph = {
         "Software product development",
         "Academic document formatting",
       ],
-      makesOffer: {
-        "@type": "Offer",
-        itemOffered: {
-          "@type": "SoftwareApplication",
-          name: "LivoDraft",
-          applicationCategory: "EducationalApplication",
-        },
-      },
       sameAs: SAME_AS,
     },
     {
