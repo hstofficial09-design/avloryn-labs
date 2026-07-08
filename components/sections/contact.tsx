@@ -206,11 +206,11 @@ export function Contact() {
                 <button
                   type="submit"
                   disabled={status === "submitting"}
-                  className="group mt-1 inline-flex h-[3.25rem] items-center justify-center gap-2 rounded-full bg-foreground px-7 text-[1rem] font-[500] text-background transition-all duration-300 ease-premium hover:-translate-y-0.5 hover:shadow-lift active:scale-[0.99] disabled:opacity-70"
+                  className="group btn-gold mt-1 inline-flex h-[3.25rem] items-center justify-center gap-2 rounded-full px-7 text-[1rem] font-[500] transition-all duration-300 ease-premium hover:-translate-y-0.5 active:scale-[0.99] disabled:opacity-70"
                 >
                   {status === "submitting" ? (
                     <>
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-background/40 border-t-background" />
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-foreground/30 border-t-foreground" />
                       Sending…
                     </>
                   ) : (
@@ -259,8 +259,8 @@ function Field({
 function inputCls(hasError: boolean) {
   return (
     // text-base (16px) is intentional: inputs under 16px make iOS Safari auto-zoom on focus.
-    "w-full rounded-xl border bg-background px-4 py-3 text-base text-foreground placeholder:text-faint " +
-    "transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent " +
-    (hasError ? "border-[hsl(var(--danger))]" : "border-border")
+    "w-full rounded-xl neu-inset px-4 py-3 text-base text-foreground placeholder:text-faint " +
+    "transition-shadow duration-200 focus:outline-none focus:ring-2 focus:ring-gold/45 " +
+    (hasError ? "ring-2 ring-[hsl(var(--danger))]" : "")
   );
 }

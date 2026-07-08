@@ -83,7 +83,7 @@ export function Vision() {
                 variants={fadeUp}
                 className="card-lux card-lux-hover group relative overflow-hidden rounded-2xl p-6"
               >
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-muted text-[1.1rem] text-foreground transition-colors duration-300 group-hover:bg-foreground group-hover:text-background">
+                <span className="neu-chip grid h-10 w-10 place-items-center rounded-xl text-[1.1rem] text-foreground transition-colors duration-300 group-hover:bg-foreground group-hover:text-background">
                   {item.icon}
                 </span>
                 <h4 className="mt-5 text-[1.15rem] font-[520] tracking-[-0.01em]">

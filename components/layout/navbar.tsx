@@ -37,7 +37,7 @@ export function Navbar() {
         className={cn(
           "mx-auto flex items-center justify-between px-6 transition-all duration-500 ease-premium md:px-10 xl:px-[5.5rem] 2xl:px-28",
           scrolled
-            ? "my-3 h-14 max-w-[1200px] rounded-full glass ring-hairline shadow-soft md:px-6 xl:px-6 2xl:px-6"
+            ? "my-3 h-14 max-w-[1200px] rounded-full glass ring-hairline shadow-neu md:px-6 xl:px-6 2xl:px-6"
             : "my-4 h-16 max-w-none"
         )}
       >
@@ -75,7 +75,7 @@ export function Navbar() {
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
-            className="relative grid h-10 w-10 place-items-center rounded-full ring-hairline lg:hidden"
+            className="relative grid h-10 w-10 place-items-center rounded-full neu-chip lg:hidden"
           >
             <span className="sr-only">Menu</span>
             <span

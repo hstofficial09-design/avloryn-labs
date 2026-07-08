@@ -43,7 +43,7 @@ export function HeroSurface({
           </span>
         </div>
 
-        <div className="rounded-[1.25rem] border border-border bg-subtle/70 p-5 shadow-[inset_0_1px_3px_rgba(38,32,26,0.05)] dark:shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)]">
+        <div className="neu-inset rounded-[1.25rem] p-5">
           {/* header row */}
           <div className="flex items-center gap-3">
             <span className="grid h-9 w-9 place-items-center rounded-full bg-foreground text-background shadow-soft">

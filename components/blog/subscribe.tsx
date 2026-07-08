@@ -88,12 +88,12 @@ export function Subscribe() {
               type="email"
               autoComplete="email"
               placeholder="you@email.com"
-              className="h-12 flex-1 rounded-full border border-border bg-background px-5 text-base text-foreground placeholder:text-faint transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+              className="neu-inset h-12 flex-1 rounded-full px-5 text-base text-foreground placeholder:text-faint transition-shadow focus:outline-none focus:ring-2 focus:ring-gold/40"
             />
             <button
               type="submit"
               disabled={status === "submitting"}
-              className="inline-flex h-12 items-center justify-center rounded-full bg-foreground px-6 text-[0.95rem] font-[500] text-background transition-all duration-300 ease-premium hover:-translate-y-0.5 hover:shadow-lift active:scale-[0.99] disabled:opacity-70"
+              className="btn-gold inline-flex h-12 items-center justify-center rounded-full px-6 text-[0.95rem] font-[500] transition-all duration-300 ease-premium hover:-translate-y-0.5 active:scale-[0.99] disabled:opacity-70"
             >
               {status === "submitting" ? "Subscribing…" : "Subscribe"}
             </button>

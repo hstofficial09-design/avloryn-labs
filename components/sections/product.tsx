@@ -37,7 +37,7 @@ export function Product() {
           <div className="relative flex flex-col gap-10 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-xl">
               <div className="flex items-center gap-4">
-                <span className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-background text-foreground">
+                <span className="neu-chip grid h-12 w-12 place-items-center rounded-2xl text-foreground">
                   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
                     <path d="M7 4h7l4 4v12H7z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
                     <path d="M14 4v4h4" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
