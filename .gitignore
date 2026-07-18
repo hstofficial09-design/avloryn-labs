@@ -41,3 +41,4 @@ yarn-error.log*
 /DEVELOPER.md
 /DEVELOPER_PLAN.md
 /NEW_CHAT_PROMPT.md
+.secrets/
