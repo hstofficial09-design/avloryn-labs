@@ -145,7 +145,7 @@ export default function InternForm() {
     }
   }
 
-  const inputCls = "w-full rounded-lg border border-black/10 bg-white/60 px-3 py-2 text-sm outline-none focus:border-black/30 transition";
+  const inputCls = "w-full rounded-lg border border-black/10 bg-white text-[#14110B] [color-scheme:light] px-3 py-2 text-sm outline-none focus:border-black/30 transition";
   const labelCls = "block text-[13px] font-medium mb-1.5 text-foreground/80";
   const fileCls = "w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-black/5 file:px-3 file:py-1.5 file:text-sm file:font-medium";
 
@@ -166,7 +166,7 @@ export default function InternForm() {
         <LogoMark size={30} />
         <div>
           <div className="text-[1.05rem] font-semibold leading-none">Avloryn Labs</div>
-          <div className="text-xs text-muted-foreground mt-1">Intern Onboarding</div>
+          <div className="text-xs text-muted-foreground mt-1">Onboarding</div>
         </div>
       </div>
       <p className="text-sm text-muted-foreground mb-8 leading-relaxed">

@@ -56,14 +56,14 @@ export default function OwnerDashboard({ employees, orders, error }:
   }
   async function logout() { await fetch("/api/portal/logout", { method: "POST" }); router.push("/portal/login"); }
 
-  const inputCls = "w-full text-[13px] border border-[#E2DBCB] rounded-lg px-2.5 py-2 outline-none focus:border-[#C6A249]";
+  const inputCls = "w-full text-[13px] bg-white text-[#14110B] border border-[#E2DBCB] rounded-lg px-2.5 py-2 outline-none focus:border-[#C6A249]";
 
   return (
-    <main className="min-h-screen bg-[#FAF8F2] text-[#14110B] font-sans px-4 sm:px-6 py-6">
+    <main className="min-h-screen bg-[#FAF8F2] text-[#14110B] [color-scheme:light] font-sans px-4 sm:px-6 py-6">
       <div className="max-w-[980px] mx-auto">
         <Header role="Owner" onLogout={logout} />
         <h1 className="font-serif text-[30px] font-bold mt-5 mb-1">Commissions</h1>
-        <p className="text-[13.5px] text-[#6b6455] mb-5">Saare employees, saare products — ek jagah. Bank se pay karke Mark Paid.</p>
+        <p className="text-[13.5px] text-[#6b6455] mb-5">All employees, all products — in one place. Pay them by bank transfer, then click Mark Paid.</p>
 
         {error ? (
           <div className="rounded-xl border border-[#eeddb0] bg-[#fdf5e3] text-[#946412] text-[13px] px-4 py-3">
@@ -85,7 +85,7 @@ export default function OwnerDashboard({ employees, orders, error }:
                   style={{ background: "linear-gradient(180deg,#E7D6A6,#C6A249 55%,#A9852F)" }}>+ Add employee</button>
               </div>
               <div className="px-4 py-2.5 border-b border-[#E9E3D6] bg-[#fbfaf6] text-[12px] text-[#6b6455]">
-                🪄 Onboarding form se log auto-aate hain (needs code+password setup). Manual add sirf backup ke liye.
+                🪄 People arrive automatically from the onboarding form (you still set their code and login password). Manual add is only a backup.
               </div>
               {showAdd && (
                 <form onSubmit={addEmp} className="px-4 py-3.5 border-b border-[#E9E3D6] bg-[#FBF5E7]">

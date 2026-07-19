@@ -18,7 +18,7 @@ export default function EmployeeDashboard({ name, data, error }: { name: string;
   const code = data?.orders?.find((o) => o.code)?.code;
 
   return (
-    <main className="min-h-screen bg-[#FAF8F2] text-[#14110B] font-sans px-4 sm:px-6 py-6">
+    <main className="min-h-screen bg-[#FAF8F2] text-[#14110B] [color-scheme:light] font-sans px-4 sm:px-6 py-6">
       <div className="max-w-[860px] mx-auto">
         <header className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
@@ -29,13 +29,13 @@ export default function EmployeeDashboard({ name, data, error }: { name: string;
         </header>
 
         <h1 className="font-serif text-[30px] font-bold mt-5 mb-1">Hi, {emp?.name || name} 👋</h1>
-        <p className="text-[13.5px] text-[#6b6455] mb-5">Aapke code se hui har sale ka commission — product ke saath. Payout aapke bank mein.</p>
+        <p className="text-[13.5px] text-[#6b6455] mb-5">Commission from every sale made with your code — shown per product. Payouts go to your bank.</p>
 
         {error ? (
           <div className="rounded-xl border border-[#eeddb0] bg-[#fdf5e3] text-[#946412] text-[13px] px-4 py-3">⚠ {error}</div>
         ) : !data ? (
           <div className="rounded-xl border border-[#E9E3D6] bg-white text-[#6b6455] text-[13px] px-4 py-4">
-            Abhi tak koi commission record nahi. Jaise hi aapke code se sale hogi, yahan dikhegi.
+            No commissions recorded yet. As soon as a sale is made with your code, it will appear here.
           </div>
         ) : (
           <>
@@ -78,7 +78,7 @@ export default function EmployeeDashboard({ name, data, error }: { name: string;
                 </table>
               </div>
             </div>
-            <p className="text-center text-[12px] text-[#948c79] mt-4">Naye Avloryn products bhi yahin dikhenge — product-name ke saath. Payout bank mein aayega jab owner pay kare.</p>
+            <p className="text-center text-[12px] text-[#948c79] mt-4">New Avloryn products will also show up here, tagged by product name. Payouts reach your bank once the owner pays.</p>
           </>
         )}
       </div>
