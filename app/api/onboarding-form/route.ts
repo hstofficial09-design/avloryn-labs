@@ -226,6 +226,7 @@ export async function POST(req: Request) {
     studentId: (dRaw.studentId || "").trim(),
     signedAt: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
   };
+  const dob = (dRaw.dob || "").trim();
   const signature = typeof body.signature === "string" ? (body.signature as string) : "";
   const consent = !!body.consent;
   const regType = dRaw.regType === "employee" ? "Employee" : "Intern";
@@ -268,12 +269,15 @@ export async function POST(req: Request) {
     od.title("Onboarding — Submission");
     od.kv("Registering as", regType);
     od.kv("Name", d.fullName);
+    od.kv("Date of birth", dob);
     od.kv("Role", `${ROLE_LABEL[d.role]} Intern`);
     od.kv("Mobile", d.mobile);
     od.kv("Email", d.email);
     od.kv("Address", d.address);
     od.kv("ID type", `${d.idType}${d.idNumber ? " · " + d.idNumber : ""}`);
-    if (d.isStudent) od.kv("College", `${d.collegeName || "-"}${d.studentId ? " · ID " + d.studentId : ""}`);
+    od.kv("Current student", d.isStudent
+      ? `Yes${d.collegeName ? " · " + d.collegeName : ""}${d.studentId ? " · ID " + d.studentId : ""}`
+      : "No");
     od.kv("Start date", d.startDate);
     od.kv("Duration", `${d.duration} months`);
     od.kv("Submitted", d.signedAt);

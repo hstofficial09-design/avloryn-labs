@@ -58,10 +58,10 @@ function fmtDate(iso: string): string {
 export default function InternForm() {
   const [f, setF] = useState({
     regType: "intern" as "intern" | "employee",
-    fullName: "", mobile: "", email: "", address: "",
+    fullName: "", dob: "", mobile: "", email: "", address: "",
     role: "M&C" as Role, startDate: "", duration: "3",
     idType: "PAN card", idNumber: "",
-    isStudent: false, collegeName: "", studentId: "",
+    isStudent: null as boolean | null, collegeName: "", studentId: "",
   });
   const [photo, setPhoto] = useState<FilePayload>();
   const [idDoc, setIdDoc] = useState<FilePayload>();
@@ -110,7 +110,7 @@ export default function InternForm() {
 
   const previewData: InternData = useMemo(() => ({
     ...f, role: f.role, startDate: fmtDate(f.startDate) || "[Start Date]",
-    duration: f.duration, idType: f.idType, isStudent: f.isStudent,
+    duration: f.duration, idType: f.idType, isStudent: !!f.isStudent,
     fullName: f.fullName || "[Intern Name]", signedAt: "",
   }), [f]);
   const ia = internshipAgreement(previewData);
@@ -119,8 +119,10 @@ export default function InternForm() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
-    if (!f.fullName || !f.mobile || !f.email || !f.address || !f.startDate) { setErr("Please fill all required fields."); return; }
+    if (!f.fullName || !f.dob || !f.mobile || !f.email || !f.address || !f.startDate) { setErr("Please fill all required fields."); return; }
+    if (!photo) { setErr("Please upload your photo."); return; }
     if (!idDoc) { setErr("Please upload a photo ID."); return; }
+    if (f.isStudent === null) { setErr("Please tell us whether you are a current student."); return; }
     if (f.isStudent && !studentDoc) { setErr("Please upload your student ID."); return; }
     if (!signed) { setErr("Please add your signature."); return; }
     if (!consent) { setErr("Please accept the terms."); return; }
@@ -131,7 +133,7 @@ export default function InternForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: { ...f, startDate: fmtDate(f.startDate) },
+          data: { ...f, startDate: fmtDate(f.startDate), dob: fmtDate(f.dob) },
           isStudent: f.isStudent, consent, signature,
           files: { photo, idDoc, studentDoc: f.isStudent ? studentDoc : undefined },
         }),
@@ -195,13 +197,16 @@ export default function InternForm() {
 
         {/* Personal */}
         <Section title="Your details">
-          <Field label="Full name *"><input className={inputCls} value={f.fullName} onChange={(e) => up("fullName", e.target.value)} /></Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Full name *"><input className={inputCls} value={f.fullName} onChange={(e) => up("fullName", e.target.value)} /></Field>
+            <Field label="Date of birth *"><input type="date" className={inputCls} value={f.dob} onChange={(e) => up("dob", e.target.value)} /></Field>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Mobile *"><input className={inputCls} value={f.mobile} onChange={(e) => up("mobile", e.target.value)} /></Field>
             <Field label="Email *"><input type="email" className={inputCls} value={f.email} onChange={(e) => up("email", e.target.value)} /></Field>
           </div>
           <Field label="Address *"><textarea className={inputCls} rows={2} value={f.address} onChange={(e) => up("address", e.target.value)} /></Field>
-          <Field label="Photo (passport-style)"><input type="file" accept="image/*,application/pdf" className={fileCls} onChange={async (e) => setPhoto(await processFile(e.target.files![0]))} /></Field>
+          <Field label="Photo (passport-style) *"><input type="file" accept="image/*,application/pdf" className={fileCls} onChange={async (e) => setPhoto(await processFile(e.target.files![0]))} /></Field>
         </Section>
 
         {/* Identity */}
@@ -218,11 +223,16 @@ export default function InternForm() {
         </Section>
 
         {/* Student */}
-        <Section title="Are you a current student?">
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={f.isStudent} onChange={(e) => up("isStudent", e.target.checked)} /> Yes, I&apos;m currently studying
-          </label>
-          {f.isStudent && (
+        <Section title="Are you a current student? *">
+          <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="isStudent" checked={f.isStudent === true} onChange={() => up("isStudent", true)} /> Yes, I&apos;m currently studying
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="isStudent" checked={f.isStudent === false} onChange={() => up("isStudent", false)} /> No
+            </label>
+          </div>
+          {f.isStudent === true && (
             <div className="mt-3 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="College / University"><input className={inputCls} value={f.collegeName} onChange={(e) => up("collegeName", e.target.value)} /></Field>
