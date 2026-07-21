@@ -306,10 +306,12 @@ export async function POST(req: Request) {
     try {
       const sigBytes = await fs.readFile(path.join(process.cwd(), "public", "founder-signature.png"));
       const sig = await n.pdf.embedPng(new Uint8Array(sigBytes));
-      const w = 130; const h = (sig.height / sig.width) * w;
+      // fit within 130w x 54h, preserving aspect ratio (no squish)
+      const scale = Math.min(130 / sig.width, 54 / sig.height);
+      const w = sig.width * scale, h = sig.height * scale;
       nd.ensure(h + 4);
-      nd.page.drawImage(sig, { x: MARGIN, y: nd.y - Math.min(h, 46), width: w, height: Math.min(h, 46) });
-      nd.y -= Math.min(h, 46) + 4;
+      nd.page.drawImage(sig, { x: MARGIN, y: nd.y - h, width: w, height: h });
+      nd.y -= h + 4;
     } catch {}
     nd.para(`${DOC_META.FOUNDER}`, { font: n.fonts.bold, size: 10.5, gap: 1 });
     nd.para(`Founder, ${DOC_META.COMPANY}  ·  hardev@avloryn.com`, { size: 9.5, color: MUTED });
