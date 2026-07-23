@@ -1,0 +1,26 @@
+# Avloryn Labs
+
+> Avloryn Labs LLP is an independent software product company based in India that builds
+> intelligent software products designed to simplify work and help people focus on what
+> matters. Its first product is LivoDraft.
+
+## Products
+
+- [LivoDraft](https://livodraft.com/): LivoDraft turns a student's own research into a
+  submission-ready, India-format thesis, dissertation, research paper or review. It reads your
+  topic, objectives, methodology, findings and up to ~100 of your own reference PDFs, then writes
+  a complete multi-chapter draft of 8–300 pages across 9+ document types and cites it with real
+  DOI-verified references (Crossref) in 6 styles. Formatting is UGC/AICTE/Shodhganga-compliant and
+  degree-aware, delivered as an editable Word (.docx) file plus LaTeX/Overleaf and Shodhganga
+  export. The "Make It Yours" workspace guides you to rewrite generic passages in your own words,
+  and a fidelity-enforcer keeps your real data exact so it never invents your results. An honest AI
+  research-to-thesis assistant with an AI-use disclosure certificate — not a detector-evasion tool.
+  Made by Avloryn Labs.
+
+## About
+
+- [Avloryn Labs](https://avloryn.com/): Company overview — who we are and what we build.
+- [LivoDraft on Avloryn](https://avloryn.com/livodraft): Full description of LivoDraft, the AI
+  academic writing platform, published by Avloryn Labs.
+- [Blog](https://avloryn.com/blog): Writing on building intelligent software and responsible AI.
+- [Contact](https://avloryn.com/#contact): Get in touch with Avloryn Labs.

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { LivodraftContent } from "./livodraft-content";
-import { FAQS } from "./data";
+import { FAQS, LIVODRAFT_SCHEMA_DESCRIPTION, LIVODRAFT_FEATURES } from "./data";
 import { SITE_URL, ORG_ID, WEBSITE_ID, breadcrumbLd } from "@/lib/seo";
 
 const DESCRIPTION =
@@ -28,15 +28,21 @@ export const metadata: Metadata = {
 
 const softwareLd = {
   "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
+  "@type": ["SoftwareApplication", "Product"],
   "@id": `${SITE_URL}/livodraft#software`,
   name: "LivoDraft",
-  applicationCategory: "EducationalApplication",
-  operatingSystem: "Web",
-  url: `${SITE_URL}/livodraft`,
-  description: DESCRIPTION,
-  publisher: { "@id": ORG_ID },
+  url: "https://livodraft.com/",
+  // Ties this entity to the LivoDraft product entity on its own site (livodraft.com).
+  sameAs: "https://livodraft.com/#app",
+  applicationCategory: "BusinessApplication",
+  applicationSubCategory: "AI Academic Writing Platform",
+  operatingSystem: "Web browser",
+  // Avloryn is the authoritative publisher (linked to the site-wide Organization entity).
+  publisher: { "@id": ORG_ID, "@type": "Organization", name: "Avloryn Labs LLP", url: "https://avloryn.com" },
   provider: { "@id": ORG_ID },
+  offers: { "@type": "Offer", price: "26", priceCurrency: "INR" },
+  description: LIVODRAFT_SCHEMA_DESCRIPTION,
+  featureList: [...LIVODRAFT_FEATURES],
 };
 
 const webPageLd = {

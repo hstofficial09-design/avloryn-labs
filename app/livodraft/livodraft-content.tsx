@@ -6,7 +6,7 @@ import { SectionHeading } from "@/components/ui/section-heading";
 import { Button, ArrowRight } from "@/components/ui/button";
 import { Magnetic } from "@/components/ui/magnetic";
 import { LivodraftWordmark } from "@/components/ui/livodraft-wordmark";
-import { FAQS } from "./data";
+import { FAQS, LIVODRAFT_OVERVIEW } from "./data";
 
 const CREATE = [
   "Thesis & dissertation",
@@ -94,12 +94,20 @@ export function LivodraftContent() {
               and submit.
             </motion.p>
 
-            <motion.div variants={fadeUp} className="mt-9">
+            <motion.div variants={fadeUp} className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
               <Magnetic>
                 <Button href="https://livodraft.com" size="lg" target="_blank" rel="noopener noreferrer">
                   Try LivoDraft <ArrowRight />
                 </Button>
               </Magnetic>
+              <a
+                href="https://livodraft.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group inline-flex items-center gap-1.5 text-[1.02rem] font-[520] text-foreground underline decoration-border-strong underline-offset-4 transition-colors hover:decoration-foreground"
+              >
+                Open LivoDraft <ArrowRight />
+              </a>
             </motion.div>
           </motion.div>
         </div>
@@ -118,6 +126,16 @@ export function LivodraftContent() {
             LivoDraft is an AI-assisted academic drafting studio that helps Indian students produce a
             structured, formatted, referenced academic document —{" "}
             <span className="font-serif italic text-gold">built to your university&rsquo;s standards.</span>
+          </motion.p>
+
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={VIEWPORT_SOFT}
+            transition={{ duration: 0.8, ease: EASE, delay: 0.08 }}
+            className="mx-auto mt-8 max-w-3xl text-pretty text-center text-[1.05rem] leading-relaxed text-muted-foreground"
+          >
+            {LIVODRAFT_OVERVIEW}
           </motion.p>
         </div>
       </section>

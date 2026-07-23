@@ -6,6 +6,7 @@ import { SectionHeading } from "@/components/ui/section-heading";
 import { Button, ArrowRight } from "@/components/ui/button";
 import { Magnetic } from "@/components/ui/magnetic";
 import { LivodraftWordmark } from "@/components/ui/livodraft-wordmark";
+import { LIVODRAFT_OVERVIEW } from "@/app/livodraft/data";
 
 export function Product() {
   return (
@@ -59,15 +60,8 @@ export function Product() {
                 </div>
               </div>
 
-              <p className="mt-6 text-pretty text-[1.1rem] leading-relaxed text-muted-foreground">
-                An academic workflow platform designed to assist students and
-                researchers — from the first research question to the final
-                submission.
-              </p>
-
-              <p className="mt-4 text-[0.95rem] text-faint">
-                Now live for Indian students — draft, format, and reference your
-                thesis, paper, or report.
+              <p className="mt-6 text-pretty text-[1.02rem] leading-relaxed text-muted-foreground">
+                {LIVODRAFT_OVERVIEW}
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-4">
