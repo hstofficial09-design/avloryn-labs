@@ -1,69 +1,110 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { LogoMark } from "@/components/ui/logo";
 
+type Code = { code: string; commission_pct: number; active: number; uses: number };
 type Emp = {
-  id: string; name: string; email: string | null; emp_type: string; track: string | null;
+  id: string; name: string; email: string | null; mobile: string | null; emp_type: string; track: string | null;
   commission_pct: number; source: string; active: number; has_password?: boolean;
+  dob?: string | null; address?: string | null; id_type?: string | null; id_number?: string | null;
+  is_student?: string | null; college?: string | null; student_id?: string | null;
+  start_date?: string | null; duration?: string | null; codes?: Code[];
   orders: number; sales: number; earned: number; pending: number; paid: number;
 };
 type Order = {
   id: string; employee_id: string; product: string; code: string | null; doc_ref: string | null;
   order_amount_inr: number; commission_pct: number; commission_inr: number; status: string; created_at: string;
 };
+type Deleted = { id: string; name: string; email: string | null; emp_type: string; track: string | null; deleted_at: string };
 
 const inr = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
+const GOLD = "btn-gold rounded-full font-[560]";
+const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
+const dt = (s?: string | null) => (s ? String(s).slice(0, 10) : "—");
+function purgeDate(iso: string) {
+  const d = new Date(iso); d.setFullYear(d.getFullYear() + 1);
+  return isNaN(d.getTime()) ? "—" : d.toISOString().slice(0, 10);
+}
 
-export default function OwnerDashboard({ employees, orders, error }:
-  { employees: Emp[]; orders: Order[]; error: string | null }) {
+export default function OwnerDashboard({ employees, orders, deleted, names, error }:
+  { employees: Emp[]; orders: Order[]; deleted: Deleted[]; names: Record<string, string>; error: string | null }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [detail, setDetail] = useState<Emp | null>(null);
   const [msg, setMsg] = useState("");
   const [form, setForm] = useState({ name: "", email: "", mobile: "", emp_type: "intern", track: "", commission_pct: "10", password: "" });
 
-  const names: Record<string, string> = Object.fromEntries(employees.map((e) => [e.id, e.name]));
   const sales = employees.reduce((a, e) => a + e.sales, 0);
   const owed = employees.reduce((a, e) => a + e.pending, 0);
   const paidTot = employees.reduce((a, e) => a + e.paid, 0);
 
-  async function markPaid(id: string, amt: number) {
-    if (!confirm(`Mark ${inr(amt)} as paid for this employee? (Bank transfer already done)`)) return;
+  async function post(url: string, body: any) {
     setBusy(true);
-    await fetch("/api/portal/mark-paid", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employee_id: id }) });
-    setBusy(false);
-    router.refresh();
-  }
-  async function addEmp(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form.name.trim() || !form.email.trim() || !form.password.trim()) { setMsg("Name, email and temp password required"); return; }
-    setBusy(true); setMsg("");
-    const r = await fetch("/api/portal/add-employee", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
-    if (d.success) { setShowAdd(false); setForm({ name: "", email: "", mobile: "", emp_type: "intern", track: "", commission_pct: "10", password: "" }); router.refresh(); }
-    else setMsg(d.error || "Failed");
+    return { ok: r.ok, d };
+  }
+  async function markPaid(id: string, amt: number) {
+    if (!confirm(`Mark ${inr(amt)} as paid for this employee? (Bank transfer already done)`)) return;
+    await post("/api/portal/mark-paid", { employee_id: id }); router.refresh();
   }
   async function setLogin(id: string, name: string) {
     const pw = prompt(`Set a login password for ${name} — share it with them so they can sign in:`);
     if (pw === null) return;
     if (pw.length < 4) { alert("Password must be at least 4 characters"); return; }
-    setBusy(true);
-    const r = await fetch("/api/portal/set-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employee_id: id, password: pw }) });
-    const d = await r.json().catch(() => ({}));
-    setBusy(false);
-    if (d.success) router.refresh(); else alert(d.error || "Failed");
+    const { ok, d } = await post("/api/portal/set-password", { employee_id: id, password: pw });
+    if (ok && d.success) router.refresh(); else alert(d.error || "Failed");
+  }
+  async function addEmp(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim() || !form.email.trim() || !form.password.trim()) { setMsg("Name, email and temp password required"); return; }
+    setMsg("");
+    const { ok, d } = await post("/api/portal/add-employee", form);
+    if (ok && d.success) { setShowAdd(false); setForm({ name: "", email: "", mobile: "", emp_type: "intern", track: "", commission_pct: "10", password: "" }); router.refresh(); }
+    else setMsg(d.error || "Failed");
+  }
+  async function deleteEmp(id: string, name: string) {
+    if (!confirm(`Delete ${name}?\n\nThe record + commission history are kept for 1 year, then removed automatically. You can restore before then.`)) return;
+    const { ok } = await post("/api/portal/delete-employee", { employee_id: id });
+    if (ok) { setDetail(null); router.refresh(); }
+  }
+  async function restoreEmp(id: string) {
+    const { ok } = await post("/api/portal/restore-employee", { employee_id: id });
+    if (ok) router.refresh();
   }
   async function logout() { await fetch("/api/portal/logout", { method: "POST" }); router.push("/portal/login"); }
 
-  const inputCls = "w-full text-[13px] bg-white text-[#14110B] border border-[#E2DBCB] rounded-lg px-2.5 py-2 outline-none focus:border-[#C6A249]";
+  const inputCls = "w-full text-[13px] neu-inset text-foreground placeholder:text-faint rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-gold/25";
+
+  function codeCell(e: Emp) {
+    if (e.codes && e.codes.length) {
+      return <div className="space-y-0.5">{e.codes.map((c) => (
+        <div key={c.code} className="text-[12.5px]"><span className="font-mono font-bold text-gold">{c.code}</span> · {c.commission_pct}% <span className="text-[10px] text-faint">({c.uses} used)</span></div>
+      ))}</div>;
+    }
+    return <span className="text-[12px] text-faint">No code yet · {e.commission_pct}% default</span>;
+  }
 
   return (
-    <main className="min-h-screen bg-[#FAF8F2] text-[#14110B] [color-scheme:light] font-sans px-4 sm:px-6 py-6">
-      <div className="max-w-[980px] mx-auto">
-        <Header role="Owner" onLogout={logout} />
-        <h1 className="font-serif text-[30px] font-bold mt-5 mb-1">Commissions</h1>
-        <p className="text-[13.5px] text-[#6b6455] mb-5">All employees, all products — in one place. Pay them by bank transfer, then click Mark Paid.</p>
+    <main className="portal-light min-h-screen font-sans px-4 sm:px-6 py-7">
+      <div className="max-w-[1000px] mx-auto">
+        <header className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <LogoMark size={30} />
+            <div><div className="font-serif text-[17px] font-[600] leading-none">Avloryn <span className="text-gold">Labs</span></div><div className="section-label mt-1">Partner Portal</div></div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="section-label !text-gold bg-gold-soft/60 ring-hairline px-2.5 py-1 rounded-full">Owner</span>
+            <button onClick={logout} className={GHOST + " text-[12.5px] px-3.5 py-1.5"}>Sign out</button>
+          </div>
+        </header>
+
+        <h1 className="font-serif text-[30px] font-[600] tracking-[-0.01em] mt-6 mb-1">Commissions</h1>
+        <p className="text-[13.5px] text-muted-foreground mb-6">All employees, all products — in one place. Click a name for full details. Pay by bank transfer, then Mark Paid.</p>
 
         {error ? (
           <div className="rounded-xl border border-[#eeddb0] bg-[#fdf5e3] text-[#946412] text-[13px] px-4 py-3">
@@ -78,17 +119,20 @@ export default function OwnerDashboard({ employees, orders, error }:
               <Stat k="Paid out" v={inr(paidTot)} tone="#1e7a44" />
             </div>
 
-            <div className="rounded-2xl border border-[#E9E3D6] bg-white overflow-hidden mb-5 shadow-[0_10px_30px_rgba(20,17,11,0.04)]">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-[#E9E3D6]">
-                <b className="font-serif text-[15px]">Team &amp; commissions</b>
-                <button onClick={() => setShowAdd((v) => !v)} className="text-[12.5px] font-bold text-[#3a2e0c] rounded-lg px-3 py-1.5"
-                  style={{ background: "linear-gradient(180deg,#E7D6A6,#C6A249 55%,#A9852F)" }}>+ Add employee</button>
+            <div className="card-lux rounded-2xl overflow-hidden mb-5">
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
+                <b className="font-serif text-[15px] font-[600]">Team &amp; commissions</b>
+                <button onClick={() => setShowAdd((v) => !v)} className={GOLD + " text-[12.5px] px-3.5 py-1.5"}>{showAdd ? "Close" : "+ Add employee"}</button>
               </div>
-              <div className="px-4 py-2.5 border-b border-[#E9E3D6] bg-[#fbfaf6] text-[12px] text-[#6b6455]">
+              <div className="px-5 py-2.5 border-b border-border bg-subtle/50 text-[12px] text-muted-foreground">
                 🪄 People arrive automatically from the onboarding form (you still set their code and login password). Manual add is only a backup.
               </div>
               {showAdd && (
-                <form onSubmit={addEmp} className="px-4 py-3.5 border-b border-[#E9E3D6] bg-[#FBF5E7]">
+                <form onSubmit={addEmp} className="px-5 py-4 border-b border-border bg-subtle/40">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[12.5px] font-[560] text-foreground">Add an employee manually</span>
+                    <button type="button" onClick={() => { setShowAdd(false); setMsg(""); }} className="grid h-6 w-6 place-items-center rounded-full bg-card ring-hairline text-muted-foreground hover:text-foreground" aria-label="Close">✕</button>
+                  </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                     <input className={inputCls} placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                     <input className={inputCls} placeholder="Email (login)" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
@@ -100,37 +144,38 @@ export default function OwnerDashboard({ employees, orders, error }:
                     <input className={inputCls} type="number" placeholder="Commission %" value={form.commission_pct} onChange={(e) => setForm({ ...form, commission_pct: e.target.value })} />
                     <input className={inputCls + " sm:col-span-2"} placeholder="Temp password (share with employee)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
                   </div>
-                  <div className="mt-2.5 flex items-center gap-3">
-                    <button disabled={busy} type="submit" className="text-[12.5px] font-bold text-[#3a2e0c] rounded-lg px-4 py-2" style={{ background: "linear-gradient(180deg,#E7D6A6,#C6A249 55%,#A9852F)" }}>Create employee</button>
+                  <div className="mt-3 flex items-center gap-3">
+                    <button disabled={busy} type="submit" className={GOLD + " text-[12.5px] px-4 py-2"}>Create employee</button>
+                    <button type="button" onClick={() => { setShowAdd(false); setMsg(""); }} className="text-[12.5px] font-[520] text-muted-foreground">Cancel</button>
                     {msg && <span className="text-[12px] text-[#b3341f]">{msg}</span>}
                   </div>
                 </form>
               )}
               <div className="overflow-x-auto">
-                <table className="w-full text-[13px] min-w-[680px]">
-                  <thead><tr className="text-[11px] uppercase tracking-wide text-[#948c79] bg-[#fdfbf5]">
-                    <Th>Employee</Th><Th>Product</Th><Th r>Orders</Th><Th r>Sales</Th><Th r>Earned</Th><Th r>Pending</Th><Th>Payout</Th>
+                <table className="w-full text-[13px] min-w-[720px]">
+                  <thead><tr className="section-label bg-subtle/60">
+                    <Th>Employee</Th><Th>Code / Commission</Th><Th r>Orders</Th><Th r>Sales</Th><Th r>Earned</Th><Th r>Pending</Th><Th>Payout</Th>
                   </tr></thead>
                   <tbody>
-                    {employees.length === 0 && <tr><td colSpan={7} className="text-center text-[#948c79] py-5">No employees yet — add one, or they arrive from the onboarding form.</td></tr>}
+                    {employees.length === 0 && <tr><td colSpan={7} className="text-center text-faint py-6">No employees yet — add one, or they arrive from the onboarding form.</td></tr>}
                     {employees.map((e) => (
-                      <tr key={e.id} className="border-t border-[#E9E3D6]">
+                      <tr key={e.id} className="border-t border-border">
                         <td className="px-4 py-3">
-                          <b>{e.name}</b>
-                          <div className="text-[10.5px] font-bold text-[#A9852F]">{e.emp_type === "intern" ? `Intern${e.track ? " · " + e.track : ""}` : "Employee"}</div>
+                          <button onClick={() => setDetail(e)} className="font-[600] text-left text-foreground hover:text-gold transition-colors">{e.name}</button>
+                          <div className="text-[10.5px] font-bold text-gold">{e.emp_type === "intern" ? `Intern${e.track ? " · " + e.track : ""}` : "Employee"}</div>
                           {!e.has_password
-                            ? <button disabled={busy} onClick={() => setLogin(e.id, e.name)} className="mt-1 text-[10.5px] font-semibold text-[#A9852F] underline underline-offset-2">Set login password →</button>
-                            : <div className="text-[10px] text-[#948c79] mt-0.5">✓ can log in</div>}
+                            ? <button disabled={busy} onClick={() => setLogin(e.id, e.name)} className="mt-1 text-[10.5px] font-semibold text-gold underline underline-offset-2">Set login password →</button>
+                            : <div className="text-[10px] text-faint mt-0.5">✓ can log in</div>}
                         </td>
-                        <td className="px-4 py-3"><span className="inline-flex items-center gap-2 font-bold text-[12.5px]"><span className="w-2 h-2 rounded-full" style={{ background: "linear-gradient(150deg,#C6A249,#A9852F)" }} />LivoDraft · {e.commission_pct}%</span></td>
+                        <td className="px-4 py-3">{codeCell(e)}</td>
                         <td className="px-4 py-3 text-right font-mono">{e.orders}</td>
                         <td className="px-4 py-3 text-right font-mono">{inr(e.sales)}</td>
                         <td className="px-4 py-3 text-right font-mono">{inr(e.earned)}</td>
                         <td className="px-4 py-3 text-right font-mono">{inr(e.pending)}</td>
                         <td className="px-4 py-3">
                           {e.pending > 0
-                            ? <button disabled={busy} onClick={() => markPaid(e.id, e.pending)} className="text-[12px] font-bold text-[#3a2e0c] rounded-md px-3 py-1.5" style={{ background: "linear-gradient(180deg,#E7D6A6,#C6A249 55%,#A9852F)" }}>Mark {inr(e.pending)} Paid</button>
-                            : <span className="text-[12px] text-[#948c79]">{e.orders > 0 ? "Settled ✓" : "—"}</span>}
+                            ? <button disabled={busy} onClick={() => markPaid(e.id, e.pending)} className={GOLD + " text-[12px] px-3 py-1.5"}>Mark {inr(e.pending)} Paid</button>
+                            : <span className="text-[12px] text-faint">{e.orders > 0 ? "Settled ✓" : "—"}</span>}
                         </td>
                       </tr>
                     ))}
@@ -139,23 +184,23 @@ export default function OwnerDashboard({ employees, orders, error }:
               </div>
             </div>
 
-            <div className="rounded-2xl border border-[#E9E3D6] bg-white overflow-hidden shadow-[0_10px_30px_rgba(20,17,11,0.04)]">
-              <div className="px-4 py-3 border-b border-[#E9E3D6] flex items-center justify-between">
-                <b className="font-serif text-[15px]">Commission orders</b><span className="text-[11.5px] text-[#948c79]">every paid order using an employee code</span>
+            <div className="card-lux rounded-2xl overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+                <b className="font-serif text-[15px] font-[600]">Commission orders</b><span className="text-[11.5px] text-faint">every paid order using an employee code</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[13px] min-w-[720px]">
-                  <thead><tr className="text-[11px] uppercase tracking-wide text-[#948c79] bg-[#fdfbf5]">
+                  <thead><tr className="section-label bg-subtle/60">
                     <Th>Date</Th><Th>Employee</Th><Th>Product</Th><Th>Code</Th><Th>Doc Ref</Th><Th r>Sale (net)</Th><Th r>%</Th><Th r>Commission</Th><Th>Status</Th>
                   </tr></thead>
                   <tbody>
-                    {orders.length === 0 && <tr><td colSpan={9} className="text-center text-[#948c79] py-5">No commission orders yet.</td></tr>}
+                    {orders.length === 0 && <tr><td colSpan={9} className="text-center text-faint py-6">No commission orders yet.</td></tr>}
                     {orders.map((o) => (
-                      <tr key={o.id} className="border-t border-[#E9E3D6]">
-                        <td className="px-4 py-3">{(o.created_at || "").slice(0, 10)}</td>
+                      <tr key={o.id} className="border-t border-border">
+                        <td className="px-4 py-3">{dt(o.created_at)}</td>
                         <td className="px-4 py-3">{names[o.employee_id] || o.employee_id}</td>
                         <td className="px-4 py-3">{o.product}</td>
-                        <td className="px-4 py-3 font-mono text-[12px] text-[#A9852F]">{o.code}</td>
+                        <td className="px-4 py-3 font-mono text-[12px] text-gold">{o.code}</td>
                         <td className="px-4 py-3 font-mono text-[12px]">{o.doc_ref}</td>
                         <td className="px-4 py-3 text-right font-mono">{inr(o.order_amount_inr)}</td>
                         <td className="px-4 py-3 text-right font-mono">{o.commission_pct}%</td>
@@ -167,30 +212,100 @@ export default function OwnerDashboard({ employees, orders, error }:
                 </table>
               </div>
             </div>
+
+            {deleted.length > 0 && (
+              <div className="mt-5">
+                <button onClick={() => setShowDeleted((v) => !v)} className="text-[12.5px] font-semibold text-muted-foreground underline underline-offset-2">
+                  {showDeleted ? "Hide" : "Show"} deleted employees ({deleted.length}) — kept 1 year
+                </button>
+                {showDeleted && (
+                  <div className="mt-3 card-lux rounded-2xl overflow-hidden">
+                    <table className="w-full text-[13px] min-w-[560px]">
+                      <thead><tr className="section-label bg-subtle/60"><Th>Employee</Th><Th>Deleted on</Th><Th>Auto-removed on</Th><Th>Action</Th></tr></thead>
+                      <tbody>
+                        {deleted.map((d) => (
+                          <tr key={d.id} className="border-t border-border">
+                            <td className="px-4 py-3"><b>{d.name}</b><div className="text-[10.5px] text-faint">{d.email}</div></td>
+                            <td className="px-4 py-3">{dt(d.deleted_at)}</td>
+                            <td className="px-4 py-3">{purgeDate(d.deleted_at)}</td>
+                            <td className="px-4 py-3"><button disabled={busy} onClick={() => restoreEmp(d.id)} className="text-[12px] font-semibold text-gold underline underline-offset-2">Restore</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
+
+      {detail && <DetailModal e={detail} onClose={() => setDetail(null)} onDelete={() => deleteEmp(detail.id, detail.name)} onSetLogin={() => setLogin(detail.id, detail.name)} busy={busy} codeCell={codeCell} />}
     </main>
   );
 }
 
-function Header({ role, onLogout }: { role: string; onLogout: () => void }) {
+function DetailModal({ e, onClose, onDelete, onSetLogin, busy, codeCell }:
+  { e: Emp; onClose: () => void; onDelete: () => void; onSetLogin: () => void; busy: boolean; codeCell: (e: Emp) => React.ReactNode }) {
   return (
-    <header className="flex items-center justify-between gap-3 flex-wrap">
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg grid place-items-center text-[#3a2e0c] font-serif font-bold" style={{ background: "linear-gradient(150deg,#E7D6A6,#C6A249 55%,#A9852F)" }}>A</div>
-        <div><div className="font-serif text-[17px] font-bold leading-none">Avloryn <span className="text-[#A9852F]">Labs</span></div><div className="text-[10px] tracking-[0.14em] uppercase text-[#948c79] mt-0.5">Partner Portal</div></div>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#14110B]/45 p-4 py-10 backdrop-blur-[2px]" onClick={onClose}>
+      <div className="w-full max-w-[560px] rounded-3xl bg-card text-foreground shadow-[0_30px_80px_-20px_rgba(20,17,11,0.5)] ring-1 ring-border" onClick={(ev) => ev.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 border-b border-border px-6 py-5">
+          <div>
+            <div className="font-serif text-[21px] font-[600] leading-tight">{e.name}</div>
+            <div className="text-[11.5px] font-bold text-gold mt-0.5">{e.emp_type === "intern" ? `Intern${e.track ? " · " + e.track : ""}` : "Employee"}{e.source ? ` · from ${e.source}` : ""}</div>
+          </div>
+          <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-full bg-card ring-hairline text-muted-foreground hover:text-foreground" aria-label="Close">✕</button>
+        </div>
+
+        <div className="px-6 py-5">
+          <div className="mb-5 rounded-2xl px-4 py-3.5 bg-gold-soft/40 ring-1 ring-[hsl(var(--gold)/0.25)]">
+            <div className="section-label mb-1.5">Code &amp; commission</div>
+            {codeCell(e)}
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <MiniStat k="Earned" v={inr(e.earned)} /><MiniStat k="Pending" v={inr(e.pending)} tone="#946412" /><MiniStat k="Paid" v={inr(e.paid)} tone="#1e7a44" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3 text-[13px]">
+            <Row k="Email" v={e.email} /><Row k="Mobile" v={e.mobile} />
+            <Row k="Date of birth" v={e.dob} /><Row k="Login" v={e.has_password ? "Active ✓" : "Not set"} />
+            <Row k="Address" v={e.address} full />
+            <Row k="ID type" v={e.id_type} /><Row k="ID number" v={e.id_number} />
+            <Row k="Current student" v={e.is_student} /><Row k="College" v={e.college} />
+            <Row k="Student ID" v={e.student_id} /><Row k="Start date" v={dt(e.start_date)} />
+            <Row k="Duration" v={e.duration} />
+          </div>
+
+          <p className="mt-5 text-[11.5px] text-faint">📎 Photo &amp; ID document are in the onboarding email sent to the owner.</p>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-border px-6 py-4">
+          {!e.has_password
+            ? <button disabled={busy} onClick={onSetLogin} className="btn-gold rounded-full text-[12.5px] font-[560] px-4 py-2">Set login password</button>
+            : <span className="text-[12px] text-faint">✓ Can log in</span>}
+          <button disabled={busy} onClick={onDelete} className="text-[12.5px] font-semibold text-[#b3341f] ring-1 ring-[#f3cfc6] rounded-full px-4 py-2 hover:bg-[#fdeeea] transition-colors">Delete employee</button>
+        </div>
       </div>
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] font-bold uppercase tracking-wide text-[#7a5f1c] bg-[#E7D6A6] border border-[#C6A249] px-2.5 py-1 rounded-full">{role}</span>
-        <button onClick={onLogout} className="text-[12.5px] font-semibold text-[#3a352b] border border-[#E2DBCB] rounded-lg px-3 py-1.5 bg-white">Sign out</button>
-      </div>
-    </header>
+    </div>
   );
 }
+
+function Row({ k, v, full }: { k: string; v?: string | null; full?: boolean }) {
+  return (
+    <div className={full ? "sm:col-span-2" : ""}>
+      <div className="section-label">{k}</div>
+      <div className="font-[520] mt-0.5">{v && String(v).trim() ? v : "—"}</div>
+    </div>
+  );
+}
+function MiniStat({ k, v, tone }: { k: string; v: string; tone?: string }) {
+  return <div><div className="text-[10px] uppercase tracking-wide text-muted-foreground">{k}</div><div className="font-mono font-extrabold text-[15px]" style={tone ? { color: tone } : {}}>{v}</div></div>;
+}
 function Stat({ k, v, tone }: { k: string; v: string; tone?: string }) {
-  return <div className="rounded-xl border border-[#E9E3D6] bg-white px-4 py-3.5"><div className="text-[11.5px] text-[#6b6455] mb-1.5">{k}</div><div className="text-[24px] font-extrabold font-mono tracking-tight" style={tone ? { color: tone } : {}}>{v}</div></div>;
+  return <div className="card-lux rounded-xl px-4 py-3.5"><div className="text-[11.5px] text-muted-foreground mb-1.5">{k}</div><div className="text-[24px] font-extrabold font-mono tracking-tight" style={tone ? { color: tone } : {}}>{v}</div></div>;
 }
 function Th({ children, r }: { children: React.ReactNode; r?: boolean }) {
-  return <th className={"font-bold px-4 py-2.5 " + (r ? "text-right" : "text-left")}>{children}</th>;
+  return <th className={"px-4 py-2.5 " + (r ? "text-right" : "text-left")}>{children}</th>;
 }

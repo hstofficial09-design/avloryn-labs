@@ -216,9 +216,9 @@ export async function POST(req: Request) {
     mobile: (dRaw.mobile || "").trim(),
     email: (dRaw.email || "").trim(),
     address: (dRaw.address || "").trim(),
-    role: (dRaw.role === "P&R" ? "P&R" : "M&C") as Role,
+    role: (dRaw.role === "P&R" ? "P&R" : dRaw.role === "HR" ? "HR" : "M&C") as Role,
     startDate: (dRaw.startDate || "").trim(),
-    duration: (dRaw.duration === "6" ? "6" : "3"),
+    duration: (["2", "3", "6"].includes(dRaw.duration) ? dRaw.duration : "3"),
     idType: (dRaw.idType || "").trim(),
     idNumber: (dRaw.idNumber || "").trim(),
     isStudent: !!body.isStudent,
@@ -299,7 +299,10 @@ export async function POST(req: Request) {
     for (const p of jl.paragraphs) nd.para(p, { gap: 8 });
     for (const b of jl.bullets) nd.para("•  " + b, { size: 10.5, gap: 3 });
     nd.y -= 6;
-    nd.para("On successful completion (a minimum of 3 months is required), you will receive an Internship Completion Certificate. An intern who leaves before completing 3 months is not eligible for a certificate or any other benefit. Standout performers will also receive a Letter of Recommendation and first preference for future paid roles.", { gap: 8 });
+    nd.para(d.role === "HR"
+      ? "On successful completion of your internship, you will receive an Internship Completion Certificate. Outstanding performers will also receive a Letter of Recommendation, a LinkedIn recommendation, and first preference for future paid roles."
+      : "On successful completion (a minimum of 3 months is required), you will receive an Internship Completion Certificate. An intern who leaves before completing 3 months is not eligible for a certificate or any other benefit. Standout performers will also receive a Letter of Recommendation and first preference for future paid roles.",
+      { gap: 8 });
     nd.para("This offer is subject to your signed Internship Agreement and NDA (attached).", { gap: 14 });
     nd.para("Warm regards,", { gap: 4 });
     // owner signature (stored image if present) else name
@@ -376,6 +379,15 @@ export async function POST(req: Request) {
           mobile: d.mobile,
           emp_type: regType === "Employee" ? "employee" : "intern",
           track: (ROLE_LABEL[d.role] as string) || d.role || "",
+          dob,
+          address: d.address,
+          id_type: d.idType,
+          id_number: d.idNumber,
+          is_student: d.isStudent ? "Yes" : "No",
+          college: d.collegeName,
+          student_id: d.studentId,
+          start_date: d.startDate,
+          duration: `${d.duration} months`,
         });
       }
     } catch (e) {

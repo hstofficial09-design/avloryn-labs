@@ -147,9 +147,9 @@ export default function InternForm() {
     }
   }
 
-  const inputCls = "w-full rounded-lg border border-black/10 bg-white text-[#14110B] [color-scheme:light] px-3 py-2 text-sm outline-none focus:border-black/30 transition";
+  const inputCls = "w-full rounded-xl neu-inset text-foreground placeholder:text-faint px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-gold/25 transition-shadow";
   const labelCls = "block text-[13px] font-medium mb-1.5 text-foreground/80";
-  const fileCls = "w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-black/5 file:px-3 file:py-1.5 file:text-sm file:font-medium";
+  const fileCls = "w-full text-sm text-muted-foreground file:mr-3 file:rounded-full file:border-0 file:bg-gold-soft/60 file:px-3.5 file:py-1.5 file:text-sm file:font-[560] file:text-[#3a2e0c]";
 
   if (status === "ok") {
     return (
@@ -167,8 +167,8 @@ export default function InternForm() {
       <div className="mb-8 flex items-center gap-3">
         <LogoMark size={30} />
         <div>
-          <div className="text-[1.05rem] font-semibold leading-none">Avloryn Labs</div>
-          <div className="text-xs text-muted-foreground mt-1">Onboarding</div>
+          <div className="font-serif text-[1.15rem] font-[600] leading-none">Avloryn <span className="text-gold">Labs</span></div>
+          <div className="section-label mt-1.5">Onboarding</div>
         </div>
       </div>
       <p className="text-sm text-muted-foreground mb-8 leading-relaxed">
@@ -181,7 +181,7 @@ export default function InternForm() {
         <input type="text" name="company" tabIndex={-1} autoComplete="off" className="hidden" onChange={() => {}} />
 
         {/* Registration type */}
-        <div className="rounded-lg border border-black/10 bg-white/50 p-4">
+        <div className="card-lux rounded-2xl p-5">
           <div className="text-[13px] font-medium mb-2.5 text-foreground/80">I am registering as</div>
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -247,26 +247,28 @@ export default function InternForm() {
         <Section title="Internship">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Field label="Track *">
-              <select className={inputCls} value={f.role} onChange={(e) => up("role", e.target.value as Role)}>
+              <select className={inputCls} value={f.role} onChange={(e) => { const r = e.target.value as Role; up("role", r); if (r === "HR") up("duration", "2"); }}>
                 <option value="M&C">{ROLE_LABEL["M&C"]}</option>
                 <option value="P&R">{ROLE_LABEL["P&R"]}</option>
+                <option value="HR">HR Intern</option>
               </select>
             </Field>
             <Field label="Start date *"><input type="date" className={inputCls} value={f.startDate} onChange={(e) => up("startDate", e.target.value)} /></Field>
             <Field label="Duration *">
               <select className={inputCls} value={f.duration} onChange={(e) => up("duration", e.target.value)}>
+                <option value="2">2 months</option>
                 <option value="3">3 months</option>
                 <option value="6">6 months</option>
               </select>
             </Field>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-2">Your start date is prefilled to today — change it if you&apos;re joining later. Please note: a minimum of 3 months is required to be eligible for the completion certificate.</p>
+          <p className="text-[11px] text-muted-foreground mt-2">Your start date is prefilled to today — change it if you&apos;re joining later. {f.role === "HR" ? "On successful completion of your internship you'll receive an Internship Completion Certificate." : "Please note: a minimum of 3 months is required to be eligible for the completion certificate."}</p>
         </Section>
 
         {/* Agreements */}
         <Section title="Agreements">
           <p className="text-xs text-muted-foreground mb-2">Please read the Internship Agreement and NDA below, then sign once — your signature applies to both.</p>
-          <div className="max-h-64 overflow-y-auto rounded-lg border border-black/10 bg-white/50 p-4 text-[12px] leading-relaxed text-foreground/80 space-y-3">
+          <div className="max-h-64 overflow-y-auto rounded-xl neu-inset p-4 text-[12px] leading-relaxed text-foreground/80 space-y-3">
             <AgreementText title={ia.title} intro={ia.intro} clauses={ia.clauses} />
             <AgreementText title={nda.title} intro={nda.intro} clauses={nda.clauses} />
           </div>
@@ -276,7 +278,7 @@ export default function InternForm() {
               <label className={labelCls + " mb-0"}>Signature *</label>
               <button type="button" onClick={clearSig} className="text-xs text-muted-foreground underline">Clear</button>
             </div>
-            <canvas ref={canvasRef} width={520} height={140} className="w-full rounded-lg border border-black/15 bg-white touch-none cursor-crosshair" />
+            <canvas ref={canvasRef} width={520} height={140} className="w-full rounded-xl ring-1 ring-border bg-white touch-none cursor-crosshair" />
             <p className="text-[11px] text-muted-foreground mt-1">Draw your signature above (mouse / finger).</p>
           </div>
 
@@ -287,7 +289,7 @@ export default function InternForm() {
         </Section>
 
         {err && <p className="text-sm text-red-600">{err}</p>}
-        <button type="submit" disabled={status === "busy"} className="w-full rounded-lg bg-foreground px-4 py-3 text-sm font-medium text-background transition disabled:opacity-60">
+        <button type="submit" disabled={status === "busy"} className="w-full btn-gold rounded-full px-4 py-3.5 text-sm font-[560] transition disabled:opacity-60">
           {status === "busy" ? "Submitting…" : "Submit & Sign"}
         </button>
         <p className="text-[11px] text-muted-foreground text-center">On submit, you&apos;ll receive your Joining Letter and signed agreements by email.</p>
@@ -299,7 +301,7 @@ export default function InternForm() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="text-sm font-semibold mb-3 pb-2 border-b border-black/10">{title}</h2>
+      <h2 className="font-serif text-[15px] font-[600] mb-3 pb-2 border-b border-border">{title}</h2>
       <div className="space-y-4">{children}</div>
     </section>
   );
