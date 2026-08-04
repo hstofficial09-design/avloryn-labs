@@ -34,6 +34,8 @@ export const POST_QUERY = defineQuery(`
 
 export const SLUGS_QUERY = defineQuery(`
   *[_type == "post" && defined(slug.current) && !(_id in path("drafts.**"))]{
-    "slug": slug.current
+    "slug": slug.current,
+    _updatedAt,
+    publishedAt
   }
 `);
