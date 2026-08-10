@@ -97,10 +97,10 @@ export function Contact() {
 
           <motion.a
             variants={fadeUp}
-            href="mailto:hardev@avloryn.com"
+            href="mailto:care@avloryn.com"
             className="mt-8 inline-block text-[1.05rem] font-[480] text-foreground underline decoration-border-strong decoration-1 underline-offset-[6px] transition-colors hover:decoration-foreground"
           >
-            hardev@avloryn.com
+            care@avloryn.com
           </motion.a>
         </motion.div>
 

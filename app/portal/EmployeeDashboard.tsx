@@ -14,7 +14,7 @@ const inr = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
 const GOLD = "btn-gold rounded-full font-[560]";
 
-export default function EmployeeDashboard({ name, data, error }: { name: string; data: Data | null; error: string | null }) {
+export default function EmployeeDashboard({ name, data, error, commissionRole }: { name: string; data: Data | null; error: string | null; commissionRole?: boolean }) {
   const router = useRouter();
   async function logout() { await fetch("/api/portal/logout", { method: "POST" }); router.push("/portal/login"); }
 
@@ -23,6 +23,9 @@ export default function EmployeeDashboard({ name, data, error }: { name: string;
   const codes = data?.summary?.codes || [];
   const primaryCode = codes[0]?.code || data?.orders?.find((o) => o.code)?.code || null;
   const commissionPct = codes[0]?.commission_pct ?? emp?.commission_pct ?? 10;
+  // Only referral roles (a code, or a commission % set by the owner) get the commission view.
+  // Internal roles like HR see a clean role + Scheduling view instead.
+  const isCommissionRole = commissionRole ?? (codes.length > 0 || !!primaryCode || (emp?.commission_pct ?? 0) > 0);
 
   const [showPw, setShowPw] = useState(false);
   const [cur, setCur] = useState("");
@@ -59,6 +62,7 @@ export default function EmployeeDashboard({ name, data, error }: { name: string;
             <div><div className="font-serif text-[17px] font-[600] leading-none">Avloryn <span className="text-gold">Labs</span></div><div className="section-label mt-1">Partner Portal</div></div>
           </div>
           <div className="flex items-center gap-2">
+            <a href="/portal" className={GHOST + " text-[12.5px] px-3.5 py-1.5"}>← Home</a>
             <button onClick={() => setShowPw((v) => !v)} className={GHOST + " text-[12.5px] px-3.5 py-1.5"}>Change password</button>
             <button onClick={logout} className={GHOST + " text-[12.5px] px-3.5 py-1.5"}>Sign out</button>
           </div>
@@ -76,14 +80,26 @@ export default function EmployeeDashboard({ name, data, error }: { name: string;
         )}
 
         <h1 className="font-serif text-[30px] font-[600] tracking-[-0.01em] mt-6 mb-1">Hi, {emp?.name || name} 👋</h1>
-        <p className="text-[13.5px] text-muted-foreground mb-6">Commission from every sale made with your code — shown per product. Payouts go to your bank.</p>
+        <p className="text-[13.5px] text-muted-foreground mb-6">{isCommissionRole ? "Commission from every sale made with your code — shown per product. Payouts go to your bank." : "Your role and scheduling, all in one place."}</p>
 
         {error ? (
           <div className="rounded-xl border border-[#eeddb0] bg-[#fdf5e3] text-[#946412] text-[13px] px-4 py-3">⚠ {error}</div>
         ) : !emp ? (
           <div className="card-lux rounded-xl text-muted-foreground text-[13px] px-4 py-4">
-            No commissions recorded yet. As soon as a sale is made with your code, it will appear here.
+            We couldn&rsquo;t load your profile right now. Please refresh, or contact the owner.
           </div>
+        ) : !isCommissionRole ? (
+          <>
+            <div className="flex flex-wrap items-center gap-6 card-lux rounded-2xl px-5 py-4 mb-5">
+              <div><div className="section-label">Role</div><div className="font-[560] mt-1">{emp.emp_type === "intern" ? `Intern${emp.track ? " · " + emp.track : ""}` : "Employee"}</div></div>
+              <div><div className="section-label">Company</div><div className="font-[560] mt-1">Avloryn Labs</div></div>
+            </div>
+            <div className="card-lux rounded-2xl px-5 py-5">
+              <div className="font-serif text-[15px] font-[600] mb-1.5">Your work</div>
+              <p className="text-[13px] text-muted-foreground mb-4">Your role doesn&rsquo;t use a referral code. Manage meetings and your calendar in Scheduling.</p>
+              <a href="/meet/admin" className={GOLD + " text-[13px] px-4 py-2 inline-block"}>Open Scheduling →</a>
+            </div>
+          </>
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-6 card-lux rounded-2xl px-5 py-4 mb-5">

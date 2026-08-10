@@ -15,11 +15,14 @@ import {
   ndaAgreement,
   joiningLetter,
   ROLE_LABEL,
+  roleLabel,
+  isHrRole,
+  parseTermsToContent,
   DOC_META,
   type InternData,
-  type Role,
   type Clause,
 } from "@/lib/intern-docs";
+import { listRoles, getFormConfig } from "@/lib/portal-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -216,7 +219,7 @@ export async function POST(req: Request) {
     mobile: (dRaw.mobile || "").trim(),
     email: (dRaw.email || "").trim(),
     address: (dRaw.address || "").trim(),
-    role: (dRaw.role === "P&R" ? "P&R" : dRaw.role === "HR" ? "HR" : "M&C") as Role,
+    role: (dRaw.role || "M&C").trim(), // dynamic — any role label/code from the form
     startDate: (dRaw.startDate || "").trim(),
     duration: (["2", "3", "6"].includes(dRaw.duration) ? dRaw.duration : "3"),
     idType: (dRaw.idType || "").trim(),
@@ -231,14 +234,21 @@ export async function POST(req: Request) {
   const consent = !!body.consent;
   const regType = dRaw.regType === "employee" ? "Employee" : "Intern";
 
-  if (!d.fullName || !d.mobile || !EMAIL_RE.test(d.email) || !d.address || !d.idType || !signature || !consent) {
+  // Which optional fields are required is owner-controlled (default: required).
+  let fld: Record<string, { visible?: boolean; required?: boolean }> = {};
+  try { fld = ((await getFormConfig())?.fields || {}) as any; } catch { /* default required */ }
+  const need = (k: string) => fld[k]?.visible !== false && fld[k]?.required !== false;
+  const custom = Array.isArray(body.custom) ? (body.custom as { q: string; a: string }[]).filter((x) => x && x.q) : [];
+
+  if (!d.fullName || !EMAIL_RE.test(d.email) || !signature || !consent
+    || (need("mobile") && !d.mobile) || (need("address") && !d.address) || (need("govId") && !d.idType)) {
     return NextResponse.json({ ok: false, error: "Please complete all required fields, sign, and accept the terms." }, { status: 400 });
   }
 
   // env
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
   const FROM = process.env.CONTACT_FROM_EMAIL || "Avloryn Labs <onboarding@resend.dev>";
-  const OWNER = process.env.INTERN_TO_EMAIL || process.env.CONTACT_TO_EMAIL || "hardev@avloryn.com";
+  const OWNER = process.env.INTERN_TO_EMAIL || process.env.CONTACT_TO_EMAIL || "care@avloryn.com";
   if (!RESEND_API_KEY) {
     return NextResponse.json({ ok: false, error: "Email is not configured on the server." }, { status: 500 });
   }
@@ -258,7 +268,13 @@ export async function POST(req: Request) {
     };
 
     const files = (body.files ?? {}) as Record<string, { kind: string; b64: string }>;
-    const ia = internshipAgreement(d);
+    // Use the owner-edited Terms for this role if set, else the standard agreement.
+    let roleCfg: any = null;
+    try { const rs = await listRoles(); roleCfg = rs.find((r) => r.track === d.role || r.track === roleLabel(d.role)) || null; } catch { /* fall back to default */ }
+    if (roleCfg?.paid) { d.paid = true; d.salary = roleCfg.salary; d.salaryPeriod = roleCfg.salary_period; }
+    const ia = (roleCfg?.terms && String(roleCfg.terms).trim())
+      ? parseTermsToContent(String(roleCfg.terms), d)
+      : internshipAgreement(d);
     const nda = ndaAgreement(d);
 
     // ===== OWNER PDF: cover + uploads + signed agreements =====
@@ -270,7 +286,7 @@ export async function POST(req: Request) {
     od.kv("Registering as", regType);
     od.kv("Name", d.fullName);
     od.kv("Date of birth", dob);
-    od.kv("Role", `${ROLE_LABEL[d.role]} Intern`);
+    od.kv("Role", `${roleLabel(d.role)} Intern`);
     od.kv("Mobile", d.mobile);
     od.kv("Email", d.email);
     od.kv("Address", d.address);
@@ -280,6 +296,7 @@ export async function POST(req: Request) {
       : "No");
     od.kv("Start date", d.startDate);
     od.kv("Duration", `${d.duration} months`);
+    for (const c of custom) od.kv(c.q, c.a);
     od.kv("Submitted", d.signedAt);
     await embedImageOrPdf(o.pdf, files.photo, od, "Photo");
     await embedImageOrPdf(o.pdf, files.idDoc, od, `Photo ID (${d.idType})`);
@@ -299,7 +316,7 @@ export async function POST(req: Request) {
     for (const p of jl.paragraphs) nd.para(p, { gap: 8 });
     for (const b of jl.bullets) nd.para("•  " + b, { size: 10.5, gap: 3 });
     nd.y -= 6;
-    nd.para(d.role === "HR"
+    nd.para(isHrRole(d.role)
       ? "On successful completion of your internship, you will receive an Internship Completion Certificate. Outstanding performers will also receive a Letter of Recommendation, a LinkedIn recommendation, and first preference for future paid roles."
       : "On successful completion (a minimum of 3 months is required), you will receive an Internship Completion Certificate. An intern who leaves before completing 3 months is not eligible for a certificate or any other benefit. Standout performers will also receive a Letter of Recommendation and first preference for future paid roles.",
       { gap: 8 });
@@ -317,7 +334,7 @@ export async function POST(req: Request) {
       nd.y -= h + 4;
     } catch {}
     nd.para(`${DOC_META.FOUNDER}`, { font: n.fonts.bold, size: 10.5, gap: 1 });
-    nd.para(`Founder, ${DOC_META.COMPANY}  ·  hardev@avloryn.com`, { size: 9.5, color: MUTED });
+    nd.para(`Founder, ${DOC_META.COMPANY}  ·  care@avloryn.com`, { size: 9.5, color: MUTED });
     addAgreement(nd, ia, signImgN, d);
     addAgreement(nd, nda, signImgN, d);
     const internBytes = await n.pdf.save();
@@ -330,7 +347,7 @@ export async function POST(req: Request) {
       from: FROM,
       to: OWNER,
       subject: `${firstName} onboarding form`,
-      text: `${d.fullName} (${ROLE_LABEL[d.role]}) has completed onboarding.\nMobile: ${d.mobile}\nEmail: ${d.email}\nSubmitted: ${d.signedAt}\n\nAttached: (1) full record — details + ID + signed agreements, (2) the Joining Letter sent to the intern.`,
+      text: `${d.fullName} (${roleLabel(d.role)}) has completed onboarding.\nMobile: ${d.mobile}\nEmail: ${d.email}\nSubmitted: ${d.signedAt}\n\nAttached: (1) full record — details + ID + signed agreements, (2) the Joining Letter sent to the intern.`,
       attachments: [
         { filename: `Onboarding_${safe}.pdf`, content: Buffer.from(ownerBytes).toString("base64") },
         { filename: `JoiningLetter_${safe}.pdf`, content: Buffer.from(internBytes).toString("base64") },
@@ -378,7 +395,7 @@ export async function POST(req: Request) {
           email: d.email,
           mobile: d.mobile,
           emp_type: regType === "Employee" ? "employee" : "intern",
-          track: (ROLE_LABEL[d.role] as string) || d.role || "",
+          track: roleLabel(d.role) || "",
           dob,
           address: d.address,
           id_type: d.idType,

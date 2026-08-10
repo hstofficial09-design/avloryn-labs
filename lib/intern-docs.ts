@@ -9,13 +9,16 @@ export const ROLE_LABEL: Record<Role, string> = {
   "P&R": "Product & Research",
   "HR": "Human Resources",
 };
+// Roles are dynamic now — accept any label/code. These normalise it.
+export const roleLabel = (r: string) => ROLE_LABEL[r as Role] || r;
+export const isHrRole = (r: string) => r === "HR" || r === "Human Resources";
 
 export type InternData = {
   fullName: string;
   mobile: string;
   email: string;
   address: string;
-  role: Role;
+  role: string; // role label or code (dynamic)
   startDate: string; // display string e.g. "01 Aug 2026"
   duration: string; // "2" | "3" | "6"
   idType: string; // PAN / College ID / DL / Voter ID / Passport
@@ -25,6 +28,9 @@ export type InternData = {
   studentId?: string;
   signedAt: string; // ISO/display timestamp
   place?: string;
+  paid?: boolean;
+  salary?: number | null;
+  salaryPeriod?: string | null; // 'monthly' | 'yearly'
 };
 
 const COMPANY = "Avloryn Labs LLP";
@@ -39,8 +45,8 @@ export function internshipAgreement(d: InternData): {
   intro: string;
   clauses: Clause[];
 } {
-  const role = ROLE_LABEL[d.role];
-  const isHR = d.role === "HR";
+  const role = roleLabel(d.role);
+  const isHR = isHrRole(d.role);
   return {
     title: "INTERNSHIP AGREEMENT",
     intro: `This Internship Agreement is made between ${COMPANY} (the "Company") and ${d.fullName} (the "Intern").`,
@@ -51,9 +57,11 @@ export function internshipAgreement(d: InternData): {
       },
       {
         h: "2. Nature of Internship",
-        t: isHR
-          ? `This is an unpaid internship — no stipend or salary is payable, and no employer–employee relationship is created. It is a learning-first internship focused on hands-on experience in recruitment, talent acquisition, and HR operations. Completion of this internship is not a guarantee of future employment.`
-          : `This is an unpaid internship — no fixed stipend or salary is payable, and no employer–employee relationship is created. The Intern's earning opportunity is through the Company's Referral Program (Clause 7). Completion of this internship is not a guarantee of future employment.`,
+        t: (d.paid && d.salary)
+          ? `This is a paid role. The Company will pay ₹${Number(d.salary).toLocaleString("en-IN")} per ${d.salaryPeriod === "yearly" ? "year" : "month"} for the agreed work, subject to the Company's policies. Completion is not a guarantee of continued or future engagement.`
+          : isHR
+            ? `This is an unpaid internship — no stipend or salary is payable, and no employer–employee relationship is created. It is a learning-first internship focused on hands-on experience in recruitment, talent acquisition, and HR operations. Completion of this internship is not a guarantee of future employment.`
+            : `This is an unpaid internship — no fixed stipend or salary is payable, and no employer–employee relationship is created. The Intern's earning opportunity is through the Company's Referral Program (Clause 7). Completion of this internship is not a guarantee of future employment.`,
       },
       {
         h: "3. Responsibilities",
@@ -114,7 +122,7 @@ export function ndaAgreement(d: InternData): {
   intro: string;
   clauses: Clause[];
 } {
-  const isHR = d.role === "HR";
+  const isHR = isHrRole(d.role);
   return {
     title: "NON-DISCLOSURE AGREEMENT (NDA)",
     intro: `This Non-Disclosure Agreement is made between ${COMPANY} (the "Company") and ${d.fullName} (the "Intern").`,
@@ -160,8 +168,8 @@ export function joiningLetter(d: InternData): {
   paragraphs: string[];
   bullets: string[];
 } {
-  const role = ROLE_LABEL[d.role];
-  const isHR = d.role === "HR";
+  const role = roleLabel(d.role);
+  const isHR = isHrRole(d.role);
   return {
     title: "Internship Joining Letter",
     paragraphs: [
@@ -185,3 +193,52 @@ export function joiningLetter(d: InternData): {
 }
 
 export const DOC_META = { COMPANY, FOUNDER };
+
+// ── Read-only text of the CURRENT NDA + terms, for the Onboarding Form editor ──
+function sampleData(roleCode: Role): InternData {
+  return { fullName: "[Full Name]", mobile: "[Mobile]", email: "[Email]", address: "[Address]", role: roleCode, startDate: "[Start Date]", duration: "[Duration]", idType: "[ID]", isStudent: false, signedAt: "[Date]" };
+}
+function toText(doc: { title: string; intro: string; clauses: Clause[] }): string {
+  return `${doc.title}\n\n${doc.intro}\n\n` + doc.clauses.map((c) => (c.h ? `${c.h}\n` : "") + c.t).join("\n\n");
+}
+/** The current Internship-Agreement / terms text for a role (bracketed placeholders auto-fill per hire). */
+export function defaultTermsText(roleLabel: string, isHR: boolean, paid = false, salary: number | null = null, salaryPeriod: string | null = null): string {
+  const code: Role = isHR ? "HR" : "M&C";
+  const s = sampleData(code);
+  s.paid = paid; s.salary = salary; s.salaryPeriod = salaryPeriod;
+  let t = toText(internshipAgreement(s));
+  if (!isHR && roleLabel && roleLabel !== ROLE_LABEL["M&C"]) t = t.split(ROLE_LABEL["M&C"]).join(roleLabel);
+  return t;
+}
+/** The current standard NDA text (same for every role). */
+export function standardNdaText(): string {
+  return toText(ndaAgreement(sampleData("M&C")));
+}
+/** Fill [bracketed] placeholders in an owner-edited terms text with the hire's data. */
+export function fillPlaceholders(text: string, d: InternData): string {
+  return text
+    .split("[Full Name]").join(d.fullName)
+    .split("[Role]").join(roleLabel(d.role))
+    .split("[Duration]").join(d.duration)
+    .split("[Start Date]").join(d.startDate)
+    .split("[Email]").join(d.email)
+    .split("[Mobile]").join(d.mobile)
+    .split("[Address]").join(d.address)
+    .split("[ID]").join(d.idType)
+    .split("[Date]").join(d.signedAt)
+    .split("[Company]").join(COMPANY);
+}
+/** Parse an owner-edited terms text back into title + intro + clauses for the PDF. */
+export function parseTermsToContent(text: string, d: InternData): { title: string; intro: string; clauses: Clause[] } {
+  const filled = fillPlaceholders(text, d).replace(/\r/g, "").trim();
+  const blocks = filled.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+  const title = blocks.shift() || "INTERNSHIP AGREEMENT";
+  let intro = "";
+  if (blocks.length && !/^\d+[.)]\s/.test(blocks[0])) intro = blocks.shift()!;
+  const clauses: Clause[] = blocks.map((b) => {
+    const nl = b.indexOf("\n");
+    if (nl > -1 && /^\d+[.)]\s/.test(b)) return { h: b.slice(0, nl).trim(), t: b.slice(nl + 1).trim() };
+    return { t: b };
+  });
+  return { title, intro, clauses };
+}

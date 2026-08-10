@@ -28,8 +28,11 @@ export default function PortalLogin() {
         body: JSON.stringify({ email, password: pw }),
       });
       const d = await r.json().catch(() => ({}));
-      if (r.ok && d.success) router.push("/portal");
-      else setErr(d.error || "Login failed");
+      if (r.ok && d.success) {
+        // Honour a same-origin ?next (e.g. /meet/admin) so gated pages return you where you asked.
+        const next = new URLSearchParams(window.location.search).get("next");
+        router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : "/portal");
+      } else setErr(d.error || "Login failed");
     } catch {
       setErr("Network error — try again");
     } finally {
@@ -106,7 +109,7 @@ export default function PortalLogin() {
             </form>
           )}
         </div>
-        <p className="text-center text-[12px] text-faint mt-5">Access issue? hardev@avloryn.com</p>
+        <p className="text-center text-[12px] text-faint mt-5">Access issue? care@avloryn.com</p>
       </div>
     </main>
   );

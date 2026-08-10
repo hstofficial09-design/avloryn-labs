@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { LogoMark } from "@/components/ui/logo";
 
@@ -27,9 +27,12 @@ function purgeDate(iso: string) {
   return isNaN(d.getTime()) ? "—" : d.toISOString().slice(0, 10);
 }
 
-export default function OwnerDashboard({ employees, orders, deleted, names, error }:
-  { employees: Emp[]; orders: Order[]; deleted: Deleted[]; names: Record<string, string>; error: string | null }) {
+export default function OwnerDashboard({ employees, orders, deleted, names, trackMap, error }:
+  { employees: Emp[]; orders: Order[]; deleted: Deleted[]; names: Record<string, string>; trackMap: Record<string, boolean>; error: string | null }) {
   const router = useRouter();
+  const isComm = (track: string | null) => (track ? trackMap[track] !== false : true);
+  const commEmps = employees.filter((e) => isComm(e.track));
+  const nonCommEmps = employees.filter((e) => !isComm(e.track));
   const [busy, setBusy] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -98,6 +101,7 @@ export default function OwnerDashboard({ employees, orders, deleted, names, erro
             <div><div className="font-serif text-[17px] font-[600] leading-none">Avloryn <span className="text-gold">Labs</span></div><div className="section-label mt-1">Partner Portal</div></div>
           </div>
           <div className="flex items-center gap-3">
+            <a href="/portal" className={GHOST + " text-[12.5px] px-3.5 py-1.5"}>← Home</a>
             <span className="section-label !text-gold bg-gold-soft/60 ring-hairline px-2.5 py-1 rounded-full">Owner</span>
             <button onClick={logout} className={GHOST + " text-[12.5px] px-3.5 py-1.5"}>Sign out</button>
           </div>
@@ -157,8 +161,8 @@ export default function OwnerDashboard({ employees, orders, deleted, names, erro
                     <Th>Employee</Th><Th>Code / Commission</Th><Th r>Orders</Th><Th r>Sales</Th><Th r>Earned</Th><Th r>Pending</Th><Th>Payout</Th>
                   </tr></thead>
                   <tbody>
-                    {employees.length === 0 && <tr><td colSpan={7} className="text-center text-faint py-6">No employees yet — add one, or they arrive from the onboarding form.</td></tr>}
-                    {employees.map((e) => (
+                    {commEmps.length === 0 && <tr><td colSpan={7} className="text-center text-faint py-6">No commission-based employees yet.</td></tr>}
+                    {commEmps.map((e) => (
                       <tr key={e.id} className="border-t border-border">
                         <td className="px-4 py-3">
                           <button onClick={() => setDetail(e)} className="font-[600] text-left text-foreground hover:text-gold transition-colors">{e.name}</button>
@@ -183,6 +187,26 @@ export default function OwnerDashboard({ employees, orders, deleted, names, erro
                 </table>
               </div>
             </div>
+
+            {nonCommEmps.length > 0 && (
+              <div className="card-lux rounded-2xl overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-border"><b className="font-serif text-[15px] font-[600]">Team (no commission)</b> <span className="text-[11.5px] text-faint">roles without the commission model (e.g. HR)</span></div>
+                <div className="overflow-x-auto"><table className="w-full text-[13px] min-w-[520px]">
+                  <thead><tr className="section-label bg-subtle/60"><Th>Employee</Th><Th>Role</Th><Th>Login</Th></tr></thead>
+                  <tbody>
+                    {nonCommEmps.map((e) => (
+                      <tr key={e.id} className="border-t border-border">
+                        <td className="px-4 py-3"><button onClick={() => setDetail(e)} className="font-[600] text-left text-foreground hover:text-gold transition-colors">{e.name}</button></td>
+                        <td className="px-4 py-3">{e.emp_type === "intern" ? `Intern${e.track ? " · " + e.track : ""}` : "Employee"}</td>
+                        <td className="px-4 py-3">{!e.has_password ? <button disabled={busy} onClick={() => setLogin(e.id, e.name)} className="text-[11px] font-semibold text-gold underline underline-offset-2">Set password →</button> : <span className="text-[11px] text-faint">✓ can log in</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table></div>
+              </div>
+            )}
+
+            <RolesCard />
 
             <div className="card-lux rounded-2xl overflow-hidden">
               <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
@@ -308,4 +332,43 @@ function Stat({ k, v, tone }: { k: string; v: string; tone?: string }) {
 }
 function Th({ children, r }: { children: React.ReactNode; r?: boolean }) {
   return <th className={"px-4 py-2.5 " + (r ? "text-right" : "text-left")}>{children}</th>;
+}
+
+function RolesCard() {
+  const [tracks, setTracks] = useState<{ track: string; commission_enabled: boolean }[]>([]);
+  const [newRole, setNewRole] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = () => fetch("/api/portal/track-settings").then((r) => r.json()).then((d) => setTracks(d.tracks || [])).catch(() => {});
+  useEffect(() => { load(); }, []);
+  async function toggle(track: string, enabled: boolean) {
+    setBusy(true);
+    try { await fetch("/api/portal/track-settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ track, enabled }) }); await load(); } finally { setBusy(false); }
+  }
+  async function addRole(e: React.FormEvent) {
+    e.preventDefault(); if (!newRole.trim()) return; setBusy(true);
+    try { await fetch("/api/portal/track-settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ track: newRole.trim(), enabled: true }) }); setNewRole(""); await load(); } finally { setBusy(false); }
+  }
+  return (
+    <div className="card-lux rounded-2xl overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-border"><b className="font-serif text-[15px] font-[600]">Roles &amp; commission</b> <span className="text-[11.5px] text-faint">which roles are on the commission model</span></div>
+      <div className="p-5">
+        <div className="grid gap-2 mb-4">
+          {tracks.length === 0 && <span className="text-[12.5px] text-faint">No roles yet — they appear as you add employees, or add one below.</span>}
+          {tracks.map((t) => (
+            <div key={t.track} className="flex items-center justify-between neu-inset rounded-xl px-3.5 py-2.5">
+              <span className="text-[13px] font-[560]">{t.track}</span>
+              <button disabled={busy} onClick={() => toggle(t.track, !t.commission_enabled)} className={"rounded-full px-3 py-1 text-[11.5px] font-[600] " + (t.commission_enabled ? "btn-gold" : "bg-card ring-hairline text-muted-foreground")}>
+                {t.commission_enabled ? "Commission ON" : "No commission"}
+              </button>
+            </div>
+          ))}
+        </div>
+        <form onSubmit={addRole} className="flex items-center gap-2">
+          <input value={newRole} onChange={(e) => setNewRole(e.target.value)} placeholder="Add a role (e.g. Finance)" className="flex-1 text-[13px] neu-inset rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-gold/25" />
+          <button type="submit" disabled={busy} className={GOLD + " text-[12.5px] px-4 py-2"}>Add role</button>
+        </form>
+        <p className="text-[11px] text-faint mt-2.5">Turn a role OFF and its employees move to “Team (no commission)” and lose the referral-code section.</p>
+      </div>
+    </div>
+  );
 }

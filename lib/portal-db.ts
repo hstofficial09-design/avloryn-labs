@@ -47,6 +47,27 @@ async function ensureSchema(c: PoolClient) {
   // password reset (forgot-password flow)
   await add("reset_token");
   await add("reset_expires");
+  // per-role commission model (owner toggles which tracks are commission-based)
+  await c.query(`CREATE TABLE IF NOT EXISTS track_settings (
+    track TEXT PRIMARY KEY, commission_enabled BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT now())`);
+  // role config for the onboarding form + legal docs
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS paid BOOLEAN NOT NULL DEFAULT FALSE`);
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS salary INT`);
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS salary_period TEXT`);          // 'monthly' | 'yearly'
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS scope TEXT`);                  // responsibilities clause override
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS terms TEXT`);                  // per-role Terms & Conditions (editable)
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS sensitive BOOLEAN NOT NULL DEFAULT FALSE`);
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS default_emp_type TEXT NOT NULL DEFAULT 'intern'`);
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE`);
+  // HR is non-commission + handles sensitive data, by default
+  await c.query(`INSERT INTO track_settings (track, commission_enabled, sensitive) VALUES ('Human Resources', FALSE, TRUE) ON CONFLICT (track) DO NOTHING`);
+  // onboarding form field config + editable legal text (single JSON rows)
+  await c.query(`CREATE TABLE IF NOT EXISTS form_config (id INT PRIMARY KEY DEFAULT 1, config JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ)`);
+  await c.query(`CREATE TABLE IF NOT EXISTS legal_config (id INT PRIMARY KEY DEFAULT 1, config JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ)`);
+  // owner's own personal profile (single row)
+  await c.query(`CREATE TABLE IF NOT EXISTS company_profile (
+    id INT PRIMARY KEY DEFAULT 1, full_name TEXT, email TEXT, mobile TEXT, dob TEXT, address TEXT, updated_at TIMESTAMPTZ)`);
+  await c.query(`ALTER TABLE company_profile ADD COLUMN IF NOT EXISTS start_date TEXT`);
   schemaReady = true;
 }
 
@@ -305,4 +326,112 @@ function roundSummary(r: any): EmployeeSummary {
     pending: Math.round(+r.pending * 100) / 100,
     paid: Math.round(+r.paid * 100) / 100,
   };
+}
+
+// ── Role / track commission settings ─────────────────────────────────────────
+export async function listTrackSettings(): Promise<{ track: string; commission_enabled: boolean }[]> {
+  return withClient(async (c) => {
+    const r = await c.query(`
+      SELECT t.track, COALESCE(ts.commission_enabled, TRUE) AS commission_enabled
+      FROM (SELECT DISTINCT track FROM employees WHERE track IS NOT NULL AND track<>'' AND deleted_at IS NULL
+            UNION SELECT track FROM track_settings WHERE COALESCE(archived,FALSE)=FALSE) t
+      LEFT JOIN track_settings ts ON ts.track = t.track
+      WHERE COALESCE(ts.archived, FALSE) = FALSE
+      ORDER BY t.track`);
+    return r.rows.map((x: any) => ({ track: x.track, commission_enabled: x.commission_enabled !== false }));
+  });
+}
+
+// ── Full role config (onboarding form + legal) ───────────────────────────────
+export type RoleConfig = {
+  track: string; commission_enabled: boolean; paid: boolean; salary: number | null;
+  salary_period: string | null; scope: string | null; terms: string | null; sensitive: boolean; default_emp_type: string;
+};
+export async function listRoles(): Promise<RoleConfig[]> {
+  return withClient(async (c) => {
+    const r = await c.query(`
+      SELECT t.track, COALESCE(ts.commission_enabled,TRUE) commission_enabled, COALESCE(ts.paid,FALSE) paid,
+             ts.salary, ts.salary_period, ts.scope, ts.terms, COALESCE(ts.sensitive,FALSE) sensitive,
+             COALESCE(ts.default_emp_type,'intern') default_emp_type
+      FROM (SELECT DISTINCT track FROM employees WHERE track IS NOT NULL AND track<>'' AND deleted_at IS NULL
+            UNION SELECT track FROM track_settings WHERE COALESCE(archived,FALSE)=FALSE) t
+      LEFT JOIN track_settings ts ON ts.track=t.track
+      WHERE COALESCE(ts.archived,FALSE)=FALSE
+      ORDER BY t.track`);
+    return r.rows.map((x: any) => ({
+      track: x.track, commission_enabled: x.commission_enabled !== false, paid: x.paid === true,
+      salary: x.salary != null ? +x.salary : null, salary_period: x.salary_period || null,
+      scope: x.scope || null, terms: x.terms || null, sensitive: x.sensitive === true, default_emp_type: x.default_emp_type || "intern",
+    }));
+  });
+}
+export async function upsertRole(f: RoleConfig) {
+  return withClient((c) => c.query(
+    `INSERT INTO track_settings (track, commission_enabled, paid, salary, salary_period, scope, terms, sensitive, default_emp_type)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     ON CONFLICT (track) DO UPDATE SET commission_enabled=$2, paid=$3, salary=$4, salary_period=$5, scope=$6, terms=$7, sensitive=$8, default_emp_type=$9, archived=FALSE`,
+    [f.track.trim(), f.commission_enabled, f.paid, f.salary, f.salary_period, f.scope, f.terms, f.sensitive, f.default_emp_type]));
+}
+export async function archiveRole(track: string) {
+  return withClient((c) => c.query(
+    `INSERT INTO track_settings (track, archived) VALUES ($1, TRUE) ON CONFLICT (track) DO UPDATE SET archived=TRUE`, [track.trim()]));
+}
+
+// ── Onboarding form fields + legal text config (JSON) ────────────────────────
+export async function getFormConfig(): Promise<any> {
+  return withClient(async (c) => { const r = await c.query(`SELECT config FROM form_config WHERE id=1`); return r.rows[0]?.config || {}; });
+}
+export async function saveFormConfig(config: any) {
+  return withClient((c) => c.query(`INSERT INTO form_config (id, config, updated_at) VALUES (1,$1,now()) ON CONFLICT (id) DO UPDATE SET config=$1, updated_at=now()`, [config]));
+}
+export async function getLegalConfig(): Promise<any> {
+  return withClient(async (c) => { const r = await c.query(`SELECT config FROM legal_config WHERE id=1`); return r.rows[0]?.config || {}; });
+}
+export async function saveLegalConfig(config: any) {
+  return withClient((c) => c.query(`INSERT INTO legal_config (id, config, updated_at) VALUES (1,$1,now()) ON CONFLICT (id) DO UPDATE SET config=$1, updated_at=now()`, [config]));
+}
+export async function setTrackCommission(track: string, enabled: boolean) {
+  return withClient((c) => c.query(
+    `INSERT INTO track_settings (track, commission_enabled) VALUES ($1,$2)
+     ON CONFLICT (track) DO UPDATE SET commission_enabled=$2`, [track.trim(), enabled]));
+}
+export async function commissionTracksMap(): Promise<Record<string, boolean>> {
+  const rows = await listTrackSettings();
+  const m: Record<string, boolean> = {};
+  for (const r of rows) m[r.track] = r.commission_enabled;
+  return m;
+}
+/** Is this employee on the commission model? Based on their track (default yes). */
+export function trackHasCommission(track: string | null | undefined, map: Record<string, boolean>): boolean {
+  if (!track) return true;
+  return map[track] !== false;
+}
+
+// ── Personal profile (employee + owner) ──────────────────────────────────────
+export async function getEmployeeProfile(email: string) {
+  return withClient(async (c) => {
+    const r = await c.query(
+      `SELECT id,name,email,mobile,dob,address,start_date,duration,emp_type,track FROM employees WHERE LOWER(email)=LOWER($1) LIMIT 1`, [email]);
+    return r.rows[0] || null;
+  });
+}
+export async function updateEmployeeProfile(email: string, f: { name?: string; mobile?: string; dob?: string; address?: string }) {
+  const v = (x?: string) => (x && x.trim() ? x.trim() : null);
+  return withClient((c) => c.query(
+    `UPDATE employees SET name=COALESCE($2,name), mobile=COALESCE($3,mobile), dob=COALESCE($4,dob), address=COALESCE($5,address) WHERE LOWER(email)=LOWER($1)`,
+    [email, v(f.name), v(f.mobile), v(f.dob), v(f.address)]));
+}
+export async function getCompanyProfile() {
+  return withClient(async (c) => {
+    const r = await c.query(`SELECT full_name,email,mobile,dob,address,start_date FROM company_profile WHERE id=1 LIMIT 1`);
+    return r.rows[0] || null;
+  });
+}
+export async function saveCompanyProfile(f: { full_name?: string; email?: string; mobile?: string; dob?: string; address?: string; start_date?: string }) {
+  const v = (x?: string) => (x && x.trim() ? x.trim() : null);
+  return withClient((c) => c.query(
+    `INSERT INTO company_profile (id, full_name, email, mobile, dob, address, start_date, updated_at)
+     VALUES (1,$1,$2,$3,$4,$5,$6,now())
+     ON CONFLICT (id) DO UPDATE SET full_name=$1,email=$2,mobile=$3,dob=$4,address=$5,start_date=COALESCE($6, company_profile.start_date),updated_at=now()`,
+    [v(f.full_name), v(f.email), v(f.mobile), v(f.dob), v(f.address), v(f.start_date)]));
 }

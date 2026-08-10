@@ -1,0 +1,267 @@
+/**
+ * Avloryn Meetings — Google Calendar + Google Meet layer (server-only).
+ * OAuth per member, free/busy reads, and event creation with an auto-generated
+ * Meet link. Tokens auto-refresh and the fresh access token is persisted.
+ */
+import { google } from "googleapis";
+import { randomUUID } from "crypto";
+import { getGoogle, saveGoogle } from "./db";
+import type { Interval } from "./availability";
+
+const SCOPES = [
+  "openid",
+  "email",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar.readonly",
+];
+
+export function googleConfigured(): boolean {
+  return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+}
+
+function redirectUri(origin: string) {
+  return `${origin.replace(/\/$/, "")}/api/meet/google/callback`;
+}
+
+function oauthClient(origin: string) {
+  const id = process.env.GOOGLE_CLIENT_ID, secret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!id || !secret) return null;
+  return new google.auth.OAuth2(id, secret, redirectUri(origin));
+}
+
+/** URL a member visits to connect their Google account. `state` carries the member id. */
+export function authUrl(memberId: string, origin: string): string | null {
+  const c = oauthClient(origin);
+  if (!c) return null;
+  return c.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent", // force a refresh_token every time
+    scope: SCOPES,
+    state: memberId,
+    include_granted_scopes: true,
+  });
+}
+
+/** Exchange the callback code, persist tokens against the member, return the Google email. */
+export async function connectMember(memberId: string, code: string, origin: string): Promise<{ email: string | null }> {
+  const c = oauthClient(origin);
+  if (!c) throw new Error("Google is not configured");
+  const { tokens } = await c.getToken(code);
+  c.setCredentials(tokens);
+  let email: string | null = null;
+  try {
+    const oauth2 = google.oauth2({ version: "v2", auth: c });
+    const me = await oauth2.userinfo.get();
+    email = me.data.email || null;
+  } catch {
+    /* email is best-effort */
+  }
+  await saveGoogle(memberId, {
+    google_email: email,
+    access_token: tokens.access_token || null,
+    // Google only returns a refresh_token on first consent; keep the old one if absent.
+    refresh_token: tokens.refresh_token || (await getGoogle(memberId))?.refresh_token || null,
+    expiry: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
+    calendar_id: "primary",
+    scope: tokens.scope || SCOPES.join(" "),
+  });
+  return { email };
+}
+
+/** An authed client for a member, auto-refreshing + persisting the access token. */
+async function memberClient(memberId: string, origin = "https://avloryn.com") {
+  const t = await getGoogle(memberId);
+  if (!t || !t.refresh_token) return null;
+  const c = oauthClient(origin);
+  if (!c) return null;
+  c.setCredentials({
+    access_token: t.access_token || undefined,
+    refresh_token: t.refresh_token,
+    expiry_date: t.expiry ? new Date(t.expiry).getTime() : undefined,
+  });
+  // Persist any refreshed token so we don't re-refresh every call.
+  c.on("tokens", (nt) => {
+    saveGoogle(memberId, {
+      access_token: nt.access_token || t.access_token,
+      expiry: nt.expiry_date ? new Date(nt.expiry_date).toISOString() : t.expiry,
+      ...(nt.refresh_token ? { refresh_token: nt.refresh_token } : {}),
+    }).catch(() => {});
+  });
+  return { client: c, calendarId: t.calendar_id || "primary" };
+}
+
+/** Busy intervals for a member between two instants (empty if not connected / on error). */
+export async function memberBusy(memberId: string, fromISO: string, toISO: string): Promise<Interval[]> {
+  try {
+    const m = await memberClient(memberId);
+    if (!m) return [];
+    const cal = google.calendar({ version: "v3", auth: m.client });
+    const res = await cal.freebusy.query({
+      requestBody: { timeMin: fromISO, timeMax: toISO, items: [{ id: m.calendarId }] },
+    });
+    const busy = res.data.calendars?.[m.calendarId]?.busy || [];
+    return busy
+      .filter((b) => b.start && b.end)
+      .map((b) => ({ start: b.start as string, end: b.end as string }));
+  } catch {
+    // A member whose calendar can't be read simply contributes no busy times; the
+    // caller can decide to treat a hard failure as "unavailable" if it prefers.
+    return [];
+  }
+}
+
+/** Create the meeting event (with a Meet link) on the host member's calendar, inviting
+ *  every member + the client. Returns the event id + Meet link. */
+export async function createMeetingEvent(opts: {
+  hostMemberId: string;
+  summary: string;
+  description: string;
+  startISO: string;
+  endISO: string;
+  attendeeEmails: string[];
+  timezone?: string;
+}): Promise<{ eventId: string | null; meetLink: string | null; htmlLink: string | null }> {
+  const m = await memberClient(opts.hostMemberId);
+  if (!m) return { eventId: null, meetLink: null, htmlLink: null };
+  const cal = google.calendar({ version: "v3", auth: m.client });
+  const res = await cal.events.insert({
+    calendarId: m.calendarId,
+    conferenceDataVersion: 1,
+    sendUpdates: "all",
+    requestBody: {
+      summary: opts.summary,
+      description: opts.description,
+      start: { dateTime: opts.startISO, timeZone: opts.timezone || "UTC" },
+      end: { dateTime: opts.endISO, timeZone: opts.timezone || "UTC" },
+      attendees: Array.from(new Set(opts.attendeeEmails.filter(Boolean))).map((email) => ({ email })),
+      conferenceData: {
+        createRequest: { requestId: randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } },
+      },
+    },
+  });
+  const d = res.data;
+  const meetLink =
+    d.hangoutLink ||
+    d.conferenceData?.entryPoints?.find((e) => e.entryPointType === "video")?.uri ||
+    null;
+  return { eventId: d.id || null, meetLink, htmlLink: d.htmlLink || null };
+}
+
+/** Cancel (delete) a previously created event on the host's calendar. Best-effort. */
+export async function deleteMeetingEvent(hostMemberId: string, eventId: string): Promise<void> {
+  try {
+    const m = await memberClient(hostMemberId);
+    if (!m) return;
+    const cal = google.calendar({ version: "v3", auth: m.client });
+    await cal.events.delete({ calendarId: m.calendarId, eventId, sendUpdates: "all" });
+  } catch {
+    /* best-effort */
+  }
+}
+
+export type MemberEvent = { memberId: string; eventId: string };
+
+/**
+ * Create the meeting on EVERY attending member's OWN calendar (using each member's token)
+ * so it auto-appears — no "accept the invite" step. The first connected member is the host:
+ * their event carries the Meet conference + invites the client (Google emails them). The
+ * other members get the same meeting written directly to their calendar with the Meet link.
+ * Returns the Meet link + one {memberId,eventId} per calendar written (host first).
+ */
+export async function createMeetingForMembers(opts: {
+  memberIds: string[];
+  clientEmail: string;
+  summary: string;
+  description: string;
+  startISO: string;
+  endISO: string;
+}): Promise<{ meetLink: string | null; events: MemberEvent[] }> {
+  const events: MemberEvent[] = [];
+  const start = { dateTime: opts.startISO, timeZone: "UTC" };
+  const end = { dateTime: opts.endISO, timeZone: "UTC" };
+
+  // Host = first member we can actually authenticate.
+  let hostId: string | null = null;
+  let hostClient: Awaited<ReturnType<typeof memberClient>> = null;
+  for (const id of opts.memberIds) {
+    const m = await memberClient(id);
+    if (m) { hostId = id; hostClient = m; break; }
+  }
+  if (!hostId || !hostClient) return { meetLink: null, events: [] };
+
+  // Host event: real Meet conference + client invited.
+  const hostCal = google.calendar({ version: "v3", auth: hostClient.client });
+  const hostRes = await hostCal.events.insert({
+    calendarId: hostClient.calendarId,
+    conferenceDataVersion: 1,
+    sendUpdates: "all",
+    requestBody: {
+      summary: opts.summary,
+      description: opts.description,
+      start, end,
+      attendees: opts.clientEmail ? [{ email: opts.clientEmail }] : undefined,
+      conferenceData: { createRequest: { requestId: randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } } },
+    },
+  });
+  const meetLink =
+    hostRes.data.hangoutLink ||
+    hostRes.data.conferenceData?.entryPoints?.find((e) => e.entryPointType === "video")?.uri ||
+    null;
+  if (hostRes.data.id) events.push({ memberId: hostId, eventId: hostRes.data.id });
+
+  // Every other member: write the same meeting to their own calendar (auto-add, no dup invite).
+  const desc = (meetLink ? `Join Google Meet: ${meetLink}\n\n` : "") + opts.description;
+  for (const id of opts.memberIds) {
+    if (id === hostId) continue;
+    try {
+      const m = await memberClient(id);
+      if (!m) continue;
+      const cal = google.calendar({ version: "v3", auth: m.client });
+      const res = await cal.events.insert({
+        calendarId: m.calendarId,
+        sendUpdates: "none",
+        requestBody: { summary: opts.summary, description: desc, location: meetLink || undefined, start, end },
+      });
+      if (res.data.id) events.push({ memberId: id, eventId: res.data.id });
+    } catch {
+      /* one member's calendar failing must not block the booking */
+    }
+  }
+  return { meetLink, events };
+}
+
+/** Move each per-member event to a new time (host first → notifies the client). Keeps the
+ *  same Meet link. Best-effort per member. */
+export async function moveMeetingEvents(events: MemberEvent[], startISO: string, endISO: string): Promise<void> {
+  const start = { dateTime: startISO, timeZone: "UTC" };
+  const end = { dateTime: endISO, timeZone: "UTC" };
+  for (let i = 0; i < events.length; i++) {
+    try {
+      const m = await memberClient(events[i].memberId);
+      if (!m) continue;
+      const cal = google.calendar({ version: "v3", auth: m.client });
+      await cal.events.patch({
+        calendarId: m.calendarId,
+        eventId: events[i].eventId,
+        sendUpdates: i === 0 ? "all" : "none",
+        requestBody: { start, end },
+      });
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
+/** Delete each per-member event on its own calendar (host first → notifies the client). */
+export async function deleteMeetingEvents(events: MemberEvent[]): Promise<void> {
+  for (let i = 0; i < events.length; i++) {
+    try {
+      const m = await memberClient(events[i].memberId);
+      if (!m) continue;
+      const cal = google.calendar({ version: "v3", auth: m.client });
+      await cal.events.delete({ calendarId: m.calendarId, eventId: events[i].eventId, sendUpdates: i === 0 ? "all" : "none" });
+    } catch {
+      /* best-effort */
+    }
+  }
+}

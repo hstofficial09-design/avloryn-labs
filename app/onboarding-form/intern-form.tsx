@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useEffect } from "react";
 import { LogoMark } from "@/components/ui/logo";
-import { internshipAgreement, ndaAgreement, ROLE_LABEL, type Role, type InternData } from "@/lib/intern-docs";
+import { internshipAgreement, ndaAgreement, ROLE_LABEL, type InternData } from "@/lib/intern-docs";
 
 type FilePayload = { kind: string; b64: string } | undefined;
 
@@ -59,10 +59,30 @@ export default function InternForm() {
   const [f, setF] = useState({
     regType: "intern" as "intern" | "employee",
     fullName: "", dob: "", mobile: "", email: "", address: "",
-    role: "M&C" as Role, startDate: "", duration: "3",
+    role: "M&C", startDate: "", duration: "3",
     idType: "PAN card", idNumber: "",
     isStudent: null as boolean | null, collegeName: "", studentId: "",
   });
+  // Roles + field settings come from the owner's Onboarding Form settings (fallback to built-in).
+  const [roleOpts, setRoleOpts] = useState<{ value: string; label: string }[]>([
+    { value: "M&C", label: ROLE_LABEL["M&C"] }, { value: "P&R", label: ROLE_LABEL["P&R"] }, { value: "HR", label: "HR Intern" },
+  ]);
+  const [fieldsCfg, setFieldsCfg] = useState<Record<string, { visible: boolean; required: boolean }>>({});
+  const [customQ, setCustomQ] = useState<{ label: string; type: string; required: boolean }[]>([]);
+  const [customAns, setCustomAns] = useState<Record<string, string>>({});
+  useEffect(() => {
+    fetch("/api/onboarding-form/config").then((r) => r.json()).then((d) => {
+      if (Array.isArray(d.roles) && d.roles.length) {
+        setRoleOpts(d.roles);
+        setF((cur) => (d.roles.some((r: any) => r.value === cur.role) ? cur : { ...cur, role: d.roles[0].value }));
+      }
+      if (d.fields && typeof d.fields === "object") setFieldsCfg(d.fields);
+      if (Array.isArray(d.custom)) setCustomQ(d.custom.filter((q: any) => q?.label));
+    }).catch(() => {});
+  }, []);
+  const fVis = (k: string) => fieldsCfg[k]?.visible !== false;      // default shown
+  const fReq = (k: string) => fieldsCfg[k]?.required !== false;     // default required (owner can relax)
+  const star = (k: string) => (fReq(k) ? " *" : "");
   const [photo, setPhoto] = useState<FilePayload>();
   const [idDoc, setIdDoc] = useState<FilePayload>();
   const [studentDoc, setStudentDoc] = useState<FilePayload>();
@@ -119,11 +139,16 @@ export default function InternForm() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
-    if (!f.fullName || !f.dob || !f.mobile || !f.email || !f.address || !f.startDate) { setErr("Please fill all required fields."); return; }
+    if (!f.fullName || !f.dob || !f.email || !f.startDate) { setErr("Please fill all required fields."); return; }
+    if (fVis("mobile") && fReq("mobile") && !f.mobile) { setErr("Please add your mobile number."); return; }
+    if (fVis("address") && fReq("address") && !f.address) { setErr("Please add your address."); return; }
+    for (const q of customQ) if (q.required && !(customAns[q.label] || "").trim()) { setErr(`Please answer: ${q.label}`); return; }
     if (!photo) { setErr("Please upload your photo."); return; }
-    if (!idDoc) { setErr("Please upload a photo ID."); return; }
-    if (f.isStudent === null) { setErr("Please tell us whether you are a current student."); return; }
-    if (f.isStudent && !studentDoc) { setErr("Please upload your student ID."); return; }
+    if (fVis("govId") && fReq("govId") && !idDoc) { setErr("Please upload a photo ID."); return; }
+    if (fVis("student")) {
+      if (f.isStudent === null) { setErr("Please tell us whether you are a current student."); return; }
+      if (f.isStudent && !studentDoc) { setErr("Please upload your student ID."); return; }
+    }
     if (!signed) { setErr("Please add your signature."); return; }
     if (!consent) { setErr("Please accept the terms."); return; }
     setStatus("busy");
@@ -135,6 +160,7 @@ export default function InternForm() {
         body: JSON.stringify({
           data: { ...f, startDate: fmtDate(f.startDate), dob: fmtDate(f.dob) },
           isStudent: f.isStudent, consent, signature,
+          custom: customQ.map((q) => ({ q: q.label, a: (customAns[q.label] || "").trim() })).filter((x) => x.a),
           files: { photo, idDoc, studentDoc: f.isStudent ? studentDoc : undefined },
         }),
       });
@@ -202,28 +228,31 @@ export default function InternForm() {
             <Field label="Date of birth *"><input type="date" className={inputCls} value={f.dob} onChange={(e) => up("dob", e.target.value)} /></Field>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Mobile *"><input className={inputCls} value={f.mobile} onChange={(e) => up("mobile", e.target.value)} /></Field>
+            {fVis("mobile") && <Field label={"Mobile" + star("mobile")}><input className={inputCls} value={f.mobile} onChange={(e) => up("mobile", e.target.value)} /></Field>}
             <Field label="Email *"><input type="email" className={inputCls} value={f.email} onChange={(e) => up("email", e.target.value)} /></Field>
           </div>
-          <Field label="Address *"><textarea className={inputCls} rows={2} value={f.address} onChange={(e) => up("address", e.target.value)} /></Field>
+          {fVis("address") && <Field label={"Address" + star("address")}><textarea className={inputCls} rows={2} value={f.address} onChange={(e) => up("address", e.target.value)} /></Field>}
           <Field label="Photo (passport-style) *"><input type="file" accept="image/*,application/pdf" className={fileCls} onChange={async (e) => setPhoto(await processFile(e.target.files![0]))} /></Field>
         </Section>
 
         {/* Identity */}
+        {fVis("govId") && (
         <Section title="Identity">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Photo ID type *">
+            <Field label={"Photo ID type" + star("govId")}>
               <select className={inputCls} value={f.idType} onChange={(e) => up("idType", e.target.value)}>
                 {ID_TYPES.map((t) => <option key={t}>{t}</option>)}
               </select>
             </Field>
             <Field label="ID number (optional)"><input className={inputCls} value={f.idNumber} onChange={(e) => up("idNumber", e.target.value)} /></Field>
           </div>
-          <Field label="Upload photo ID * (JPG / PNG / PDF)"><input type="file" accept="image/*,application/pdf" className={fileCls} onChange={async (e) => setIdDoc(await processFile(e.target.files![0]))} /></Field>
+          <Field label={"Upload photo ID" + (fReq("govId") ? " *" : "") + " (JPG / PNG / PDF)"}><input type="file" accept="image/*,application/pdf" className={fileCls} onChange={async (e) => setIdDoc(await processFile(e.target.files![0]))} /></Field>
         </Section>
+        )}
 
         {/* Student */}
-        <Section title="Are you a current student? *">
+        {fVis("student") && (
+        <Section title="Are you a current student?">
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="radio" name="isStudent" checked={f.isStudent === true} onChange={() => up("isStudent", true)} /> Yes, I&apos;m currently studying
@@ -242,15 +271,27 @@ export default function InternForm() {
             </div>
           )}
         </Section>
+        )}
+
+        {/* Custom questions from the owner's Onboarding Form settings */}
+        {customQ.length > 0 && (
+          <Section title="A few more questions">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {customQ.map((q, i) => (
+                <Field key={i} label={q.label + (q.required ? " *" : "")}>
+                  <input type={q.type === "date" ? "date" : q.type === "number" ? "number" : "text"} className={inputCls} value={customAns[q.label] || ""} onChange={(e) => setCustomAns((a) => ({ ...a, [q.label]: e.target.value }))} />
+                </Field>
+              ))}
+            </div>
+          </Section>
+        )}
 
         {/* Internship */}
         <Section title="Internship">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Field label="Track *">
-              <select className={inputCls} value={f.role} onChange={(e) => { const r = e.target.value as Role; up("role", r); if (r === "HR") up("duration", "2"); }}>
-                <option value="M&C">{ROLE_LABEL["M&C"]}</option>
-                <option value="P&R">{ROLE_LABEL["P&R"]}</option>
-                <option value="HR">HR Intern</option>
+              <select className={inputCls} value={f.role} onChange={(e) => { const r = e.target.value; up("role", r); if (r === "HR" || r === "Human Resources") up("duration", "2"); }}>
+                {roleOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </Field>
             <Field label="Start date *"><input type="date" className={inputCls} value={f.startDate} onChange={(e) => up("startDate", e.target.value)} /></Field>

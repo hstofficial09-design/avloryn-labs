@@ -1,0 +1,201 @@
+import { NextResponse } from "next/server";
+import { randomBytes } from "crypto";
+import { Resend } from "resend";
+import { getMeetingTypeBySlug, listMembers, createBooking, upcomingCountByMember, incrementCouponUse, type IntakeAnswer } from "@/lib/booking/db";
+import { memberBusy, createMeetingForMembers } from "@/lib/booking/google";
+import { createZohoForMembers } from "@/lib/booking/zoho";
+import { quote, verifySignature } from "@/lib/booking/pay";
+import { buildICS } from "@/lib/booking/ics";
+import { SITE_URL } from "@/lib/seo";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DAY = 24 * 3600 * 1000;
+
+export async function POST(req: Request) {
+  const d = await req.json().catch(() => ({}));
+  const mt = await getMeetingTypeBySlug(String(d.slug || ""));
+  if (!mt || !mt.active) return NextResponse.json({ error: "Unknown meeting type" }, { status: 404 });
+
+  const name = String(d.name || "").trim();
+  const email = String(d.email || "").trim();
+  const notes = String(d.notes || "").trim();
+  const clientTz = String(d.timezone || "").trim() || null;
+  const startMs = Date.parse(String(d.startISO || ""));
+  if (!name || !EMAIL_RE.test(email)) return NextResponse.json({ error: "Name and a valid email are required" }, { status: 400 });
+  if (Number.isNaN(startMs)) return NextResponse.json({ error: "Invalid slot" }, { status: 400 });
+  if (startMs < Date.now()) return NextResponse.json({ error: "That time is in the past" }, { status: 400 });
+  if (startMs > Date.now() + (mt.max_advance_days ?? 60) * DAY) return NextResponse.json({ error: "That date is too far ahead." }, { status: 400 });
+
+  // Duration: honour the client's pick only if the type offers it, else the default.
+  const allowedDurations = (mt.durations && mt.durations.length) ? mt.durations : [mt.duration_min];
+  const reqDur = Math.round(Number(d.duration) || 0);
+  const durationMin = allowedDurations.includes(reqDur) ? reqDur : mt.duration_min;
+
+  // Custom intake questions → validate required + collect answers.
+  const raw = (d.answers && typeof d.answers === "object") ? d.answers as Record<string, string> : {};
+  const answers: IntakeAnswer[] = [];
+  for (const q of mt.questions ?? []) {
+    const a = String(raw[q.id] ?? "").trim();
+    if (q.required && !a) return NextResponse.json({ error: `Please answer: ${q.label}` }, { status: 400 });
+    if (a) answers.push({ q: q.label, a });
+  }
+
+  const endMs = startMs + durationMin * 60_000;
+  const startISO = new Date(startMs).toISOString();
+  const endISO = new Date(endMs).toISOString();
+
+  // Who attends. "all" → the whole pool. "any" → round-robin (least-loaded) among the free
+  // candidates the client's slot offered (or the whole pool if none were passed).
+  const chosen = Array.isArray(d.memberIds) ? d.memberIds.map(String).filter((id: string) => mt.member_ids.includes(id)) : [];
+  let memberIds: string[];
+  if (mt.mode === "all") {
+    memberIds = mt.member_ids.slice();
+  } else {
+    const pool: string[] = chosen.length ? chosen : mt.member_ids.slice();
+    const counts = await upcomingCountByMember(pool);
+    const pick = pool.slice().sort((a, b) => (counts[a] || 0) - (counts[b] || 0))[0];
+    memberIds = pick ? [pick] : [];
+  }
+  if (!memberIds.length) return NextResponse.json({ error: "Please choose who you'd like to meet" }, { status: 400 });
+  // Prefer the chosen organizer as host (Meet creator) when they're attending.
+  if (mt.organizer_id && memberIds.includes(mt.organizer_id)) {
+    memberIds = [mt.organizer_id, ...memberIds.filter((id) => id !== mt.organizer_id)];
+  }
+
+  // ── Re-validate against LIVE free/busy so two people can't grab the same slot. ──
+  const bufB = mt.buffer_before_min * 60_000, bufA = mt.buffer_after_min * 60_000;
+  const ps = startMs - bufB, pe = endMs + bufA;
+  try {
+    for (const id of memberIds) {
+      const busy = await memberBusy(id, new Date(ps).toISOString(), new Date(pe).toISOString());
+      if (busy.some((b) => Date.parse(b.start) < pe && ps < Date.parse(b.end))) {
+        return NextResponse.json({ error: "Sorry, that slot was just taken. Please pick another." }, { status: 409 });
+      }
+    }
+  } catch {
+    /* if free/busy can't be read we still let the booking through — Google invite is source of truth */
+  }
+
+  const members = await listMembers();
+  const byId = new Map(members.map((m) => [m.id, m]));
+  const memberEmails = memberIds.map((id) => byId.get(id)?.email).filter(Boolean) as string[];
+  const memberNames = memberIds.map((id) => byId.get(id)?.name).filter(Boolean).join(", ");
+  const answerLines = answers.map((a) => `${a.q}: ${a.a}`).join("\n");
+  const baseDesc = `${mt.name} with ${name} (${email}).${notes ? `\n\nNotes: ${notes}` : ""}${answerLines ? `\n\n${answerLines}` : ""}`;
+  const from = process.env.CONTACT_FROM_EMAIL || "Avloryn Labs <onboarding@resend.dev>";
+  const key = process.env.RESEND_API_KEY;
+  const whenClient = new Date(startMs).toLocaleString("en-IN", { timeZone: clientTz || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" });
+
+  // ── Payment (paid meeting types) ──
+  let paymentId: string | null = null, amountInr: number | null = null, couponCode: string | null = null;
+  if ((mt.price_inr || 0) > 0) {
+    const q = await quote(mt.price_inr!, d.coupon);
+    amountInr = q.amount; couponCode = q.couponValid ? q.couponCode : null;
+    if (q.amount > 0) {
+      const okSig = verifySignature(String(d.razorpay_order_id || ""), String(d.razorpay_payment_id || ""), String(d.razorpay_signature || ""));
+      if (!okSig) return NextResponse.json({ error: "Payment could not be verified" }, { status: 402 });
+      paymentId = String(d.razorpay_payment_id);
+    }
+    if (couponCode) { try { await incrementCouponUse(couponCode); } catch { /* ignore */ } }
+  }
+
+  // ── Manual approval (free types): save as pending, no calendar yet. ──
+  if (mt.requires_approval && (mt.price_inr || 0) === 0) {
+    const cancelToken = randomBytes(18).toString("hex");
+    const booking = await createBooking({
+      meeting_type_id: mt.id, member_ids: memberIds,
+      client_name: name, client_email: email, client_notes: notes, client_timezone: clientTz,
+      start_utc: startISO, end_utc: endISO, google_event_id: null, meet_link: null, cancel_token: cancelToken,
+      answers,
+    }, "pending");
+    try {
+      if (key && EMAIL_RE.test(email)) {
+        await new Resend(key).emails.send({ from, to: email, subject: `Request received: ${mt.name}`,
+          text: `Hi ${name},\n\nWe've received your request for ${mt.name} on ${whenClient}. We'll confirm shortly by email.\n\n— Avloryn Labs` });
+      }
+      const to = Array.from(new Set([...memberEmails, process.env.CONTACT_TO_EMAIL].filter(Boolean))) as string[];
+      if (key && to.length) await new Resend(key).emails.send({ from, to, subject: `Approval needed: ${mt.name} — ${name}`,
+        text: `A booking is awaiting approval.\n\nClient: ${name} (${email})\nWhen: ${whenClient}\nWith: ${memberNames}\n\nApprove it in Scheduling → Bookings.` });
+    } catch { /* best-effort */ }
+    return NextResponse.json({ ok: true, pending: true, booking: { id: booking.id, startISO, endISO, cancelToken } });
+  }
+
+  // Write the meeting to EVERY attending member's own calendar (guaranteed auto-add) and
+  // invite the client. The Meet link comes from the host (first connected) member's event.
+  let meetLink: string | null = null;
+  let eventsJson: string | null = null;
+  try {
+    const { meetLink: ml, events } = await createMeetingForMembers({
+      memberIds, clientEmail: email,
+      summary: `${mt.name} — ${name}`, description: baseDesc, startISO, endISO,
+    });
+    meetLink = ml;
+    if (events.length) eventsJson = JSON.stringify(events);
+  } catch {
+    /* calendar write failed — still save the booking so the request isn't lost */
+  }
+
+  // Also mirror onto any member's Zoho Calendar (optional; no-op if none connected).
+  let zohoJson: string | null = null;
+  try {
+    const zevents = await createZohoForMembers({ memberIds, summary: `${mt.name} — ${name}`, description: baseDesc, startISO, endISO, meetLink });
+    if (zevents.length) zohoJson = JSON.stringify(zevents);
+  } catch { /* zoho best-effort */ }
+
+  const cancelToken = randomBytes(18).toString("hex");
+  const booking = await createBooking({
+    meeting_type_id: mt.id, member_ids: memberIds,
+    client_name: name, client_email: email, client_notes: notes, client_timezone: clientTz,
+    start_utc: startISO, end_utc: endISO, google_event_id: eventsJson, meet_link: meetLink, cancel_token: cancelToken,
+    answers, zoho_event_id: zohoJson, payment_id: paymentId, amount_inr: amountInr, coupon_code: couponCode,
+  });
+
+  // Branded confirmation to the client (+ a universal .ics attachment).
+  try {
+    if (key && EMAIL_RE.test(email)) {
+      const cancelUrl = `${SITE_URL}/meet/cancel?t=${cancelToken}`;
+      const rescheduleUrl = `${SITE_URL}/meet/reschedule?t=${cancelToken}`;
+      const ics = buildICS({
+        uid: booking.id, startISO, endISO,
+        summary: `${mt.name} — Avloryn Labs`,
+        description: (meetLink ? `Join Google Meet: ${meetLink}\n\n` : "") + `${mt.name} with ${memberNames || "Avloryn Labs"}.`,
+        location: meetLink || "Online",
+        organizerName: "Avloryn Labs", organizerEmail: memberEmails[0] || undefined,
+        attendeeEmails: [email, ...memberEmails],
+      });
+      await new Resend(key).emails.send({
+        from, to: email,
+        subject: `Confirmed: ${mt.name} with Avloryn Labs`,
+        text:
+          `Hi ${name},\n\nYour ${mt.name} is confirmed.\n\n` +
+          `When: ${whenClient}\nWith: ${memberNames || "Avloryn Labs"}\n` +
+          (meetLink ? `Join (Google Meet): ${meetLink}\n` : "") +
+          `\nThe attached invite adds this to your calendar (works with any calendar app).\n\n` +
+          `Reschedule: ${rescheduleUrl}\nCancel: ${cancelUrl}\n\n— Avloryn Labs`,
+        attachments: [{ filename: "invite.ics", content: Buffer.from(ics).toString("base64") }],
+      });
+    }
+  } catch { /* email best-effort */ }
+
+  // Team notification: let the attending members (+ ops inbox) know a booking came in.
+  try {
+    const to = Array.from(new Set([...memberEmails, process.env.CONTACT_TO_EMAIL].filter(Boolean))) as string[];
+    if (key && to.length) {
+      await new Resend(key).emails.send({
+        from, to,
+        subject: `New booking: ${mt.name} — ${name}`,
+        text:
+          `New ${mt.name} booked.\n\n` +
+          `Client: ${name} (${email})\nWhen: ${whenClient}\nWith: ${memberNames}\n` +
+          (meetLink ? `Meet: ${meetLink}\n` : "") +
+          (notes ? `\nNotes: ${notes}\n` : "") +
+          (answerLines ? `\n${answerLines}\n` : ""),
+      });
+    }
+  } catch { /* best-effort */ }
+
+  return NextResponse.json({ ok: true, booking: { id: booking.id, startISO, endISO, meetLink, cancelToken } });
+}
