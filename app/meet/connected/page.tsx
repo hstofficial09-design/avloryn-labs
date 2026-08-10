@@ -5,11 +5,13 @@ import { LogoMark } from "@/components/ui/logo";
 export default function ConnectedPage() {
   const [status, setStatus] = useState<string>("");
   const [email, setEmail] = useState<string>("");
+  const [provider, setProvider] = useState<string>("");
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     setStatus(p.get("status") || "error");
     setEmail(p.get("email") || "");
+    setProvider(p.get("provider") === "zoho" ? "Zoho" : "Google");
   }, []);
 
   const ok = status === "ok";
@@ -31,11 +33,12 @@ export default function ConnectedPage() {
           ) : ok ? (
             <>
               <div className="mx-auto mb-4 grid place-items-center w-14 h-14 rounded-full neu-chip text-gold text-[26px]">✓</div>
-              <h1 className="font-serif text-[24px] font-[600] mb-1.5">Calendar connected</h1>
+              <h1 className="font-serif text-[24px] font-[600] mb-1.5">{provider} Calendar connected</h1>
               <p className="text-[13px] text-muted-foreground">
-                {email ? <><b className="text-foreground/80">{email}</b> is now linked. </> : "Your Google Calendar is now linked. "}
-                Your availability and Meet links will work automatically. You can close this tab.
+                {email ? <><b className="text-foreground/80">{email}</b> is now linked. </> : `Your ${provider} Calendar is now linked. `}
+                Your availability and meetings will sync automatically.
               </p>
+              <a href="/meet/admin" className="mt-5 inline-block btn-gold rounded-full px-5 py-2.5 text-[13px] font-[560]">← Back to Scheduling</a>
             </>
           ) : (
             <>
