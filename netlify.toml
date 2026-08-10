@@ -7,6 +7,8 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  # Bigger V8 heap — the TS type-check phase (googleapis types are huge) OOMs on the default ~2 GB.
+  NODE_OPTIONS = "--max-old-space-size=4096"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
