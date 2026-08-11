@@ -319,13 +319,13 @@ export default function BookingFlow({ mt, members }: { mt: MT; members: Member[]
                   );
                 })}
               </div>
-              {/* Time grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {/* Time grid — compact + scrolls instead of growing the card */}
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[300px] overflow-y-auto pr-0.5">
                 {daySlots.map((s) => (
                   <button
                     key={s.startISO}
                     onClick={() => { setPicked(s); setErr(""); }}
-                    className="neu-inset rounded-xl py-2.5 text-[13px] font-[560] text-foreground/85 hover:text-gold hover:ring-2 hover:ring-gold/25 transition"
+                    className="neu-inset rounded-lg py-2 text-[12.5px] font-[560] text-foreground/85 hover:text-gold hover:ring-2 hover:ring-gold/25 transition"
                   >
                     {fmtTime(s.startISO)}
                   </button>

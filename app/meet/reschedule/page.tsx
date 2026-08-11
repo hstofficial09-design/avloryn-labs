@@ -16,6 +16,7 @@ export default function ReschedulePage() {
   const [activeDate, setActiveDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [customTime, setCustomTime] = useState("");
   const [done, setDone] = useState<null | { startISO: string; meetLink: string | null }>(null);
 
   const fmtKey = useCallback((iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: tz }), [tz]);
@@ -59,18 +60,19 @@ export default function ReschedulePage() {
   const dateKeys = useMemo(() => [...byDate.keys()].sort(), [byDate]);
   useEffect(() => { if (dateKeys.length && !activeDate) setActiveDate(dateKeys[0]); }, [dateKeys, activeDate]);
 
-  async function pick(s: Slot) {
-    if (!token) return;
+  async function rescheduleTo(startISO: string) {
+    if (!token || !startISO) return;
     setBusy(true); setErr("");
     try {
       const r = await fetch("/api/meet/reschedule", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, startISO: s.startISO }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, startISO }),
       });
       const d = await r.json();
       if (!r.ok || !d.ok) throw new Error(d.error || "Could not reschedule");
       setDone({ startISO: d.startISO, meetLink: d.meetLink || null });
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not reschedule"); } finally { setBusy(false); }
   }
+  const pick = (s: Slot) => rescheduleTo(s.startISO);
 
   const card = "card-lux rounded-3xl p-6 sm:p-7";
   const brand = (sub: string) => (
@@ -102,7 +104,17 @@ export default function ReschedulePage() {
           ) : !info ? (
             <p className="text-[13px] text-muted-foreground text-center py-6">Loading your booking…</p>
           ) : !info.slug ? (
-            <p className="text-[13px] text-muted-foreground text-center py-6">This meeting can no longer be rescheduled online. Please contact us.</p>
+            <>
+              <div className="neu-chip rounded-2xl px-4 py-3 mb-5">
+                <div className="text-[12px] text-faint">Currently</div>
+                <div className="text-[13.5px] font-[560]">{info.name} — {new Date(info.currentStartISO).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: tz })}</div>
+              </div>
+              <label className="block text-[12px] font-medium text-foreground/70 mb-1.5">Pick a new date &amp; time</label>
+              <input type="datetime-local" value={customTime} onChange={(e) => setCustomTime(e.target.value)} className="w-full text-[14px] neu-inset rounded-[12px] px-3.5 py-3 outline-none focus:ring-2 focus:ring-gold/25 mb-4" />
+              {err && <div className="text-[13px] text-[#b3341f] bg-[#fdeeea] border border-[#f3cfc6] rounded-xl px-3 py-2 mb-4">{err}</div>}
+              <button disabled={busy || !customTime} onClick={() => { const dt = new Date(customTime); if (!isNaN(dt.getTime())) rescheduleTo(dt.toISOString()); else setErr("Pick a valid date & time"); }} className="w-full btn-gold rounded-full py-3 font-[560] text-[14px] disabled:opacity-60">{busy ? "Please wait…" : "Reschedule"}</button>
+              <p className="text-[11.5px] text-faint mt-4">Time in your timezone ({tz.replace(/_/g, " ")}).</p>
+            </>
           ) : (
             <>
               <div className="neu-chip rounded-2xl px-4 py-3 mb-5">
@@ -122,9 +134,9 @@ export default function ReschedulePage() {
                       return <button key={k} onClick={() => setActiveDate(k)} className={`shrink-0 rounded-2xl px-3.5 py-2 text-[12.5px] font-[560] whitespace-nowrap ${on ? "btn-gold" : "neu-chip text-foreground/80"}`}>{fmtDate(byDate.get(k)![0].startISO)}</button>;
                     })}
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[300px] overflow-y-auto pr-0.5">
                     {(activeDate ? byDate.get(activeDate) || [] : []).map((s) => (
-                      <button key={s.startISO} disabled={busy} onClick={() => pick(s)} className="neu-inset rounded-xl py-2.5 text-[13px] font-[560] text-foreground/85 hover:text-gold hover:ring-2 hover:ring-gold/25 transition disabled:opacity-50">{fmtTime(s.startISO)}</button>
+                      <button key={s.startISO} disabled={busy} onClick={() => pick(s)} className="neu-inset rounded-lg py-2 text-[12.5px] font-[560] text-foreground/85 hover:text-gold hover:ring-2 hover:ring-gold/25 transition disabled:opacity-50">{fmtTime(s.startISO)}</button>
                     ))}
                   </div>
                 </>
