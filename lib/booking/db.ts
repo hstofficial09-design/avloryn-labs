@@ -106,7 +106,7 @@ export async function getMeetingTypeById(id: string): Promise<MeetingType | null
 }
 export async function createMeetingType(m: Partial<MeetingType> & { name: string; slug: string }) {
   const s = db(); if (!s) throw new Error("Supabase not configured");
-  const { error } = await s.from("booking_meeting_types").insert({
+  const row: Record<string, unknown> = {
     name: m.name.trim(), slug: m.slug.trim().toLowerCase(),
     duration_min: m.duration_min ?? 30, buffer_before_min: m.buffer_before_min ?? 0,
     buffer_after_min: m.buffer_after_min ?? 0, min_notice_min: m.min_notice_min ?? 120,
@@ -116,12 +116,19 @@ export async function createMeetingType(m: Partial<MeetingType> & { name: string
     followup_enabled: m.followup_enabled ?? false,
     requires_approval: m.requires_approval ?? false, durations: m.durations ?? [], price_inr: m.price_inr ?? 0,
     organizer_id: m.organizer_id ?? null, reminders: m.reminders ?? [],
-  });
+  };
+  let { error } = await s.from("booking_meeting_types").insert(row);
+  // Degrade gracefully if the reminders column hasn't been migrated yet.
+  if (error && /reminders/i.test(error.message)) { delete row.reminders; ({ error } = await s.from("booking_meeting_types").insert(row)); }
   if (error) throw new Error(error.message);
 }
 export async function updateMeetingType(id: string, fields: Partial<MeetingType>) {
   const s = db(); if (!s) throw new Error("Supabase not configured");
-  const { error } = await s.from("booking_meeting_types").update(fields).eq("id", id);
+  let { error } = await s.from("booking_meeting_types").update(fields).eq("id", id);
+  if (error && /reminders/i.test(error.message) && "reminders" in fields) {
+    const rest = { ...fields }; delete (rest as Record<string, unknown>).reminders;
+    ({ error } = await s.from("booking_meeting_types").update(rest).eq("id", id));
+  }
   if (error) throw new Error(error.message);
 }
 export async function deleteMeetingType(id: string) {
