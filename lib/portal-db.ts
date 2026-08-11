@@ -430,11 +430,11 @@ export async function getEmployeeProfile(email: string) {
     return r.rows[0] || null;
   });
 }
-export async function updateEmployeeProfile(email: string, f: { name?: string; mobile?: string; dob?: string; address?: string }) {
+export async function updateEmployeeProfile(email: string, f: { name?: string; mobile?: string; dob?: string; address?: string; start_date?: string }) {
   const v = (x?: string) => (x && x.trim() ? x.trim() : null);
   return withClient((c) => c.query(
-    `UPDATE employees SET name=COALESCE($2,name), mobile=COALESCE($3,mobile), dob=COALESCE($4,dob), address=COALESCE($5,address) WHERE LOWER(email)=LOWER($1)`,
-    [email, v(f.name), v(f.mobile), v(f.dob), v(f.address)]));
+    `UPDATE employees SET name=COALESCE($2,name), mobile=COALESCE($3,mobile), dob=COALESCE($4,dob), address=COALESCE($5,address), start_date=COALESCE($6,start_date) WHERE LOWER(email)=LOWER($1)`,
+    [email, v(f.name), v(f.mobile), v(f.dob), v(f.address), v(f.start_date)]));
 }
 export async function getCompanyProfile() {
   return withClient(async (c) => {

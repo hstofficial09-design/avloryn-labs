@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     if (s.role === "owner") {
       await saveCompanyProfile({ full_name: d.name || d.full_name, email: d.email, mobile: d.mobile, dob: d.dob, address: d.address, start_date: d.start_date });
     } else {
-      await updateEmployeeProfile(s.email, { name: d.name, mobile: d.mobile, dob: d.dob, address: d.address });
+      await updateEmployeeProfile(s.email, { name: d.name, mobile: d.mobile, dob: d.dob, address: d.address, start_date: d.start_date });
     }
     return NextResponse.json({ ok: true });
   } catch (e: any) {

@@ -48,6 +48,29 @@ export function meetingInviteHTML(o: {
   </table></body></html>`;
 }
 
+/** Branded "meeting cancelled" email (no join/reschedule buttons). */
+export function meetingCancelledHTML(o: { title: string; whenText: string; withNames?: string; greetingName?: string }): string {
+  const gold = "#c8a24a", ink = "#171512", muted = "#6b6559", cream = "#faf7f1", line = "#ece6da", red = "#b3341f";
+  const esc = (s: string) => String(s || "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c] || c));
+  return `<!doctype html><html><body style="margin:0;background:${cream};font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${cream};padding:28px 12px"><tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="width:480px;max-width:100%;background:#fff;border:1px solid ${line};border-radius:18px;overflow:hidden">
+      <tr><td style="padding:22px 28px 0">
+        <div style="font-family:Georgia,serif;font-size:19px;font-weight:600;color:${ink}">Avloryn <span style="color:${gold}">Labs</span></div>
+        <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:${red};margin-top:4px">Meeting cancelled</div>
+      </td></tr>
+      <tr><td style="padding:16px 28px 26px">
+        ${o.greetingName ? `<div style="font-size:14px;color:${ink};padding-bottom:8px">Hi ${esc(o.greetingName)},</div>` : ""}
+        <div style="font-family:Georgia,serif;font-size:22px;font-weight:600;color:${ink};line-height:1.25;padding-bottom:10px;text-decoration:line-through;text-decoration-color:${red}">${esc(o.title)}</div>
+        <div style="font-size:14px;color:${muted};padding-bottom:4px">🗓 ${esc(o.whenText)}</div>
+        ${o.withNames ? `<div style="font-size:13px;color:${muted};padding-bottom:10px">With ${esc(o.withNames)}</div>` : ""}
+        <div style="font-size:13.5px;color:${ink};padding-top:8px">This meeting has been <b>cancelled</b> and removed from the calendar.</div>
+      </td></tr>
+      <tr><td style="padding:14px 28px;border-top:1px solid ${line};font-size:11px;color:${muted}">— Avloryn Labs</td></tr>
+    </table>
+  </td></tr></table></body></html>`;
+}
+
 /** A readable "Mon, 11 Aug 2026 · 5:30 PM IST" for a start instant, in IST. */
 export function whenIST(startISO: string): string {
   const d = new Date(startISO);

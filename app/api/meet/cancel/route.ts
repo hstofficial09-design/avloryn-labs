@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
-import { getBookingByCancelToken, markBookingCancelled } from "@/lib/booking/db";
+import { Resend } from "resend";
+import { getBookingByCancelToken, markBookingCancelled, getMeetingTypeById, listMembers } from "@/lib/booking/db";
 import { deleteMeetingEvent, deleteMeetingEvents, type MemberEvent } from "@/lib/booking/google";
 import { deleteZohoEvents, type ZohoEvent } from "@/lib/booking/zoho";
+import { meetingCancelledHTML, whenIST } from "@/lib/booking/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(req: Request) {
   const d = await req.json().catch(() => ({}));
@@ -25,5 +28,37 @@ export async function POST(req: Request) {
     try { const z = JSON.parse(b.zoho_event_id) as ZohoEvent[]; if (Array.isArray(z)) await deleteZohoEvents(z); } catch { /* ignore */ }
   }
   await markBookingCancelled(b.id);
+
+  // Tell everyone it's off — the client AND every attending member (branded).
+  try {
+    const key = process.env.RESEND_API_KEY;
+    if (key) {
+      const mt = b.meeting_type_id ? await getMeetingTypeById(b.meeting_type_id) : null;
+      const members = await listMembers();
+      const byId = new Map(members.map((m) => [m.id, m]));
+      const memberNames = b.member_ids.map((id) => byId.get(id)?.name).filter(Boolean).join(", ");
+      const from = process.env.CONTACT_FROM_EMAIL || "Avloryn Labs <onboarding@resend.dev>";
+      const title = mt?.name || "Meeting";
+      const clientWhen = new Date(b.start_utc).toLocaleString("en-IN", { timeZone: b.client_timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" });
+      const rz = new Resend(key);
+      if (b.client_email && EMAIL_RE.test(b.client_email)) {
+        await rz.emails.send({
+          from, to: b.client_email, subject: `Cancelled: ${title} with Avloryn Labs`,
+          html: meetingCancelledHTML({ title, whenText: clientWhen, withNames: memberNames || "Avloryn Labs", greetingName: (b.client_name || "").split(" ")[0] || undefined }),
+          text: `Your ${title} on ${clientWhen} has been cancelled and removed from the calendar. — Avloryn Labs`,
+        });
+      }
+      for (const id of b.member_ids) {
+        const em = byId.get(id)?.email;
+        if (!em || !EMAIL_RE.test(em)) continue;
+        await rz.emails.send({
+          from, to: em, subject: `Cancelled: ${title}${b.client_name ? ` with ${b.client_name}` : ""}`,
+          html: meetingCancelledHTML({ title, whenText: whenIST(b.start_utc), withNames: b.client_name || "—", greetingName: (byId.get(id)?.name || "").split(" ")[0] || undefined }),
+          text: `${title}${b.client_name ? ` with ${b.client_name}` : ""} on ${whenIST(b.start_utc)} has been cancelled and removed from the calendar.`,
+        });
+      }
+    }
+  } catch { /* email best-effort */ }
+
   return NextResponse.json({ ok: true });
 }

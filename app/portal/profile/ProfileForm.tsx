@@ -7,17 +7,12 @@ const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground
 const GOLD = "btn-gold rounded-full font-[560]";
 
 // A stored date can be ISO ("2026-08-11") OR already formatted ("08 Aug 2026").
-// toISO → YYYY-MM-DD for <input type="date"> (empty if unparseable). dispDate → readable, never truncated.
+// toISO → YYYY-MM-DD for <input type="date"> (empty if unparseable), robust to either form.
 const toISO = (s?: string | null) => {
   if (!s) return "";
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return String(s).slice(0, 10);
   const d = new Date(String(s));
   return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
-};
-const dispDate = (s?: string | null) => {
-  if (!s) return "";
-  const d = new Date(String(s));
-  return isNaN(d.getTime()) ? String(s) : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 };
 
 export default function ProfileForm({ profile, isOwner }: { profile: any; isOwner: boolean }) {
@@ -81,9 +76,7 @@ export default function ProfileForm({ profile, isOwner }: { profile: any; isOwne
           </div>
           <div><label className={label}>Mobile</label><input value={mobile} onChange={(e) => setMobile(e.target.value)} className={input} /></div>
           <div><label className={label}>Date of birth {mustComplete && <span className="text-gold">*</span>}</label><input type="date" value={dob} onChange={(e) => setDob(e.target.value)} className={input} /></div>
-          {isOwner
-            ? <div><label className={label}>Start date</label><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={input} /></div>
-            : profile.start_date && <div><label className={label}>Start date <span className="text-faint font-normal">(fixed)</span></label><input value={dispDate(profile.start_date)} className={input + " opacity-70"} readOnly /></div>}
+          <div><label className={label}>Start date {mustComplete && !startDate && <span className="text-gold">*</span>}</label><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={input} /></div>
           <div className="sm:col-span-2"><label className={label}>Address</label><textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={2} className={input + " resize-none"} /></div>
           <div className="sm:col-span-2 flex items-center gap-3">
             <button type="submit" disabled={busy} className={GOLD + " px-5 py-2.5 text-[13px] disabled:opacity-60"}>{busy ? "Saving…" : "Save profile"}</button>
