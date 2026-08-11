@@ -121,33 +121,29 @@ function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { memb
               </div>
               {(() => {
                 const rv = reveal.has(m.id);
-                const showG = !m.googleConnected || rv;
-                const showZ = zohoReady && (!m.zohoConnected || rv);
                 const anyConnected = m.googleConnected || (zohoReady && m.zohoConnected);
                 return (
                   <div className="mt-3 space-y-1.5">
-                    {showG && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10.5px] text-faint w-[42px] shrink-0">Google</span>
-                        <input readOnly value={origin + m.connectLink} className="flex-1 min-w-0 neu-inset rounded-lg px-2.5 py-1.5 text-[11px] text-faint truncate" onFocus={(ev) => ev.currentTarget.select()} />
-                        <button onClick={() => copy(origin + m.connectLink, "g-" + m.id)} className="btn-gold rounded-lg px-2.5 py-1.5 text-[11px] font-[560] shrink-0">{copied === "g-" + m.id ? "✓" : "Copy"}</button>
-                      </div>
+                    {rv && (
+                      <>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10.5px] text-faint w-[42px] shrink-0">Google</span>
+                          <input readOnly value={origin + m.connectLink} className="flex-1 min-w-0 neu-inset rounded-lg px-2.5 py-1.5 text-[11px] text-faint truncate" onFocus={(ev) => ev.currentTarget.select()} />
+                          <button onClick={() => copy(origin + m.connectLink, "g-" + m.id)} className="btn-gold rounded-lg px-2.5 py-1.5 text-[11px] font-[560] shrink-0">{copied === "g-" + m.id ? "✓" : "Copy"}</button>
+                        </div>
+                        {zohoReady && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10.5px] text-faint w-[42px] shrink-0">Zoho</span>
+                            <input readOnly value={origin + m.zohoConnectLink} className="flex-1 min-w-0 neu-inset rounded-lg px-2.5 py-1.5 text-[11px] text-faint truncate" onFocus={(ev) => ev.currentTarget.select()} />
+                            <button onClick={() => copy(origin + m.zohoConnectLink, "z-" + m.id)} className="btn-gold rounded-lg px-2.5 py-1.5 text-[11px] font-[560] shrink-0">{copied === "z-" + m.id ? "✓" : "Copy"}</button>
+                          </div>
+                        )}
+                        <p className="text-[10.5px] text-faint">Send the link to {m.name.split(" ")[0]} — they open it &amp; grant calendar access.</p>
+                      </>
                     )}
-                    {showZ && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10.5px] text-faint w-[42px] shrink-0">Zoho</span>
-                        <input readOnly value={origin + m.zohoConnectLink} className="flex-1 min-w-0 neu-inset rounded-lg px-2.5 py-1.5 text-[11px] text-faint truncate" onFocus={(ev) => ev.currentTarget.select()} />
-                        <button onClick={() => copy(origin + m.zohoConnectLink, "z-" + m.id)} className="btn-gold rounded-lg px-2.5 py-1.5 text-[11px] font-[560] shrink-0">{copied === "z-" + m.id ? "✓" : "Copy"}</button>
-                      </div>
-                    )}
-                    {(showG || showZ) && !rv && (
-                      <p className="text-[10.5px] text-faint">Send the link to {m.name.split(" ")[0]} — they open it &amp; grant calendar access.</p>
-                    )}
-                    {anyConnected && (
-                      <button onClick={() => toggleReveal(m.id)} className="text-[10.5px] font-semibold text-gold hover:underline">
-                        {rv ? "Hide connect links" : "Show connect links (to reconnect)"}
-                      </button>
-                    )}
+                    <button onClick={() => toggleReveal(m.id)} className="text-[10.5px] font-semibold text-gold hover:underline">
+                      {rv ? "Hide link" : anyConnected ? "Show connect link (to reconnect)" : "Show connect link"}
+                    </button>
                   </div>
                 );
               })()}
