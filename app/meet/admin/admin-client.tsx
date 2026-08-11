@@ -630,7 +630,7 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
             {days.map((d, i) => <div key={i} className="text-center pb-2"><div className="text-[11px] text-faint">{fmtDay(d, { weekday: "short" })}</div><div className={"text-[13px] font-[600] " + (isToday(d) ? "text-gold" : "")}>{fmtDay(d, { day: "numeric" })}</div></div>)}
           </div>
           <div className="grid" style={{ gridTemplateColumns: `48px repeat(7,1fr)` }}>
-            <div>{Array.from({ length: HE - HS }, (_, h) => <div key={h} style={{ height: RH }} className="text-[10px] text-faint text-right pr-1.5 -mt-1.5">{HS + h}:00</div>)}</div>
+            <div className="relative" style={{ height: (HE - HS) * RH }}>{Array.from({ length: HE - HS }, (_, h) => <div key={h} style={{ top: h * RH - 6 }} className="absolute right-0 pr-1.5 text-[10px] text-faint">{HS + h}:00</div>)}</div>
             {days.map((day, di) => {
               const gridH = (HE - HS) * RH;
               // Clamp an event to the visible [HS,HE] window so early-morning / late-night
