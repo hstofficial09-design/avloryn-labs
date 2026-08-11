@@ -23,7 +23,14 @@ export async function GET(req: Request) {
     const parts: { start: string; end: string; title?: string }[] = [];
     if (g.has(m.id)) { try { parts.push(...await memberBusy(m.id, from, to)); } catch { /* skip */ } }
     if (z.has(m.id)) { try { parts.push(...await getZohoBusy(m.id, from, to)); } catch { /* skip */ } }
-    return { memberId: m.id, name: m.name, intervals: parts };
+    // The same event can appear on both Google + Zoho — keep one (prefer the titled Zoho copy).
+    const seen = new Map<string, { start: string; end: string; title?: string }>();
+    for (const p of parts) {
+      const key = `${Date.parse(p.start)}-${Date.parse(p.end)}`;
+      const ex = seen.get(key);
+      if (!ex || (!ex.title && p.title)) seen.set(key, p);
+    }
+    return { memberId: m.id, name: m.name, intervals: [...seen.values()] };
   }));
 
   return NextResponse.json({ busy: busy.filter((b) => b.intervals.length) });
