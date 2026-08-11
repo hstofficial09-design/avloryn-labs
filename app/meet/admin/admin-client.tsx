@@ -10,6 +10,8 @@ type Answer = { q: string; a: string };
 type Booking = { id: string; client_name: string; client_email: string; start_utc: string; end_utc: string; status: string; meet_link: string | null; meetingTypeName: string; memberNames: string[]; member_ids: string[]; cancel_token: string | null; answers?: Answer[]; attendance?: string | null; client_notes?: string };
 type Analytics = { total: number; confirmed: number; cancelled: number; noShow: number; attended: number; thisWeek: number; last30: number; byType: { name: string; count: number }[]; byWeekday: number[]; byHour: number[]; perWeek: { week: string; count: number }[] };
 type Tab = "calendar" | "members" | "types" | "availability" | "bookings" | "analytics";
+// Display labels (internal keys stay the same so the routing/logic is untouched).
+const TAB_LABEL: Record<Tab, string> = { calendar: "Calendar", members: "Team", types: "Booking Links", availability: "Working Hours", bookings: "Meetings", analytics: "Insights" };
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const card = "card-lux rounded-3xl p-6 sm:p-7";
@@ -67,7 +69,7 @@ export default function MeetAdmin({ googleReady }: { googleReady: boolean }) {
 
       <div className="flex gap-2 mb-6 overflow-x-auto">
         {(["calendar", "members", "types", "availability", "bookings", "analytics"] as Tab[]).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`shrink-0 rounded-full px-4 py-2 text-[12.5px] font-[560] capitalize transition ${tab === t ? "btn-gold" : "neu-chip text-foreground/70"}`}>{t === "types" ? "Meeting types" : t}</button>
+          <button key={t} onClick={() => setTab(t)} className={`shrink-0 rounded-full px-4 py-2 text-[12.5px] font-[560] transition ${tab === t ? "btn-gold" : "neu-chip text-foreground/70"}`}>{TAB_LABEL[t]}</button>
         ))}
       </div>
 
@@ -231,7 +233,7 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
   return (
     <div className="grid gap-5">
       <div className={card}>
-        <h2 className="font-serif text-[19px] font-[600] mb-1">Meeting types</h2>
+        <h2 className="font-serif text-[19px] font-[600] mb-1">Booking Links</h2>
         <p className="text-[12.5px] text-muted-foreground mb-4">Each type has a shareable link — send it to people so they can pick a time.</p>
         <div className="grid gap-3">
           {types.length === 0 && <p className="text-[13px] text-muted-foreground">No meeting types yet — create one below.</p>}
