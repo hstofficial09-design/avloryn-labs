@@ -631,32 +631,60 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
           </div>
           <div className="grid" style={{ gridTemplateColumns: `48px repeat(7,1fr)` }}>
             <div>{Array.from({ length: HE - HS }, (_, h) => <div key={h} style={{ height: RH }} className="text-[10px] text-faint text-right pr-1.5 -mt-1.5">{HS + h}:00</div>)}</div>
-            {days.map((day, di) => (
-              <div key={di} className="relative border-l border-border" style={{ height: (HE - HS) * RH }}>
-                {Array.from({ length: HE - HS }, (_, h) => <div key={h} style={{ top: h * RH, height: RH }} className="absolute inset-x-0 border-b border-border/40" />)}
-                {mf && avail.filter((a) => a.weekday === istWeekday(day)).map((a, ai) => {
-                  const [sh, sm] = a.start.split(":").map(Number), [eh, em] = a.end.split(":").map(Number);
-                  const top = ((sh + sm / 60) - HS) * RH, ht = ((eh + em / 60) - (sh + sm / 60)) * RH;
-                  return <div key={ai} className="absolute inset-x-0.5 rounded bg-[#5b8a72]/12" style={{ top, height: ht }} />;
-                })}
-                {busyFor.flatMap((bm) => bm.intervals.filter((iv) => sameDay(iv.start, day)).map((iv, ii) => {
-                  const top = (istHM(new Date(iv.start)) - HS) * RH;
-                  const dur = (Date.parse(iv.end) - Date.parse(iv.start)) / 6e4; const ht = Math.max(18, dur / 60 * RH);
-                  return <div key={bm.memberId + ii} className="absolute inset-x-0.5 rounded bg-foreground/[0.09] border border-foreground/10 overflow-hidden" style={{ top, height: ht }} title={`${iv.title || "Busy"} · ${bm.name} · ${new Date(iv.start).toLocaleTimeString("en-US", { timeZone: CAL_TZ, hour: "numeric", minute: "2-digit" })} IST`}>
-                    <div className="text-[9px] text-foreground/60 px-1 leading-tight truncate font-[560]">{iv.title || "Busy"}</div>
-                    {!mf && <div className="text-[8px] text-foreground/40 px-1 leading-tight truncate">{bm.name.split(" ")[0]}</div>}
-                  </div>;
-                }))}
-                {active.filter((b) => sameDay(b.start_utc, day)).map((b) => {
-                  const top = (istHM(new Date(b.start_utc)) - HS) * RH;
-                  const dur = (Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 6e4; const ht = Math.max(24, dur / 60 * RH);
-                  return <div key={b.id} className="absolute inset-x-0.5 rounded-md px-1.5 py-0.5 overflow-hidden text-white shadow-sm" style={{ top, height: ht, background: colorOf(b.member_ids[0] || ""), opacity: b.status === "pending" ? 0.6 : 1 }} title={`${fmtT(b.start_utc)} · ${b.client_name} · ${b.meetingTypeName} · ${b.memberNames.join(", ")}${b.status === "pending" ? " (pending)" : ""}`}>
-                    <div className="text-[10px] font-[600] leading-tight truncate">{fmtT(b.start_utc)} {b.client_name}</div>
-                    <div className="text-[9px] leading-tight truncate opacity-90">{b.memberNames.join(", ")}</div>
-                  </div>;
-                })}
-              </div>
-            ))}
+            {days.map((day, di) => {
+              const gridH = (HE - HS) * RH;
+              // Clamp an event to the visible [HS,HE] window so early-morning / late-night
+              // events never fall off the grid, and never trust an unparseable time.
+              const place = (startISO: string, endISO: string, minH: number) => {
+                const sh = istHM(new Date(startISO));
+                const durH = (Date.parse(endISO) - Date.parse(startISO)) / 36e5;
+                if (isNaN(sh) || isNaN(durH) || durH <= 0) return null;
+                let top = (sh - HS) * RH, bottom = top + durH * RH;
+                top = Math.max(0, top); bottom = Math.min(gridH, bottom);
+                if (bottom <= 0 || top >= gridH || bottom - top < 1) return null;
+                return { top, height: Math.max(minH, bottom - top) };
+              };
+              type Item = { top: number; height: number; lane: number } & ({ k: "busy"; nm: string; iv: { start: string; end: string; title?: string } } | { k: "book"; b: Booking });
+              const items: Item[] = [];
+              busyFor.forEach((bm) => bm.intervals.filter((iv) => sameDay(iv.start, day)).forEach((iv) => {
+                const p = place(iv.start, iv.end, 18); if (p) items.push({ k: "busy", nm: bm.name, iv, lane: 0, ...p });
+              }));
+              active.filter((b) => sameDay(b.start_utc, day)).forEach((b) => {
+                const p = place(b.start_utc, b.end_utc, 24); if (p) items.push({ k: "book", b, lane: 0, ...p });
+              });
+              // Pack overlapping blocks into side-by-side lanes so none hides another.
+              items.sort((a, b) => a.top - b.top || a.height - b.height);
+              const laneEnd: number[] = [];
+              items.forEach((it) => {
+                let lane = laneEnd.findIndex((end) => it.top >= end - 0.5);
+                if (lane === -1) { lane = laneEnd.length; laneEnd.push(0); }
+                laneEnd[lane] = it.top + it.height; it.lane = lane;
+              });
+              const lanes = Math.max(1, laneEnd.length);
+              const lstyle = (it: Item) => ({ top: it.top, height: it.height, left: `calc(${(it.lane / lanes) * 100}% + 1px)`, width: `calc(${100 / lanes}% - 2px)` });
+              return (
+                <div key={di} className="relative border-l border-border" style={{ height: gridH }}>
+                  {Array.from({ length: HE - HS }, (_, h) => <div key={h} style={{ top: h * RH, height: RH }} className="absolute inset-x-0 border-b border-border/40" />)}
+                  {mf && avail.filter((a) => a.weekday === istWeekday(day)).map((a, ai) => {
+                    const [sh, sm] = a.start.split(":").map(Number), [eh, em] = a.end.split(":").map(Number);
+                    const top = Math.max(0, ((sh + sm / 60) - HS) * RH), bottom = Math.min(gridH, ((eh + em / 60) - HS) * RH);
+                    if (bottom <= top) return null;
+                    return <div key={ai} className="absolute inset-x-0.5 rounded bg-[#5b8a72]/12" style={{ top, height: bottom - top }} />;
+                  })}
+                  {items.map((it, ii) => it.k === "busy" ? (
+                    <div key={"b" + ii} className="absolute rounded bg-foreground/[0.09] border border-foreground/10 overflow-hidden" style={lstyle(it)} title={`${it.iv.title || "Busy"} · ${it.nm} · ${new Date(it.iv.start).toLocaleTimeString("en-US", { timeZone: CAL_TZ, hour: "numeric", minute: "2-digit" })} IST`}>
+                      <div className="text-[9px] text-foreground/60 px-1 leading-tight truncate font-[560]">{it.iv.title || "Busy"}</div>
+                      {!mf && <div className="text-[8px] text-foreground/40 px-1 leading-tight truncate">{it.nm.split(" ")[0]}</div>}
+                    </div>
+                  ) : (
+                    <div key={"k" + ii} className="absolute rounded-md px-1.5 py-0.5 overflow-hidden text-white shadow-sm" style={{ ...lstyle(it), background: colorOf(it.b.member_ids[0] || ""), opacity: it.b.status === "pending" ? 0.6 : 1 }} title={`${fmtT(it.b.start_utc)} · ${it.b.client_name} · ${it.b.meetingTypeName} · ${it.b.memberNames.join(", ")}${it.b.status === "pending" ? " (pending)" : ""}`}>
+                      <div className="text-[10px] font-[600] leading-tight truncate">{fmtT(it.b.start_utc)} {it.b.client_name}</div>
+                      <div className="text-[9px] leading-tight truncate opacity-90">{it.b.memberNames.join(", ")}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

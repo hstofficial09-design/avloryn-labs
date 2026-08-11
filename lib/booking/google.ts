@@ -112,6 +112,42 @@ export async function memberBusy(memberId: string, fromISO: string, toISO: strin
   }
 }
 
+export type TitledBlock = { start: string; end: string; title?: string; allDay?: boolean };
+/** A member's Google events in [from,to] WITH titles (events.list, not free/busy) so the
+ *  Team Calendar can show the real meeting name. Best-effort; empty on error/not-connected. */
+export async function memberEvents(memberId: string, fromISO: string, toISO: string): Promise<TitledBlock[]> {
+  try {
+    const m = await memberClient(memberId);
+    if (!m) return [];
+    const cal = google.calendar({ version: "v3", auth: m.client });
+    const res = await cal.events.list({
+      calendarId: m.calendarId,
+      timeMin: fromISO,
+      timeMax: toISO,
+      singleEvents: true, // expand recurring into instances
+      orderBy: "startTime",
+      maxResults: 250,
+      showDeleted: false,
+    });
+    const out: TitledBlock[] = [];
+    for (const e of res.data.items || []) {
+      if (e.status === "cancelled") continue;
+      // transparent events ("free") don't block time — skip them like free/busy does.
+      if (e.transparency === "transparent") continue;
+      const allDay = !!e.start?.date && !e.start?.dateTime;
+      const s = e.start?.dateTime || (e.start?.date ? `${e.start.date}T00:00:00+05:30` : null);
+      const en = e.end?.dateTime || (e.end?.date ? `${e.end.date}T00:00:00+05:30` : null);
+      if (!s || !en) continue;
+      const si = new Date(s), ei = new Date(en);
+      if (isNaN(si.getTime()) || isNaN(ei.getTime()) || ei <= si) continue;
+      out.push({ start: si.toISOString(), end: ei.toISOString(), title: (e.summary || undefined), ...(allDay ? { allDay: true } : {}) });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 /** Create the meeting event (with a Meet link) on the host member's calendar, inviting
  *  every member + the client. Returns the event id + Meet link. */
 export async function createMeetingEvent(opts: {

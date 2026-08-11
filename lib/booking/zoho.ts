@@ -170,8 +170,23 @@ function zohoDtToISO(s?: string): string | null {
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-export type BusyBlock = { start: string; end: string; title?: string };
-/** A member's Zoho calendar events in [from,to] as busy blocks with titles (best-effort). */
+export type BusyBlock = { start: string; end: string; title?: string; allDay?: boolean };
+
+/** All-day Zoho date "yyyyMMdd" → that day's IST midnight ISO (start) or next IST midnight (end). */
+function zohoDayToISO(s: string | undefined, next = false): string | null {
+  if (!s) return null;
+  const m = String(s).match(/^(\d{4})(\d{2})(\d{2})/);
+  if (!m) return null;
+  const [, Y, Mo, D] = m;
+  const d = new Date(`${Y}-${Mo}-${D}T00:00:00+05:30`);
+  if (isNaN(d.getTime())) return null;
+  if (next) d.setDate(d.getDate() + 1);
+  return d.toISOString();
+}
+
+/** A member's Zoho calendar events in [from,to] as busy blocks with titles (best-effort).
+ *  Robust against Zoho's quirks: an empty calendar returns [{message:"No events found."}],
+ *  all-day events carry a date-only "yyyyMMdd", and some events omit a title. */
 export async function getZohoBusy(memberId: string, fromISO: string, toISO: string): Promise<BusyBlock[]> {
   if (!zohoConfigured()) return [];
   try {
@@ -181,11 +196,20 @@ export async function getZohoBusy(memberId: string, fromISO: string, toISO: stri
     const url = `${calBase()}/calendars/${z.calUid}/events?range=${encodeURIComponent(range)}`;
     const r = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${z.token}` } });
     const j = await r.json();
-    const events: any[] = j?.events || [];
+    const events: any[] = Array.isArray(j?.events) ? j.events : [];
     const out: BusyBlock[] = [];
     for (const e of events) {
-      const si = zohoDtToISO(e?.dateandtime?.start), ei = zohoDtToISO(e?.dateandtime?.end);
-      if (si && ei) out.push({ start: si, end: ei, title: (e?.title ? String(e.title).slice(0, 80) : undefined) });
+      // Zoho returns [{message:"No events found."}] for an empty range — not a real event.
+      if (!e || e.message || !e.dateandtime) continue;
+      const title = e?.title ? String(e.title).trim().slice(0, 80) : undefined;
+      const rawS = e?.dateandtime?.start, rawE = e?.dateandtime?.end;
+      let si = zohoDtToISO(rawS), ei = zohoDtToISO(rawE);
+      const allDay = !!e.isallday || (!si && /^\d{8}$/.test(String(rawS || "")));
+      if (allDay) { si = zohoDayToISO(rawS); ei = zohoDayToISO(rawE || rawS, !rawE); }
+      // Only keep blocks with two valid, ordered instants — never a NaN/half-parsed event.
+      if (si && ei && !isNaN(Date.parse(si)) && !isNaN(Date.parse(ei)) && Date.parse(ei) > Date.parse(si)) {
+        out.push({ start: si, end: ei, title, ...(allDay ? { allDay: true } : {}) });
+      }
     }
     return out;
   } catch { return []; }
