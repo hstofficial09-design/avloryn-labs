@@ -28,6 +28,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Normalise a date to ISO YYYY-MM-DD for storage (the form sends it pre-formatted like
+// "08 Aug 2026"; storing that verbatim caused a 10-char slice to truncate the year → "202").
+const isoDate = (s?: string | null): string | null => {
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(String(s))) return String(s).slice(0, 10);
+  const d = new Date(String(s));
+  return isNaN(d.getTime()) ? String(s) : d.toISOString().slice(0, 10);
+};
 const A4: [number, number] = [595.28, 841.89];
 const MARGIN = 54;
 const INK = rgb(0.05, 0.05, 0.07);
@@ -374,7 +382,7 @@ export async function POST(req: Request) {
           await sb.from("intern_onboarding").insert({
             reg_type: regType,
             full_name: d.fullName, mobile: d.mobile, email: d.email, address: d.address,
-            role: d.role, start_date: d.startDate, duration: d.duration,
+            role: d.role, start_date: isoDate(d.startDate), duration: d.duration,
             id_type: d.idType, id_number: d.idNumber, is_student: d.isStudent,
             college: d.collegeName, student_id: d.studentId, submitted_at: new Date().toISOString(),
           });
@@ -403,7 +411,7 @@ export async function POST(req: Request) {
           is_student: d.isStudent ? "Yes" : "No",
           college: d.collegeName,
           student_id: d.studentId,
-          start_date: d.startDate,
+          start_date: isoDate(d.startDate) ?? undefined,
           duration: `${d.duration} months`,
         });
       }

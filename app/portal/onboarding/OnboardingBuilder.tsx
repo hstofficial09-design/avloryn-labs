@@ -98,7 +98,16 @@ function RoleCard({ role, reload }: { role: Role; reload: () => void }) {
   const [r, setR] = useState<Role>({ ...role, terms: role.terms ?? role.defaultTerms ?? "" });
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [newName, setNewName] = useState(role.track);
+  const [renameErr, setRenameErr] = useState("");
   const set = (k: keyof Role, v: any) => setR((x) => ({ ...x, [k]: v }));
+  async function doRename() {
+    const to = newName.trim();
+    if (!to || to === role.track) { setRenaming(false); return; }
+    setRenameErr("");
+    try { await api("role-rename", { from: role.track, to }); reload(); } catch (e: any) { setRenameErr(e?.message || "Could not rename"); }
+  }
   async function save() {
     setBusy(true);
     try { await api("role", { role: r }); setSaved(true); setTimeout(() => setSaved(false), 1500); reload(); } finally { setBusy(false); }
@@ -112,7 +121,19 @@ function RoleCard({ role, reload }: { role: Role; reload: () => void }) {
   return (
     <div className={card}>
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-        <div className="font-serif text-[18px] font-[600]">{r.track}</div>
+        {renaming ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus className="neu-inset rounded-lg px-3 py-1.5 text-[15px] font-[600]" />
+            <button onClick={doRename} className="btn-gold rounded-full px-3.5 py-1.5 text-[12px] font-[560]">Save name</button>
+            <button onClick={() => { setRenaming(false); setNewName(role.track); setRenameErr(""); }} className="text-[12px] font-semibold text-muted-foreground hover:underline">Cancel</button>
+            {renameErr && <span className="text-[11.5px] text-[#b3341f]">{renameErr}</span>}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <div className="font-serif text-[18px] font-[600]">{r.track}</div>
+            <button onClick={() => { setNewName(r.track); setRenaming(true); }} className="text-[11.5px] font-semibold text-gold hover:underline">Rename</button>
+          </div>
+        )}
         <button onClick={remove} className="text-[12px] font-semibold text-[#b3341f] hover:underline">Remove role</button>
       </div>
 

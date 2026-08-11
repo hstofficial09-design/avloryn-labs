@@ -95,6 +95,11 @@ alter table booking_meeting_types add column if not exists durations jsonb not n
 -- Price to charge at booking (INR). 0 = free.
 alter table booking_meeting_types add column if not exists price_inr int not null default 0;
 
+-- Reminder offsets in minutes-before-start, e.g. [15,60,1440]. Empty = default (120).
+alter table booking_meeting_types add column if not exists reminders jsonb not null default '[]'::jsonb;
+-- Which reminder offsets have already been emailed for a booking, e.g. [1440,60].
+alter table bookings add column if not exists reminders_sent jsonb not null default '[]'::jsonb;
+
 -- Payment + coupon on a booking.
 alter table bookings add column if not exists payment_id text;
 alter table bookings add column if not exists amount_inr int;

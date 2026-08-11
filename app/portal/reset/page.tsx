@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { LogoMark } from "@/components/ui/logo";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export default function ResetPassword() {
   const [token, setToken] = useState<string | null>(null);
@@ -67,10 +68,10 @@ export default function ResetPassword() {
               <p className="text-[13px] text-muted-foreground mb-6">Choose a new password for your portal account.</p>
 
               <label className={label}>New password</label>
-              <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" className={input} />
+              <PasswordInput value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" className={input} />
 
               <label className={label}>Confirm new password</label>
-              <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" className={input} />
+              <PasswordInput value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" className={input} />
 
               {err && <div className="text-[13px] text-[#b3341f] bg-[#fdeeea] border border-[#f3cfc6] rounded-xl px-3 py-2 mb-4">{err}</div>}
 

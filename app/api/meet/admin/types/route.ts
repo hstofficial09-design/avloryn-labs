@@ -30,6 +30,13 @@ function cleanDurations(raw: unknown): number[] {
   for (const x of raw) { const n = Math.round(Number(x)); if (n > 0 && n <= 600) set.add(n); }
   return [...set].sort((a, b) => a - b).slice(0, 6);
 }
+// Reminder offsets (minutes before start) → sorted unique, 1 min … 7 days, max 6.
+function cleanReminders(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  const set = new Set<number>();
+  for (const x of raw) { const n = Math.round(Number(x)); if (n > 0 && n <= 10080) set.add(n); }
+  return [...set].sort((a, b) => a - b).slice(0, 6);
+}
 
 export async function GET() {
   if (!(await canSchedule())) return deny();
@@ -59,6 +66,7 @@ export async function POST(req: Request) {
     followup_enabled: !!d.followup_enabled,
     requires_approval: !!d.requires_approval,
     durations: cleanDurations(d.durations),
+    reminders: cleanReminders(d.reminders),
     price_inr: Math.max(0, Math.round(Number(d.price_inr) || 0)),
     organizer_id: d.organizer_id && memberIds.includes(String(d.organizer_id)) ? String(d.organizer_id) : null,
   });
@@ -80,6 +88,7 @@ export async function PATCH(req: Request) {
   }
   if ("questions" in d) patch.questions = cleanQuestions(d.questions);
   if ("durations" in d) patch.durations = cleanDurations(d.durations);
+  if ("reminders" in d) patch.reminders = cleanReminders(d.reminders);
   if ("organizer_id" in d) patch.organizer_id = d.organizer_id ? String(d.organizer_id) : null;
   if ("slug" in d && d.slug) patch.slug = slugify(d.slug);
   const t = await updateMeetingType(id, patch);

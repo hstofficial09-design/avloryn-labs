@@ -3,9 +3,10 @@ import { randomBytes } from "crypto";
 import { Resend } from "resend";
 import { getMeetingTypeBySlug, listMembers, createBooking, upcomingCountByMember, incrementCouponUse, type IntakeAnswer } from "@/lib/booking/db";
 import { memberBusy, createMeetingForMembers } from "@/lib/booking/google";
-import { createZohoForMembers } from "@/lib/booking/zoho";
+import { createZohoForMembers, getZohoBusy } from "@/lib/booking/zoho";
 import { quote, verifySignature } from "@/lib/booking/pay";
 import { buildICS } from "@/lib/booking/ics";
+import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
 import { SITE_URL } from "@/lib/seo";
 
 export const runtime = "nodejs";
@@ -69,14 +70,17 @@ export async function POST(req: Request) {
   const bufB = mt.buffer_before_min * 60_000, bufA = mt.buffer_after_min * 60_000;
   const ps = startMs - bufB, pe = endMs + bufA;
   try {
+    const winFrom = new Date(ps).toISOString(), winTo = new Date(pe).toISOString();
     for (const id of memberIds) {
-      const busy = await memberBusy(id, new Date(ps).toISOString(), new Date(pe).toISOString());
+      // Check BOTH Google and Zoho — an event on either calendar means the member is busy.
+      const [gb, zb] = await Promise.all([memberBusy(id, winFrom, winTo), getZohoBusy(id, winFrom, winTo).catch(() => [])]);
+      const busy = [...gb, ...zb];
       if (busy.some((b) => Date.parse(b.start) < pe && ps < Date.parse(b.end))) {
         return NextResponse.json({ error: "Sorry, that slot was just taken. Please pick another." }, { status: 409 });
       }
     }
   } catch {
-    /* if free/busy can't be read we still let the booking through — Google invite is source of truth */
+    /* if free/busy can't be read we still let the booking through — the calendar invite is source of truth */
   }
 
   const members = await listMembers();
@@ -169,6 +173,7 @@ export async function POST(req: Request) {
       await new Resend(key).emails.send({
         from, to: email,
         subject: `Confirmed: ${mt.name} with Avloryn Labs`,
+        html: meetingInviteHTML({ heading: "You're booked", title: mt.name, whenText: whenClient, withNames: memberNames || "Avloryn Labs", greetingName: name.split(" ")[0] || undefined, notes, meetLink, rescheduleUrl, cancelUrl }),
         text:
           `Hi ${name},\n\nYour ${mt.name} is confirmed.\n\n` +
           `When: ${whenClient}\nWith: ${memberNames || "Avloryn Labs"}\n` +
@@ -187,6 +192,7 @@ export async function POST(req: Request) {
       await new Resend(key).emails.send({
         from, to,
         subject: `New booking: ${mt.name} — ${name}`,
+        html: meetingInviteHTML({ heading: "New booking", title: `${mt.name} — ${name}`, whenText: whenIST(startISO), withNames: memberNames || "—", notes: [`Client: ${name} (${email})`, notes, answerLines].filter(Boolean).join(" · "), meetLink }),
         text:
           `New ${mt.name} booked.\n\n` +
           `Client: ${name} (${email})\nWhen: ${whenClient}\nWith: ${memberNames}\n` +

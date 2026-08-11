@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import {
-  bookingsNeedingReminder, bookingsNeedingFollowup, markReminded, markFollowedUp,
+  bookingsNeedingAnyReminder, bookingsNeedingFollowup, markReminderSent, markFollowedUp,
   listMeetingTypes, listMembers,
 } from "@/lib/booking/db";
+import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
 import { SITE_URL } from "@/lib/seo";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const CRON_WINDOW = 20; // the scheduled function runs ~every 15 min
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,28 +28,48 @@ async function run() {
   const [types, members] = await Promise.all([listMeetingTypes(), listMembers()]);
   const typeById = new Map(types.map((t) => [t.id, t]));
   const memberName = new Map(members.map((m) => [m.id, m.name]));
+  const memberEmail = new Map(members.map((m) => [m.id, m.email]));
 
   let reminders = 0, followups = 0;
 
-  // ── Reminders: ~2h before start ──
-  for (const b of await bookingsNeedingReminder(120)) {
+  // ── Reminders: at each offset the meeting type configured (default 2h), to the client
+  //    AND every attending member. Fires the most imminent still-fresh one per run. ──
+  for (const b of await bookingsNeedingAnyReminder(1600)) {
     try {
       const t = typeById.get(b.meeting_type_id || "");
-      const when = new Date(b.start_utc).toLocaleString("en-IN", { timeZone: b.client_timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" });
-      const withWho = b.member_ids.map((id) => memberName.get(id)).filter(Boolean).join(", ");
-      if (resend && b.client_email) {
-        await resend.emails.send({
-          from, to: b.client_email,
-          subject: `Reminder: ${t?.name || "your meeting"} soon`,
-          text:
-            `Hi ${b.client_name},\n\nA quick reminder about your ${t?.name || "meeting"}.\n\n` +
-            `When: ${when}\nWith: ${withWho || "Avloryn Labs"}\n` +
-            (b.meet_link ? `Join (Google Meet): ${b.meet_link}\n` : "") +
-            `\nReschedule: ${SITE_URL}/meet/reschedule?t=${b.cancel_token}\nCancel: ${SITE_URL}/meet/cancel?t=${b.cancel_token}\n\n— Avloryn Labs`,
-        });
+      const offsets = ((t?.reminders && t.reminders.length ? t.reminders : [120]) as number[]).filter((n) => Number.isFinite(n) && n > 0);
+      const sent: number[] = Array.isArray(b.reminders_sent) ? b.reminders_sent : [];
+      const mins = (Date.parse(b.start_utc) - Date.now()) / 60000;
+      const crossed = offsets.filter((o) => !sent.includes(o) && mins <= o);
+      if (!crossed.length) continue;
+      // Email only the most imminent still-fresh offset; mark every crossed one handled
+      // (a long-missed offset is marked without spamming a stale reminder).
+      const fresh = crossed.filter((o) => mins > o - CRON_WINDOW);
+      const toEmail = fresh.length ? Math.min(...fresh) : null;
+      if (toEmail != null && resend) {
+        const withWho = b.member_ids.map((id) => memberName.get(id)).filter(Boolean).join(", ");
+        const clientWhen = new Date(b.start_utc).toLocaleString("en-IN", { timeZone: b.client_timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" });
+        const rescheduleUrl = `${SITE_URL}/meet/reschedule?t=${b.cancel_token}`, cancelUrl = `${SITE_URL}/meet/cancel?t=${b.cancel_token}`;
+        const label = toEmail >= 1440 ? `${Math.round(toEmail / 1440)} day${toEmail >= 2880 ? "s" : ""}` : toEmail >= 60 ? `${Math.round(toEmail / 60)} hour${toEmail >= 120 ? "s" : ""}` : `${toEmail} min`;
+        if (b.client_email && EMAIL_RE.test(b.client_email)) {
+          await resend.emails.send({
+            from, to: b.client_email, subject: `Reminder: ${t?.name || "your meeting"} in ${label}`,
+            html: meetingInviteHTML({ heading: `Reminder · in ${label}`, title: t?.name || "Your meeting", whenText: clientWhen, withNames: withWho || "Avloryn Labs", greetingName: (b.client_name || "").split(" ")[0] || undefined, meetLink: b.meet_link, rescheduleUrl, cancelUrl }),
+            text: `Reminder: ${t?.name || "your meeting"} in ${label}.\nWhen: ${clientWhen}\n${b.meet_link ? `Join: ${b.meet_link}\n` : ""}Reschedule: ${rescheduleUrl}\nCancel: ${cancelUrl}`,
+          });
+        }
+        for (const id of b.member_ids) {
+          const em = memberEmail.get(id);
+          if (!em || !EMAIL_RE.test(em)) continue;
+          await resend.emails.send({
+            from, to: em, subject: `Reminder: ${t?.name || "meeting"} with ${b.client_name} in ${label}`,
+            html: meetingInviteHTML({ heading: `Reminder · in ${label}`, title: t?.name || "Meeting", whenText: whenIST(b.start_utc), withNames: b.client_name || "—", greetingName: (memberName.get(id) || "").split(" ")[0] || undefined, meetLink: b.meet_link, rescheduleUrl, cancelUrl }),
+            text: `Reminder: ${t?.name || "meeting"} with ${b.client_name} in ${label}. ${b.meet_link ? "Join: " + b.meet_link : ""}`,
+          });
+        }
+        reminders++;
       }
-      await markReminded(b.id);
-      reminders++;
+      await markReminderSent(b.id, Array.from(new Set([...sent, ...crossed])));
     } catch { /* skip this one */ }
   }
 

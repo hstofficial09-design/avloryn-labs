@@ -21,7 +21,13 @@ type Deleted = { id: string; name: string; email: string | null; emp_type: strin
 const inr = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
 const GOLD = "btn-gold rounded-full font-[560]";
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
-const dt = (s?: string | null) => (s ? String(s).slice(0, 10) : "—");
+// Format a date for display. Accepts ISO ("2026-08-11") OR an already-formatted string
+// ("08 Aug 2026") — NEVER slice (that truncated "2026" → "202").
+const dt = (s?: string | null) => {
+  if (!s) return "—";
+  const d = new Date(String(s));
+  return isNaN(d.getTime()) ? String(s) : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+};
 function purgeDate(iso: string) {
   const d = new Date(iso); d.setFullYear(d.getFullYear() + 1);
   return isNaN(d.getTime()) ? "—" : d.toISOString().slice(0, 10);

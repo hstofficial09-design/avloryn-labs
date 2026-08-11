@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { canSchedule } from "@/lib/booking/admin";
-import { listMembers, addMember, updateMember, deleteMember, membersWithGoogle, getGoogle, membersWithZoho, getZoho } from "@/lib/booking/db";
+import { listMembers, addMember, updateMember, deleteMember, membersWithGoogle, getGoogle, membersWithZoho, getZoho, setAvailability } from "@/lib/booking/db";
 import { signMemberToken } from "@/lib/booking/link";
 import { googleConfigured } from "@/lib/booking/google";
 import { zohoConfigured } from "@/lib/booking/zoho";
@@ -9,6 +9,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const deny = () => NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
+// Sensible starting hours so a new member is instantly bookable (Mon–Fri 10:00–19:00).
+// The owner can change these any time in Availability.
+const DEFAULT_HOURS = [1, 2, 3, 4, 5].map((weekday) => ({ weekday, start: "10:00", end: "19:00" }));
 
 export async function GET() {
   if (!(await canSchedule())) return deny();
@@ -46,6 +50,8 @@ export async function POST(req: Request) {
     timezone: String(d.timezone || "Asia/Kolkata"),
     is_organizer: !!d.is_organizer,
   });
+  // Seed default working hours so the member is bookable immediately (no "no slots" surprise).
+  try { await setAvailability(m.id, DEFAULT_HOURS); } catch { /* best-effort */ }
   return NextResponse.json({ member: m });
 }
 

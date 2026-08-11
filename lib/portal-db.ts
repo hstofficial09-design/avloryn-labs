@@ -376,6 +376,21 @@ export async function archiveRole(track: string) {
   return withClient((c) => c.query(
     `INSERT INTO track_settings (track, archived) VALUES ($1, TRUE) ON CONFLICT (track) DO UPDATE SET archived=TRUE`, [track.trim()]));
 }
+// Rename a role everywhere (its settings + every employee on it), atomically.
+export async function renameRole(oldTrack: string, newTrack: string) {
+  const o = String(oldTrack || "").trim(), n = String(newTrack || "").trim();
+  if (!o || !n || o === n) return;
+  return withClient(async (c) => {
+    const ex = await c.query(`SELECT 1 FROM track_settings WHERE track=$1 AND COALESCE(archived,FALSE)=FALSE`, [n]);
+    if (ex.rows.length) throw new Error("A role with that name already exists");
+    await c.query("BEGIN");
+    try {
+      await c.query(`UPDATE track_settings SET track=$1 WHERE track=$2`, [n, o]);
+      await c.query(`UPDATE employees SET track=$1 WHERE track=$2`, [n, o]);
+      await c.query("COMMIT");
+    } catch (e) { await c.query("ROLLBACK"); throw e; }
+  });
+}
 
 // ── Onboarding form fields + legal text config (JSON) ────────────────────────
 export async function getFormConfig(): Promise<any> {

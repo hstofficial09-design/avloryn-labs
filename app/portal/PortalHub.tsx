@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogoMark } from "@/components/ui/logo";
+import { PasswordInput } from "@/components/ui/password-input";
 
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
 const GOLD = "btn-gold rounded-full font-[560]";
@@ -83,9 +84,9 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole }: { r
         {showPw && (
           <form onSubmit={changePw} className="mt-5 card-lux rounded-2xl p-5 max-w-md">
             <div className="font-serif text-[15px] font-[600] mb-3">Change your password</div>
-            <input type="password" placeholder="Current password" value={cur} onChange={(e) => setCur(e.target.value)} autoComplete="current-password" className={pwInput} />
-            <input type="password" placeholder="New password" value={nw} onChange={(e) => setNw(e.target.value)} autoComplete="new-password" className={pwInput} />
-            <input type="password" placeholder="Confirm new password" value={nw2} onChange={(e) => setNw2(e.target.value)} autoComplete="new-password" className={pwInput} />
+            <PasswordInput placeholder="Current password" value={cur} onChange={(e) => setCur(e.target.value)} autoComplete="current-password" className={pwInput} />
+            <PasswordInput placeholder="New password" value={nw} onChange={(e) => setNw(e.target.value)} autoComplete="new-password" className={pwInput} />
+            <PasswordInput placeholder="Confirm new password" value={nw2} onChange={(e) => setNw2(e.target.value)} autoComplete="new-password" className={pwInput} />
             {pmsg && <div className={"text-[12px] mb-2.5 " + (pmsg.ok ? "text-[#1e7a44]" : "text-[#b3341f]")}>{pmsg.t}</div>}
             <button type="submit" disabled={pbusy} className={GOLD + " text-[12.5px] px-4 py-2 disabled:opacity-60"}>{pbusy ? "Saving…" : "Update password"}</button>
           </form>

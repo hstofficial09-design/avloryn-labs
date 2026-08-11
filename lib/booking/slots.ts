@@ -6,6 +6,7 @@ import { DateTime } from "luxon";
 import { computeSlots, type MemberAvailability, type Slot, type Interval } from "./availability";
 import { getAvailability, getBlackoutDays, getMeetingTypeBySlug, listMembers, type MeetingType, type Member } from "./db";
 import { memberBusy } from "./google";
+import { getZohoBusy } from "./zoho";
 
 export async function memberAvailabilityInputs(memberIds: string[], fromISO: string, toISO: string): Promise<MemberAvailability[]> {
   const all = await listMembers(true);
@@ -15,7 +16,15 @@ export async function memberAvailabilityInputs(memberIds: string[], fromISO: str
     memberIds.map(async (id) => {
       const m = byId.get(id);
       if (!m) return;
-      const [workingHours, busy, blackouts] = await Promise.all([getAvailability(id), memberBusy(id, fromISO, toISO), getBlackoutDays(id)]);
+      // Pull busy from BOTH Google free/busy AND Zoho — a meeting on either calendar must
+      // block the slot (a Zoho-only event was previously invisible → double-booking).
+      const [workingHours, gBusy, zBusy, blackouts] = await Promise.all([
+        getAvailability(id),
+        memberBusy(id, fromISO, toISO),
+        getZohoBusy(id, fromISO, toISO).catch(() => []),
+        getBlackoutDays(id),
+      ]);
+      const busy: Interval[] = [...gBusy, ...zBusy.map((b) => ({ start: b.start, end: b.end }))];
       // A blackout day = the member is fully busy that whole day in their own timezone.
       const blackoutBusy: Interval[] = [];
       for (const day of blackouts) {

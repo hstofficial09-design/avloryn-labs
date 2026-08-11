@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogoMark } from "@/components/ui/logo";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export default function PortalLogin() {
   const router = useRouter();
@@ -81,7 +82,7 @@ export default function PortalLogin() {
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" className={input} />
 
               <label className={label}>Password</label>
-              <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" className={input} />
+              <PasswordInput value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" className={input} />
 
               {err && <div className="text-[13px] text-[#b3341f] bg-[#fdeeea] border border-[#f3cfc6] rounded-xl px-3 py-2 mb-4">{err}</div>}
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/portal-auth";
-import { listRoles, upsertRole, archiveRole, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig } from "@/lib/portal-db";
+import { listRoles, upsertRole, archiveRole, renameRole, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig } from "@/lib/portal-db";
 import { defaultTermsText, standardNdaText } from "@/lib/intern-docs";
 
 export const runtime = "nodejs";
@@ -43,6 +43,12 @@ export async function POST(req: Request) {
       const track = String(d.track || "").trim();
       if (!track) return NextResponse.json({ error: "track required" }, { status: 400 });
       await archiveRole(track);
+      return NextResponse.json({ ok: true });
+    }
+    if (d.action === "role-rename") {
+      const from = String(d.from || "").trim(), to = String(d.to || "").trim();
+      if (!from || !to) return NextResponse.json({ error: "from/to required" }, { status: 400 });
+      await renameRole(from, to);
       return NextResponse.json({ ok: true });
     }
     if (d.action === "form") {

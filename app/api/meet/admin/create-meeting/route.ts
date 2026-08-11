@@ -6,6 +6,7 @@ import { listMembers, createBooking } from "@/lib/booking/db";
 import { createMeetingForMembers } from "@/lib/booking/google";
 import { createZohoForMembers } from "@/lib/booking/zoho";
 import { buildICS } from "@/lib/booking/ics";
+import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
 import { SITE_URL } from "@/lib/seo";
 
 export const runtime = "nodejs";
@@ -56,18 +57,39 @@ export async function POST(req: Request) {
     start_utc: startISO, end_utc: endISO, google_event_id: eventsJson, meet_link: meetLink, cancel_token: cancelToken,
   });
 
-  // Email the guest their invite (if an email was given).
+  // Email the guest AND every attending member a branded invite (Meet button + .ics).
   try {
     const key = process.env.RESEND_API_KEY;
-    if (key && guest) {
+    if (key) {
       const from = process.env.CONTACT_FROM_EMAIL || "Avloryn Labs <onboarding@resend.dev>";
-      const when = new Date(startMs).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "full", timeStyle: "short" });
-      const ics = buildICS({ uid: booking.id, startISO, endISO, summary: `${title} — Avloryn Labs`, description: (meetLink ? `Join Google Meet: ${meetLink}\n\n` : "") + baseDesc, location: meetLink || "Online", organizerName: "Avloryn Labs", organizerEmail: memberEmails[0] || undefined, attendeeEmails: [guest, ...memberEmails] });
-      await new Resend(key).emails.send({
-        from, to: guest, subject: `Invitation: ${title} with Avloryn Labs`,
-        text: `Hi ${clientName || "there"},\n\nYou're invited to ${title}.\n\nWhen: ${when}\nWith: ${memberNames || "Avloryn Labs"}\n` + (meetLink ? `Join (Google Meet): ${meetLink}\n` : "") + `\nThe attached invite adds it to your calendar.\n\nReschedule: ${SITE_URL}/meet/reschedule?t=${cancelToken}\nCancel: ${SITE_URL}/meet/cancel?t=${cancelToken}\n\n— Avloryn Labs`,
-        attachments: [{ filename: "invite.ics", content: Buffer.from(ics).toString("base64") }],
-      });
+      const when = whenIST(startISO);
+      const ics = buildICS({ uid: booking.id, startISO, endISO, summary: `${title} — Avloryn Labs`, description: (meetLink ? `Join Google Meet: ${meetLink}\n\n` : "") + baseDesc, location: meetLink || "Online", organizerName: "Avloryn Labs", organizerEmail: memberEmails[0] || undefined, attendeeEmails: [guest, ...memberEmails].filter(Boolean) });
+      const attachments = [{ filename: "invite.ics", content: Buffer.from(ics).toString("base64") }];
+      const rescheduleUrl = `${SITE_URL}/meet/reschedule?t=${cancelToken}`;
+      const cancelUrl = `${SITE_URL}/meet/cancel?t=${cancelToken}`;
+      const rz = new Resend(key);
+
+      if (guest) {
+        await rz.emails.send({
+          from, to: guest, subject: `Invitation: ${title} with Avloryn Labs`,
+          html: meetingInviteHTML({ heading: "You're invited", title, whenText: when, withNames: memberNames || "Avloryn Labs", greetingName: clientName || undefined, notes, meetLink, rescheduleUrl, cancelUrl }),
+          text: `You're invited to ${title}.\nWhen: ${when}\nWith: ${memberNames || "Avloryn Labs"}\n${meetLink ? `Join: ${meetLink}\n` : ""}Reschedule: ${rescheduleUrl}\nCancel: ${cancelUrl}`,
+          attachments,
+        });
+      }
+
+      // Each attending member gets the meeting on email too (title, date/time, Meet button).
+      for (const id of memberIds) {
+        const mem = byId.get(id);
+        if (!mem?.email || !EMAIL_RE.test(mem.email)) continue;
+        const others = [clientName, ...memberIds.filter((x) => x !== id).map((x) => byId.get(x)?.name)].filter(Boolean).join(", ");
+        await rz.emails.send({
+          from, to: mem.email, subject: `Meeting: ${title}${clientName ? ` — ${clientName}` : ""}`,
+          html: meetingInviteHTML({ heading: "New meeting", title, whenText: when, withNames: others || "—", greetingName: (mem.name || "").split(" ")[0] || undefined, notes, meetLink, rescheduleUrl, cancelUrl }),
+          text: `Meeting: ${title}\nWhen: ${when}\nWith: ${others || "—"}\n${meetLink ? `Join: ${meetLink}\n` : ""}Reschedule: ${rescheduleUrl}\nCancel: ${cancelUrl}`,
+          attachments,
+        });
+      }
     }
   } catch { /* best-effort */ }
 

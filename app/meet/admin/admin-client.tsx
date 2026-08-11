@@ -4,7 +4,7 @@ import { LogoMark } from "@/components/ui/logo";
 
 type Member = { id: string; name: string; email: string; timezone: string; active: boolean; is_organizer: boolean; googleConnected: boolean; googleEmail: string | null; zohoConnected: boolean; zohoEmail: string | null; connectLink: string; zohoConnectLink: string };
 type Question = { id?: string; label: string; required: boolean };
-type MType = { id: string; name: string; slug: string; duration_min: number; buffer_before_min: number; buffer_after_min: number; min_notice_min: number; slot_granularity_min: number; mode: "any" | "all"; member_ids: string[]; description: string; active: boolean; max_advance_days?: number; followup_enabled?: boolean; questions?: Question[]; price_inr?: number; requires_approval?: boolean; durations?: number[] };
+type MType = { id: string; name: string; slug: string; duration_min: number; buffer_before_min: number; buffer_after_min: number; min_notice_min: number; slot_granularity_min: number; mode: "any" | "all"; member_ids: string[]; description: string; active: boolean; max_advance_days?: number; followup_enabled?: boolean; questions?: Question[]; price_inr?: number; requires_approval?: boolean; durations?: number[]; reminders?: number[] };
 type Coupon = { code: string; kind: "percent" | "flat"; value: number; active: boolean; max_uses: number; uses: number };
 type Answer = { q: string; a: string };
 type Booking = { id: string; client_name: string; client_email: string; start_utc: string; end_utc: string; status: string; meet_link: string | null; meetingTypeName: string; memberNames: string[]; member_ids: string[]; cancel_token: string | null; answers?: Answer[]; attendance?: string | null; client_notes?: string };
@@ -177,14 +177,40 @@ function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { memb
 }
 
 /* ─────────────── Meeting types ─────────────── */
-const EMPTY_TYPE = { name: "", duration_min: 30, buffer_before_min: 0, buffer_after_min: 10, min_notice_min: 120, slot_granularity_min: 30, max_advance_days: 60, mode: "any" as "any" | "all", member_ids: [] as string[], description: "", followup_enabled: false, questions: [] as Question[], price_inr: 0, durationsText: "", requires_approval: false, organizer_id: "" };
+const EMPTY_TYPE = { name: "", duration_min: 30, buffer_before_min: 0, buffer_after_min: 10, min_notice_min: 120, slot_granularity_min: 30, max_advance_days: 60, mode: "all" as "any" | "all", member_ids: [] as string[], description: "", followup_enabled: false, questions: [] as Question[], price_inr: 0, durationsText: "", requires_approval: false, organizer_id: "", reminders: [60] as number[] };
+const REMINDER_PRESETS: { min: number; label: string }[] = [
+  { min: 15, label: "15 min" }, { min: 30, label: "30 min" }, { min: 60, label: "1 hour" },
+  { min: 120, label: "2 hours" }, { min: 1440, label: "1 day" },
+];
 const parseDurations = (s: string): number[] => [...new Set(s.split(/[,\s]+/).map((x) => Math.round(Number(x))).filter((n) => n > 0 && n <= 600))].sort((a, b) => a - b);
 
 function TypesTab({ types, members, reload, copy, copied, origin }: { types: MType[]; members: Member[]; reload: () => void; copy: (t: string, id: string) => void; copied: string; origin: string }) {
   const [form, setForm] = useState({ ...EMPTY_TYPE });
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false); const [e, setE] = useState("");
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
-  async function create(ev: React.FormEvent) { ev.preventDefault(); setBusy(true); setE(""); try { await api("/api/meet/admin/types", "POST", { ...form, durations: parseDurations(form.durationsText) }); setForm({ ...EMPTY_TYPE }); reload(); } catch (x) { setE(msg(x)); } finally { setBusy(false); } }
+  async function submit(ev: React.FormEvent) {
+    ev.preventDefault(); setBusy(true); setE("");
+    try {
+      const payload = { ...form, durations: parseDurations(form.durationsText) };
+      if (editingId) await api("/api/meet/admin/types", "PATCH", { id: editingId, ...payload });
+      else await api("/api/meet/admin/types", "POST", payload);
+      setForm({ ...EMPTY_TYPE }); setEditingId(null); reload();
+    } catch (x) { setE(msg(x)); } finally { setBusy(false); }
+  }
+  function startEdit(t: MType) {
+    setEditingId(t.id);
+    setForm({
+      name: t.name, duration_min: t.duration_min, buffer_before_min: t.buffer_before_min, buffer_after_min: t.buffer_after_min,
+      min_notice_min: t.min_notice_min, slot_granularity_min: t.slot_granularity_min, max_advance_days: t.max_advance_days ?? 60,
+      mode: t.mode, member_ids: [...(t.member_ids || [])], description: t.description || "", followup_enabled: !!t.followup_enabled,
+      questions: (t.questions || []).map((q) => ({ ...q })), price_inr: t.price_inr || 0, durationsText: (t.durations || []).join(", "),
+      requires_approval: !!t.requires_approval, organizer_id: (t as unknown as { organizer_id?: string }).organizer_id || "",
+      reminders: [...(t.reminders || [])],
+    });
+    if (typeof document !== "undefined") setTimeout(() => document.getElementById("type-form")?.scrollIntoView({ behavior: "smooth", block: "start" }), 40);
+  }
+  function cancelEdit() { setEditingId(null); setForm({ ...EMPTY_TYPE }); setE(""); }
   async function toggleActive(t: MType) { try { await api("/api/meet/admin/types", "PATCH", { id: t.id, active: !t.active }); reload(); } catch (x) { alert(msg(x)); } }
   async function del(id: string) { if (!confirm("Delete this meeting type?")) return; try { await api(`/api/meet/admin/types?id=${id}`, "DELETE"); reload(); } catch (x) { alert(msg(x)); } }
   function toggleMember(id: string) {
@@ -200,6 +226,7 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
   const addQ = () => set("questions", [...form.questions, { label: "", required: false }]);
   const updQ = (i: number, patch: Partial<Question>) => set("questions", form.questions.map((q, idx) => idx === i ? { ...q, ...patch } : q));
   const delQ = (i: number) => set("questions", form.questions.filter((_, idx) => idx !== i));
+  const toggleReminder = (min: number) => set("reminders", form.reminders.includes(min) ? form.reminders.filter((x) => x !== min) : [...form.reminders, min].sort((a, b) => a - b));
 
   return (
     <div className="grid gap-5">
@@ -219,6 +246,7 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
                     <div className="text-[12px] text-muted-foreground mt-0.5">{t.duration_min} min · {t.mode === "all" ? "Group" : "1-on-1"} · {t.member_ids.map(nameOf).join(", ")}{t.price_inr ? ` · ₹${t.price_inr}` : " · free"}{t.requires_approval ? " · approval" : ""}{t.followup_enabled ? " · follow-up" : ""}{t.questions?.length ? ` · ${t.questions.length}Q` : ""}</div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button onClick={() => startEdit(t)} className={btnNeu}>Edit</button>
                     <button onClick={() => toggleActive(t)} className={btnNeu}>{t.active ? "Pause" : "Resume"}</button>
                     <button onClick={() => del(t.id)} className="text-[12px] font-semibold text-[#b3341f] hover:underline">Delete</button>
                   </div>
@@ -235,9 +263,9 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
         </div>
       </div>
 
-      <div className={card}>
-        <h3 className="font-serif text-[17px] font-[600] mb-4">New meeting type</h3>
-        <form onSubmit={create} className="grid sm:grid-cols-2 gap-3">
+      <div className={card} id="type-form">
+        <h3 className="font-serif text-[17px] font-[600] mb-4">{editingId ? "Edit meeting type" : "New meeting type"}</h3>
+        <form onSubmit={submit} className="grid sm:grid-cols-2 gap-3">
           <div className="sm:col-span-2"><label className={label}>Name</label><input value={form.name} onChange={(x) => set("name", x.target.value)} placeholder="e.g. Intro call" className={input} required /></div>
           <div><label className={label}>Duration (min)</label><input type="number" min={5} step={5} value={form.duration_min} onChange={(x) => set("duration_min", +x.target.value)} className={input} /></div>
           <div><label className={label}>Slot every (min)</label><input type="number" min={5} step={5} value={form.slot_granularity_min} onChange={(x) => set("slot_granularity_min", +x.target.value)} className={input} /></div>
@@ -248,9 +276,10 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
           <div className="sm:col-span-2">
             <label className={label}>Who attends</label>
             <div className="flex gap-2 flex-wrap">
-              <button type="button" onClick={() => set("mode", "any")} className={`rounded-full px-4 py-2 text-[12.5px] font-[560] ${form.mode === "any" ? "btn-gold" : "neu-chip"}`}>Any one (round-robin)</button>
               <button type="button" onClick={() => set("mode", "all")} className={`rounded-full px-4 py-2 text-[12.5px] font-[560] ${form.mode === "all" ? "btn-gold" : "neu-chip"}`}>All together (group)</button>
+              <button type="button" onClick={() => set("mode", "any")} className={`rounded-full px-4 py-2 text-[12.5px] font-[560] ${form.mode === "any" ? "btn-gold" : "neu-chip"}`}>Any one (round-robin)</button>
             </div>
+            <p className="text-[11.5px] text-faint mt-1.5">{form.mode === "all" ? "Group: every selected member attends, gets the Meet link + a calendar event. Slots show only when EVERYONE is free (merged availability, minus anyone's Google/Zoho busy)." : "Round-robin: the least-busy member is auto-assigned; only they get the meeting."}</p>
           </div>
           <div className="sm:col-span-2">
             <label className={label}>Members</label>
@@ -286,10 +315,18 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
           <div><label className={label}>Price ₹ <span className="text-faint font-normal">(0 = free)</span></label><input type="number" min={0} value={form.price_inr} onChange={(x) => set("price_inr", +x.target.value)} className={input} /></div>
           <div><label className={label}>Extra durations <span className="text-faint font-normal">(min, comma-sep)</span></label><input value={form.durationsText} onChange={(x) => set("durationsText", x.target.value)} placeholder="e.g. 15, 30, 60" className={input} /></div>
 
+          <div className="sm:col-span-2">
+            <label className={label}>Email reminders <span className="text-faint font-normal">(before the meeting — to the client &amp; members)</span></label>
+            <div className="flex gap-2 flex-wrap">
+              {REMINDER_PRESETS.map((p) => <button key={p.min} type="button" onClick={() => toggleReminder(p.min)} className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-[560] ${form.reminders.includes(p.min) ? "btn-gold" : "neu-chip text-foreground/70"}`}>{p.label} before</button>)}
+            </div>
+            <p className="text-[11.5px] text-faint mt-1.5">{form.reminders.length ? `Reminder emails go out ${form.reminders.map((m) => m >= 1440 ? `${m / 1440}d` : m >= 60 ? `${m / 60}h` : `${m}m`).join(", ")} before start.` : "No reminders — no reminder emails will be sent."}</p>
+          </div>
+
           <label className="sm:col-span-2 flex items-center gap-2 text-[13px] cursor-pointer"><input type="checkbox" checked={form.followup_enabled} onChange={(x) => set("followup_enabled", x.target.checked)} className="accent-[#c8a24a]" />Send an automatic thank-you email after the meeting</label>
           <label className="sm:col-span-2 flex items-center gap-2 text-[13px] cursor-pointer"><input type="checkbox" checked={form.requires_approval} onChange={(x) => set("requires_approval", x.target.checked)} className="accent-[#c8a24a]" />Require my approval before a booking is confirmed</label>
 
-          <div className="sm:col-span-2 flex items-center gap-3"><button type="submit" disabled={busy} className={btnGold}>{busy ? "Creating…" : "Create meeting type"}</button>{e && <span className="text-[12.5px] text-[#b3341f]">{e}</span>}</div>
+          <div className="sm:col-span-2 flex items-center gap-3"><button type="submit" disabled={busy} className={btnGold}>{busy ? "Saving…" : editingId ? "Save changes" : "Create meeting type"}</button>{editingId && <button type="button" onClick={cancelEdit} className={btnNeu}>Cancel</button>}{e && <span className="text-[12.5px] text-[#b3341f]">{e}</span>}</div>
         </form>
       </div>
       <CouponsCard />
@@ -365,7 +402,7 @@ function AvailabilityTab({ members }: { members: Member[] }) {
     <div className="grid gap-5">
       <div className={card}>
         <h2 className="font-serif text-[19px] font-[600] mb-1">Weekly availability</h2>
-        <p className="text-[12.5px] text-muted-foreground mb-4">Working hours per day (add multiple windows, e.g. 9–12 and 2–6). Slots appear only inside these hours and around Google-Calendar busy times.</p>
+        <p className="text-[12.5px] text-muted-foreground mb-4">Working hours per day (add multiple windows, e.g. 9–12 and 2–6). Slots appear only inside these hours and around <b>both</b> Google + Zoho calendar busy times. <b>No hours = this member is never offered for booking.</b></p>
         <div className="mb-5 max-w-xs">
           <label className={label}>Member</label>
           <select value={memberId} onChange={(e) => setMemberId(e.target.value)} className={input}>
@@ -392,7 +429,12 @@ function AvailabilityTab({ members }: { members: Member[] }) {
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-3 mt-5"><button onClick={save} disabled={busy || !memberId} className={btnGold}>{busy ? "Saving…" : "Save availability"}</button>{status && <span className={`text-[12.5px] ${status.includes("✓") ? "text-[#2b7a4b]" : "text-[#b3341f]"}`}>{status}</span>}</div>
+        {memberId && rows.every((w) => w.length === 0) && <div className="mt-3 rounded-xl bg-[#fff7e6] border border-[#f0dca8] px-3.5 py-2.5 text-[12.5px] text-[#7a5c15]">No working hours set — this member won&rsquo;t get any booking slots. Click <b>Set default hours</b> to make them bookable Mon–Fri 10:00–19:00.</div>}
+        <div className="flex items-center gap-3 mt-5 flex-wrap">
+          <button onClick={save} disabled={busy || !memberId} className={btnGold}>{busy ? "Saving…" : "Save availability"}</button>
+          <button onClick={() => setRows(WD.map((_, d) => (d >= 1 && d <= 5) ? [{ start: "10:00", end: "19:00" }] : []))} disabled={!memberId} className={btnNeu}>Set default hours (Mon–Fri 10–7)</button>
+          {status && <span className={`text-[12.5px] ${status.includes("✓") ? "text-[#2b7a4b]" : "text-[#b3341f]"}`}>{status}</span>}
+        </div>
       </div>
 
       <div className={card}>
@@ -584,6 +626,9 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
   const [avail, setAvail] = useState<{ weekday: number; start: string; end: string }[]>([]);
   const [busy, setBusy] = useState<{ memberId: string; name: string; intervals: { start: string; end: string; title?: string }[] }[]>([]);
   const [loadingBusy, setLoadingBusy] = useState(false);
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 60_000); return () => clearInterval(t); }, []);
+  const [sel, setSel] = useState<Booking | null>(null);
   useEffect(() => { if (mf) fetch(`/api/meet/admin/availability?memberId=${mf}`).then((r) => r.json()).then((d) => setAvail(d.rules || [])).catch(() => setAvail([])); else setAvail([]); }, [mf, refreshTick]);
   // Pull each member's REAL calendar events (Google + Zoho) for a given week.
   const fetchBusy = useCallback(async (ws: Date) => {
@@ -677,11 +722,17 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
                       {!mf && <div className="text-[8px] text-foreground/40 px-1 leading-tight truncate">{it.nm.split(" ")[0]}</div>}
                     </div>
                   ) : (
-                    <div key={"k" + ii} className="absolute rounded-md px-1.5 py-0.5 overflow-hidden text-white shadow-sm" style={{ ...lstyle(it), background: colorOf(it.b.member_ids[0] || ""), opacity: it.b.status === "pending" ? 0.6 : 1 }} title={`${fmtT(it.b.start_utc)} · ${it.b.client_name} · ${it.b.meetingTypeName} · ${it.b.memberNames.join(", ")}${it.b.status === "pending" ? " (pending)" : ""}`}>
+                    <button key={"k" + ii} onClick={() => setSel(it.b)} className="absolute rounded-md px-1.5 py-0.5 overflow-hidden text-white shadow-sm text-left hover:ring-2 hover:ring-white/50 transition" style={{ ...lstyle(it), background: colorOf(it.b.member_ids[0] || ""), opacity: it.b.status === "pending" ? 0.6 : 1 }} title={`${fmtT(it.b.start_utc)} · ${it.b.client_name} · ${it.b.meetingTypeName} · ${it.b.memberNames.join(", ")}${it.b.status === "pending" ? " (pending)" : ""}`}>
                       <div className="text-[10px] font-[600] leading-tight truncate">{fmtT(it.b.start_utc)} {it.b.client_name}</div>
                       <div className="text-[9px] leading-tight truncate opacity-90">{it.b.memberNames.join(", ")}</div>
-                    </div>
+                    </button>
                   ))}
+                  {isToday(day) && istHM(now) >= HS && istHM(now) <= HE && (
+                    <div className="absolute inset-x-0 z-20 pointer-events-none" style={{ top: (istHM(now) - HS) * RH }}>
+                      <div className="absolute -left-1 -top-[3px] w-[7px] h-[7px] rounded-full bg-[#e5484d]" />
+                      <div className="h-[1.5px] bg-[#e5484d]" />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -689,7 +740,27 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
         </div>
       </div>
       {active.length === 0 && <p className="text-[12.5px] text-faint text-center mt-3">No bookings this week{mf ? " for this member" : ""}.</p>}
-      <p className="text-[11px] text-faint mt-3">Shows Avloryn bookings <b>and</b> each member&rsquo;s real Google/Zoho calendar events (grey = busy). Pick a member to see their working hours too.</p>
+      <p className="text-[11px] text-faint mt-3">Shows Avloryn bookings <b>and</b> each member&rsquo;s real Google/Zoho calendar events (grey = busy). Click a booking for details · pick a member to see their working hours.</p>
+
+      {sel && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4" onClick={() => setSel(null)}>
+          <div className="card-lux rounded-2xl p-5 w-full max-w-[380px]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="font-serif text-[18px] font-[600] leading-tight">{sel.meetingTypeName || "Meeting"}</div>
+              <button onClick={() => setSel(null)} className="text-faint hover:text-foreground text-[20px] leading-none">×</button>
+            </div>
+            <div className="text-[13px] text-muted-foreground mb-1.5">🗓 {new Date(sel.start_utc).toLocaleString("en-IN", { timeZone: CAL_TZ, weekday: "short", day: "2-digit", month: "short", hour: "numeric", minute: "2-digit" })} IST</div>
+            <div className="text-[13px] mb-1"><b>{sel.client_name}</b>{sel.client_email ? ` · ${sel.client_email}` : ""}</div>
+            <div className="text-[12.5px] text-muted-foreground mb-3">With {sel.memberNames.join(", ") || "—"}{sel.status === "pending" ? " · pending approval" : ""}</div>
+            {sel.client_notes && <div className="text-[12.5px] text-muted-foreground mb-3 neu-inset rounded-lg px-3 py-2">{sel.client_notes}</div>}
+            <div className="flex items-center gap-2 flex-wrap">
+              {sel.meet_link && <a href={sel.meet_link} target="_blank" rel="noopener noreferrer" className="btn-gold rounded-full px-4 py-2 text-[12.5px] font-[560]">Join Meet</a>}
+              {sel.cancel_token && <a href={`/meet/reschedule?t=${sel.cancel_token}`} className={btnNeu}>Reschedule</a>}
+              {sel.cancel_token && <a href={`/meet/cancel?t=${sel.cancel_token}`} className="text-[12.5px] font-semibold text-[#b3341f] hover:underline px-2">Cancel</a>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

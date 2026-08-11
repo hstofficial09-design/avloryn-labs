@@ -23,13 +23,14 @@ export type MeetingType = {
   description: string; active: boolean;
   questions?: IntakeQuestion[]; max_advance_days?: number; followup_enabled?: boolean;
   requires_approval?: boolean; durations?: number[]; price_inr?: number; organizer_id?: string | null;
+  reminders?: number[]; // minutes-before-start to email a reminder, e.g. [15,60,1440]
 };
 export type Booking = {
   id: string; meeting_type_id: string | null; member_ids: string[];
   client_name: string; client_email: string; client_notes: string; client_timezone: string | null;
   start_utc: string; end_utc: string; google_event_id: string | null; meet_link: string | null;
   status: string; cancel_token: string | null; created_at?: string;
-  answers?: IntakeAnswer[]; reminded_at?: string | null; zoho_event_id?: string | null;
+  answers?: IntakeAnswer[]; reminded_at?: string | null; reminders_sent?: number[]; zoho_event_id?: string | null;
   followed_up_at?: string | null; attendance?: "attended" | "no_show" | null;
   payment_id?: string | null; amount_inr?: number | null; coupon_code?: string | null;
 };
@@ -114,7 +115,7 @@ export async function createMeetingType(m: Partial<MeetingType> & { name: string
     questions: m.questions ?? [], max_advance_days: m.max_advance_days ?? 60,
     followup_enabled: m.followup_enabled ?? false,
     requires_approval: m.requires_approval ?? false, durations: m.durations ?? [], price_inr: m.price_inr ?? 0,
-    organizer_id: m.organizer_id ?? null,
+    organizer_id: m.organizer_id ?? null, reminders: m.reminders ?? [],
   });
   if (error) throw new Error(error.message);
 }
@@ -249,6 +250,21 @@ export async function bookingsNeedingFollowup(): Promise<Booking[]> {
 export async function markReminded(id: string) {
   const s = db(); if (!s) return;
   await s.from("bookings").update({ reminded_at: new Date().toISOString() }).eq("id", id);
+}
+/** Upcoming confirmed bookings starting within [now, now+maxLeadMin]. The cron decides which
+ *  per-type reminder offsets still need sending by comparing against each booking's reminders_sent. */
+export async function bookingsNeedingAnyReminder(maxLeadMin: number): Promise<Booking[]> {
+  const s = db(); if (!s) return [];
+  const now = new Date();
+  const until = new Date(now.getTime() + maxLeadMin * 60000).toISOString();
+  const { data } = await s.from("bookings").select("*")
+    .eq("status", "confirmed")
+    .gte("start_utc", now.toISOString()).lte("start_utc", until).limit(300);
+  return (data as Booking[]) || [];
+}
+export async function markReminderSent(id: string, offsets: number[]) {
+  const s = db(); if (!s) return;
+  await s.from("bookings").update({ reminders_sent: offsets, reminded_at: new Date().toISOString() }).eq("id", id);
 }
 export async function markFollowedUp(id: string) {
   const s = db(); if (!s) return;
