@@ -21,8 +21,10 @@ export async function GET() {
   const [gConnected, zConnected] = await Promise.all([membersWithGoogle(ids), membersWithZoho(ids)]);
   const rows = await Promise.all(
     members.map(async (m) => {
-      const g = gConnected.has(m.id) ? await getGoogle(m.id) : null;
-      const z = zConnected.has(m.id) ? await getZoho(m.id) : null;
+      const [g, z] = await Promise.all([
+        gConnected.has(m.id) ? getGoogle(m.id) : Promise.resolve(null),
+        zConnected.has(m.id) ? getZoho(m.id) : Promise.resolve(null),
+      ]);
       const token = signMemberToken(m.id);
       return {
         ...m,

@@ -21,10 +21,13 @@ export async function GET(req: Request) {
 
   type Blk = { start: string; end: string; title?: string; allDay?: boolean };
   const busy = await Promise.all(members.map(async (m) => {
-    const parts: Blk[] = [];
-    // Google via events.list (carries titles), Zoho via its events API — both titled + robust.
-    if (g.has(m.id)) { try { parts.push(...await memberEvents(m.id, from, to)); } catch { /* skip */ } }
-    if (z.has(m.id)) { try { parts.push(...await getZohoBusy(m.id, from, to)); } catch { /* skip */ } }
+    // Google (events.list, titled) + Zoho (events API) IN PARALLEL — sequential awaits here
+    // roughly doubled the calendar load time.
+    const [gEv, zEv] = await Promise.all([
+      g.has(m.id) ? memberEvents(m.id, from, to).catch(() => []) : Promise.resolve([]),
+      z.has(m.id) ? getZohoBusy(m.id, from, to).catch(() => []) : Promise.resolve([]),
+    ]);
+    const parts: Blk[] = [...gEv, ...zEv];
     // Drop anything unparseable, then de-dup an event that appears on BOTH calendars
     // (overlap by >50%) keeping the titled copy so nothing double-renders.
     const valid = parts.filter((p) => {
