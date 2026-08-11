@@ -7,9 +7,9 @@ type Question = { id?: string; label: string; required: boolean };
 type MType = { id: string; name: string; slug: string; duration_min: number; buffer_before_min: number; buffer_after_min: number; min_notice_min: number; slot_granularity_min: number; mode: "any" | "all"; member_ids: string[]; description: string; active: boolean; max_advance_days?: number; followup_enabled?: boolean; questions?: Question[]; price_inr?: number; requires_approval?: boolean; durations?: number[] };
 type Coupon = { code: string; kind: "percent" | "flat"; value: number; active: boolean; max_uses: number; uses: number };
 type Answer = { q: string; a: string };
-type Booking = { id: string; client_name: string; client_email: string; start_utc: string; end_utc: string; status: string; meet_link: string | null; meetingTypeName: string; memberNames: string[]; cancel_token: string | null; answers?: Answer[]; attendance?: string | null; client_notes?: string };
+type Booking = { id: string; client_name: string; client_email: string; start_utc: string; end_utc: string; status: string; meet_link: string | null; meetingTypeName: string; memberNames: string[]; member_ids: string[]; cancel_token: string | null; answers?: Answer[]; attendance?: string | null; client_notes?: string };
 type Analytics = { total: number; confirmed: number; cancelled: number; noShow: number; attended: number; thisWeek: number; last30: number; byType: { name: string; count: number }[]; byWeekday: number[]; byHour: number[]; perWeek: { week: string; count: number }[] };
-type Tab = "members" | "types" | "availability" | "bookings" | "analytics";
+type Tab = "calendar" | "members" | "types" | "availability" | "bookings" | "analytics";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const card = "card-lux rounded-3xl p-6 sm:p-7";
@@ -59,11 +59,12 @@ export default function MeetAdmin({ googleReady }: { googleReady: boolean }) {
       {err && <div className="text-[13px] text-[#b3341f] bg-[#fdeeea] border border-[#f3cfc6] rounded-xl px-3 py-2 mb-5">{err} <button onClick={() => setErr("")} className="ml-2 underline">dismiss</button></div>}
 
       <div className="flex gap-2 mb-6 overflow-x-auto">
-        {(["members", "types", "availability", "bookings", "analytics"] as Tab[]).map((t) => (
+        {(["calendar", "members", "types", "availability", "bookings", "analytics"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={`shrink-0 rounded-full px-4 py-2 text-[12.5px] font-[560] capitalize transition ${tab === t ? "btn-gold" : "neu-chip text-foreground/70"}`}>{t === "types" ? "Meeting types" : t}</button>
         ))}
       </div>
 
+      {tab === "calendar" && <TeamCalendar bookings={bookings} members={members} reload={loadBookings} />}
       {tab === "members" && <MembersTab members={members} reload={loadMembers} copy={copy} copied={copied} origin={origin} zohoReady={zohoReady} />}
       {tab === "types" && <TypesTab types={types} members={members} reload={loadTypes} copy={copy} copied={copied} origin={origin} />}
       {tab === "availability" && <AvailabilityTab members={members} />}
@@ -536,6 +537,78 @@ function AnalyticsTab() {
           <div className="grid gap-2">{a.byType.map((t) => <div key={t.name} className="flex items-center justify-between text-[13px]"><span>{t.name}</span><span className={chip}>{t.count}</span></div>)}</div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─────────────── Team Calendar (one calendar for everyone) ─────────────── */
+const CAL_COLORS = ["#c8a24a", "#5b8a72", "#8a5b7a", "#5b6f8a", "#a86b4a", "#6b8a5b", "#7a5b8a", "#8a7a4a"];
+function mondayOf(d: Date) { const x = new Date(d); const day = (x.getDay() + 6) % 7; x.setDate(x.getDate() - day); x.setHours(0, 0, 0, 0); return x; }
+function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function isToday(d: Date) { const n = new Date(); return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate(); }
+
+function TeamCalendar({ bookings, members, reload }: { bookings: Booking[]; members: Member[]; reload: () => void }) {
+  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
+  const [mf, setMf] = useState("");
+  const [avail, setAvail] = useState<{ weekday: number; start: string; end: string }[]>([]);
+  useEffect(() => { if (mf) fetch(`/api/meet/admin/availability?memberId=${mf}`).then((r) => r.json()).then((d) => setAvail(d.rules || [])).catch(() => setAvail([])); else setAvail([]); }, [mf]);
+  const colorOf = (id: string) => CAL_COLORS[Math.max(0, members.findIndex((m) => m.id === id)) % CAL_COLORS.length];
+  const HS = 7, HE = 21, RH = 46;
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const active = bookings.filter((b) => b.status !== "cancelled" && (!mf || b.member_ids.includes(mf)));
+  const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const sameDay = (iso: string, day: Date) => { const d = new Date(iso); return d.getFullYear() === day.getFullYear() && d.getMonth() === day.getMonth() && d.getDate() === day.getDate(); };
+  const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+
+  return (
+    <div className={card + " overflow-hidden"}>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setWeekStart(addDays(weekStart, -7))} className={btnNeu}>‹</button>
+          <span className="text-[14px] font-[600] min-w-[150px] text-center">{weekLabel}</span>
+          <button onClick={() => setWeekStart(addDays(weekStart, 7))} className={btnNeu}>›</button>
+          <button onClick={() => setWeekStart(mondayOf(new Date()))} className={btnNeu}>Today</button>
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={mf} onChange={(e) => setMf(e.target.value)} className={input + " max-w-[190px] text-[12.5px]"}>
+            <option value="">All members</option>
+            {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+          <button onClick={reload} className={btnNeu}>Refresh</button>
+        </div>
+      </div>
+      <div className="flex gap-3 flex-wrap mb-3">{members.map((m) => <span key={m.id} className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded-full" style={{ background: colorOf(m.id) }} />{m.name}</span>)}{mf && <span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded bg-[#5b8a72]/30" />available</span>}</div>
+      <div className="overflow-x-auto">
+        <div className="min-w-[720px]">
+          <div className="grid" style={{ gridTemplateColumns: `48px repeat(7,1fr)` }}>
+            <div />
+            {days.map((d, i) => <div key={i} className="text-center pb-2"><div className="text-[11px] text-faint">{d.toLocaleDateString("en-US", { weekday: "short" })}</div><div className={"text-[13px] font-[600] " + (isToday(d) ? "text-gold" : "")}>{d.getDate()}</div></div>)}
+          </div>
+          <div className="grid" style={{ gridTemplateColumns: `48px repeat(7,1fr)` }}>
+            <div>{Array.from({ length: HE - HS }, (_, h) => <div key={h} style={{ height: RH }} className="text-[10px] text-faint text-right pr-1.5 -mt-1.5">{HS + h}:00</div>)}</div>
+            {days.map((day, di) => (
+              <div key={di} className="relative border-l border-border" style={{ height: (HE - HS) * RH }}>
+                {Array.from({ length: HE - HS }, (_, h) => <div key={h} style={{ top: h * RH, height: RH }} className="absolute inset-x-0 border-b border-border/40" />)}
+                {mf && avail.filter((a) => a.weekday === day.getDay()).map((a, ai) => {
+                  const [sh, sm] = a.start.split(":").map(Number), [eh, em] = a.end.split(":").map(Number);
+                  const top = ((sh + sm / 60) - HS) * RH, ht = ((eh + em / 60) - (sh + sm / 60)) * RH;
+                  return <div key={ai} className="absolute inset-x-0.5 rounded bg-[#5b8a72]/12" style={{ top, height: ht }} />;
+                })}
+                {active.filter((b) => sameDay(b.start_utc, day)).map((b) => {
+                  const s = new Date(b.start_utc); const top = ((s.getHours() + s.getMinutes() / 60) - HS) * RH;
+                  const dur = (Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 6e4; const ht = Math.max(24, dur / 60 * RH);
+                  return <div key={b.id} className="absolute inset-x-0.5 rounded-md px-1.5 py-0.5 overflow-hidden text-white shadow-sm" style={{ top, height: ht, background: colorOf(b.member_ids[0] || ""), opacity: b.status === "pending" ? 0.6 : 1 }} title={`${fmtT(b.start_utc)} · ${b.client_name} · ${b.meetingTypeName} · ${b.memberNames.join(", ")}${b.status === "pending" ? " (pending)" : ""}`}>
+                    <div className="text-[10px] font-[600] leading-tight truncate">{fmtT(b.start_utc)} {b.client_name}</div>
+                    <div className="text-[9px] leading-tight truncate opacity-90">{b.memberNames.join(", ")}</div>
+                  </div>;
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      {active.length === 0 && <p className="text-[12.5px] text-faint text-center mt-3">No bookings this week{mf ? " for this member" : ""}.</p>}
+      <p className="text-[11px] text-faint mt-3">Every booking made through Avloryn appears here — whichever calendar (Google/Zoho) the member uses. Pick a member to see their working hours too.</p>
     </div>
   );
 }
