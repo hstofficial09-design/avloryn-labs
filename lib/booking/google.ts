@@ -20,7 +20,9 @@ export function googleConfigured(): boolean {
 }
 
 function redirectUri(origin: string) {
-  return `${origin.replace(/\/$/, "")}/api/meet/google/callback`;
+  // Canonical apex in production so www./preview domains don't break the OAuth redirect match.
+  const base = /localhost|127\.0\.0\.1/.test(origin) ? origin.replace(/\/$/, "") : "https://avloryn.com";
+  return `${base}/api/meet/google/callback`;
 }
 
 function oauthClient(origin: string) {

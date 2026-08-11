@@ -18,7 +18,10 @@ export function zohoConfigured(): boolean {
 const region = () => (process.env.ZOHO_REGION || "in").trim();
 const accountsBase = () => `https://accounts.zoho.${region()}/oauth/v2`;
 const calBase = () => `https://calendar.zoho.${region()}/api/v1`;
-const redirectUri = (origin: string) => `${origin.replace(/\/$/, "")}/api/meet/zoho/callback`;
+// Always use the canonical apex in production (Zoho/Google configs are for avloryn.com),
+// so www./preview domains don't cause a redirect-URI mismatch. Localhost stays as-is for dev.
+const canonicalBase = (origin: string) => (/localhost|127\.0\.0\.1/.test(origin) ? origin.replace(/\/$/, "") : "https://avloryn.com");
+const redirectUri = (origin: string) => `${canonicalBase(origin)}/api/meet/zoho/callback`;
 
 /** ISO → Zoho datetime "yyyyMMddTHHmmss+0000" (Zoho wants an explicit offset, not "Z"). */
 function zdt(iso: string): string {
