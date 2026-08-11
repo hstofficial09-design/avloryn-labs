@@ -551,11 +551,18 @@ function TeamCalendar({ bookings, members, reload }: { bookings: Booking[]; memb
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const [mf, setMf] = useState("");
   const [avail, setAvail] = useState<{ weekday: number; start: string; end: string }[]>([]);
+  const [busy, setBusy] = useState<{ memberId: string; name: string; intervals: { start: string; end: string }[] }[]>([]);
   useEffect(() => { if (mf) fetch(`/api/meet/admin/availability?memberId=${mf}`).then((r) => r.json()).then((d) => setAvail(d.rules || [])).catch(() => setAvail([])); else setAvail([]); }, [mf]);
+  // Pull each member's REAL calendar events (Google + Zoho) for the visible week.
+  useEffect(() => {
+    const from = weekStart.toISOString(), to = new Date(weekStart.getTime() + 7 * 864e5).toISOString();
+    fetch(`/api/meet/admin/calendar-busy?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`).then((r) => r.json()).then((d) => setBusy(d.busy || [])).catch(() => setBusy([]));
+  }, [weekStart]);
   const colorOf = (id: string) => CAL_COLORS[Math.max(0, members.findIndex((m) => m.id === id)) % CAL_COLORS.length];
   const HS = 7, HE = 21, RH = 46;
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const active = bookings.filter((b) => b.status !== "cancelled" && (!mf || b.member_ids.includes(mf)));
+  const busyFor = mf ? busy.filter((b) => b.memberId === mf) : busy;
   const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const sameDay = (iso: string, day: Date) => { const d = new Date(iso); return d.getFullYear() === day.getFullYear() && d.getMonth() === day.getMonth() && d.getDate() === day.getDate(); };
   const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
@@ -577,7 +584,7 @@ function TeamCalendar({ bookings, members, reload }: { bookings: Booking[]; memb
           <button onClick={reload} className={btnNeu}>Refresh</button>
         </div>
       </div>
-      <div className="flex gap-3 flex-wrap mb-3">{members.map((m) => <span key={m.id} className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded-full" style={{ background: colorOf(m.id) }} />{m.name}</span>)}{mf && <span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded bg-[#5b8a72]/30" />available</span>}</div>
+      <div className="flex gap-3 flex-wrap mb-3">{members.map((m) => <span key={m.id} className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded-full" style={{ background: colorOf(m.id) }} />{m.name}</span>)}{mf && <span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded bg-[#5b8a72]/30" />available</span>}<span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded bg-foreground/10 border border-foreground/15" />busy (their calendar)</span></div>
       <div className="overflow-x-auto">
         <div className="min-w-[720px]">
           <div className="grid" style={{ gridTemplateColumns: `48px repeat(7,1fr)` }}>
@@ -594,6 +601,13 @@ function TeamCalendar({ bookings, members, reload }: { bookings: Booking[]; memb
                   const top = ((sh + sm / 60) - HS) * RH, ht = ((eh + em / 60) - (sh + sm / 60)) * RH;
                   return <div key={ai} className="absolute inset-x-0.5 rounded bg-[#5b8a72]/12" style={{ top, height: ht }} />;
                 })}
+                {busyFor.flatMap((bm) => bm.intervals.filter((iv) => sameDay(iv.start, day)).map((iv, ii) => {
+                  const s = new Date(iv.start); const top = ((s.getHours() + s.getMinutes() / 60) - HS) * RH;
+                  const dur = (Date.parse(iv.end) - Date.parse(iv.start)) / 6e4; const ht = Math.max(18, dur / 60 * RH);
+                  return <div key={bm.memberId + ii} className="absolute inset-x-0.5 rounded bg-foreground/[0.09] border border-foreground/10 overflow-hidden" style={{ top, height: ht }} title={`Busy · ${bm.name} · ${new Date(iv.start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`}>
+                    <div className="text-[9px] text-foreground/45 px-1 leading-tight truncate">Busy{mf ? "" : " · " + bm.name.split(" ")[0]}</div>
+                  </div>;
+                }))}
                 {active.filter((b) => sameDay(b.start_utc, day)).map((b) => {
                   const s = new Date(b.start_utc); const top = ((s.getHours() + s.getMinutes() / 60) - HS) * RH;
                   const dur = (Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 6e4; const ht = Math.max(24, dur / 60 * RH);
@@ -608,7 +622,7 @@ function TeamCalendar({ bookings, members, reload }: { bookings: Booking[]; memb
         </div>
       </div>
       {active.length === 0 && <p className="text-[12.5px] text-faint text-center mt-3">No bookings this week{mf ? " for this member" : ""}.</p>}
-      <p className="text-[11px] text-faint mt-3">Every booking made through Avloryn appears here — whichever calendar (Google/Zoho) the member uses. Pick a member to see their working hours too.</p>
+      <p className="text-[11px] text-faint mt-3">Shows Avloryn bookings <b>and</b> each member&rsquo;s real Google/Zoho calendar events (grey = busy). Pick a member to see their working hours too.</p>
     </div>
   );
 }

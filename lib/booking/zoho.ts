@@ -8,6 +8,7 @@
  * Redirect URI: {origin}/api/meet/zoho/callback
  */
 import { getZoho, saveZoho, listMembers } from "./db";
+import type { Interval } from "./availability";
 
 const SCOPE = "ZohoCalendar.event.ALL,ZohoCalendar.calendar.READ";
 
@@ -154,6 +155,37 @@ export async function moveZohoEvents(events: ZohoEvent[], startISO: string, endI
       await fetch(url, { method: "PUT", headers: { Authorization: `Zoho-oauthtoken ${z.token}` } });
     } catch { /* best-effort */ }
   }
+}
+
+/** Zoho datetime "yyyyMMddTHHmmss±hhmm" (or Z) → ISO. */
+function zohoDtToISO(s?: string): string | null {
+  if (!s) return null;
+  const m = String(s).match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z|[+-]\d{4})?$/);
+  if (!m) return null;
+  const [, Y, Mo, D, H, Mi, S, tz] = m;
+  const off = !tz || tz === "Z" ? "Z" : `${tz.slice(0, 3)}:${tz.slice(3)}`;
+  const d = new Date(`${Y}-${Mo}-${D}T${H}:${Mi}:${S}${off}`);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** A member's Zoho calendar events in [from,to] as busy intervals (best-effort). */
+export async function getZohoBusy(memberId: string, fromISO: string, toISO: string): Promise<Interval[]> {
+  if (!zohoConfigured()) return [];
+  try {
+    const z = await zohoAccess(memberId);
+    if (!z) return [];
+    const range = JSON.stringify({ start: zdt(fromISO), end: zdt(toISO) });
+    const url = `${calBase()}/calendars/${z.calUid}/events?range=${encodeURIComponent(range)}`;
+    const r = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${z.token}` } });
+    const j = await r.json();
+    const events: any[] = j?.events || [];
+    const out: Interval[] = [];
+    for (const e of events) {
+      const si = zohoDtToISO(e?.dateandtime?.start), ei = zohoDtToISO(e?.dateandtime?.end);
+      if (si && ei) out.push({ start: si, end: ei });
+    }
+    return out;
+  } catch { return []; }
 }
 
 /** For admin display: which of these members have Zoho linked. */
