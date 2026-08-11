@@ -86,6 +86,8 @@ function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { memb
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [tz, setTz] = useState("Asia/Kolkata");
   const [busy, setBusy] = useState(false); const [e, setE] = useState("");
   const [team, setTeam] = useState<{ name: string; email: string }[]>([]); const [pick, setPick] = useState("");
+  const [reveal, setReveal] = useState<Set<string>>(new Set());
+  const toggleReveal = (id: string) => setReveal((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   useEffect(() => { fetch("/api/meet/admin/team").then((r) => r.json()).then((d) => setTeam(d.team || [])).catch(() => {}); }, []);
   const haveEmails = new Set(members.map((m) => (m.email || "").toLowerCase()));
   const addable = team.filter((p) => p.email && !haveEmails.has(p.email.toLowerCase()));
@@ -117,17 +119,38 @@ function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { memb
                   <button onClick={() => del(m.id)} className="text-[12px] font-semibold text-[#b3341f] hover:underline">Remove</button>
                 </div>
               </div>
-              <div className="mt-3 flex items-center gap-2">
-                <input readOnly value={origin + m.connectLink} className={input + " text-[11.5px] text-faint"} onFocus={(ev) => ev.currentTarget.select()} />
-                <button onClick={() => copy(origin + m.connectLink, "g-" + m.id)} className={btnNeu + " shrink-0"}>{copied === "g-" + m.id ? "Copied ✓" : "Google link"}</button>
-              </div>
-              {zohoReady && (
-                <div className="mt-2 flex items-center gap-2">
-                  <input readOnly value={origin + m.zohoConnectLink} className={input + " text-[11.5px] text-faint"} onFocus={(ev) => ev.currentTarget.select()} />
-                  <button onClick={() => copy(origin + m.zohoConnectLink, "z-" + m.id)} className={btnNeu + " shrink-0"}>{copied === "z-" + m.id ? "Copied ✓" : "Zoho link"}</button>
-                </div>
-              )}
-              <p className="text-[11px] text-faint mt-1.5">Send the link to {m.name.split(" ")[0]} — they open it & grant calendar access.</p>
+              {(() => {
+                const rv = reveal.has(m.id);
+                const showG = !m.googleConnected || rv;
+                const showZ = zohoReady && (!m.zohoConnected || rv);
+                const anyConnected = m.googleConnected || (zohoReady && m.zohoConnected);
+                return (
+                  <div className="mt-3 space-y-1.5">
+                    {showG && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10.5px] text-faint w-[42px] shrink-0">Google</span>
+                        <input readOnly value={origin + m.connectLink} className="flex-1 min-w-0 neu-inset rounded-lg px-2.5 py-1.5 text-[11px] text-faint truncate" onFocus={(ev) => ev.currentTarget.select()} />
+                        <button onClick={() => copy(origin + m.connectLink, "g-" + m.id)} className="btn-gold rounded-lg px-2.5 py-1.5 text-[11px] font-[560] shrink-0">{copied === "g-" + m.id ? "✓" : "Copy"}</button>
+                      </div>
+                    )}
+                    {showZ && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10.5px] text-faint w-[42px] shrink-0">Zoho</span>
+                        <input readOnly value={origin + m.zohoConnectLink} className="flex-1 min-w-0 neu-inset rounded-lg px-2.5 py-1.5 text-[11px] text-faint truncate" onFocus={(ev) => ev.currentTarget.select()} />
+                        <button onClick={() => copy(origin + m.zohoConnectLink, "z-" + m.id)} className="btn-gold rounded-lg px-2.5 py-1.5 text-[11px] font-[560] shrink-0">{copied === "z-" + m.id ? "✓" : "Copy"}</button>
+                      </div>
+                    )}
+                    {(showG || showZ) && !rv && (
+                      <p className="text-[10.5px] text-faint">Send the link to {m.name.split(" ")[0]} — they open it &amp; grant calendar access.</p>
+                    )}
+                    {anyConnected && (
+                      <button onClick={() => toggleReveal(m.id)} className="text-[10.5px] font-semibold text-gold hover:underline">
+                        {rv ? "Hide connect links" : "Show connect links (to reconnect)"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </div>
@@ -550,9 +573,14 @@ function AnalyticsTab() {
 
 /* ─────────────── Team Calendar (one calendar for everyone) ─────────────── */
 const CAL_COLORS = ["#c8a24a", "#5b8a72", "#8a5b7a", "#5b6f8a", "#a86b4a", "#6b8a5b", "#7a5b8a", "#8a7a4a"];
+const CAL_TZ = "Asia/Kolkata"; // render the whole calendar in one fixed zone, not the viewer's browser
 function mondayOf(d: Date) { const x = new Date(d); const day = (x.getDay() + 6) % 7; x.setDate(x.getDate() - day); x.setHours(0, 0, 0, 0); return x; }
 function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
-function isToday(d: Date) { const n = new Date(); return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate(); }
+// ── everything below reads the time in CAL_TZ, so it's correct regardless of the viewer's timezone ──
+const istKey = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: CAL_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+const istHM = (d: Date) => { const p = new Intl.DateTimeFormat("en-GB", { timeZone: CAL_TZ, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d); return (+(p.find((x) => x.type === "hour")?.value || 0)) + (+(p.find((x) => x.type === "minute")?.value || 0)) / 60; };
+const istWeekday = (d: Date) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(new Intl.DateTimeFormat("en-US", { timeZone: CAL_TZ, weekday: "short" }).format(d));
+function isToday(d: Date) { return istKey(d) === istKey(new Date()); }
 
 function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Booking[]; members: Member[]; reload: () => void; refreshTick?: number }) {
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
@@ -576,9 +604,10 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const active = bookings.filter((b) => b.status !== "cancelled" && (!mf || b.member_ids.includes(mf)));
   const busyFor = mf ? busy.filter((b) => b.memberId === mf) : busy;
-  const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  const sameDay = (iso: string, day: Date) => { const d = new Date(iso); return d.getFullYear() === day.getFullYear() && d.getMonth() === day.getMonth() && d.getDate() === day.getDate(); };
-  const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+  const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { timeZone: CAL_TZ, hour: "numeric", minute: "2-digit" });
+  const sameDay = (iso: string, day: Date) => istKey(new Date(iso)) === istKey(day);
+  const fmtDay = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString("en-US", { timeZone: CAL_TZ, ...o });
+  const weekLabel = `${fmtDay(weekStart, { month: "short", day: "numeric" })} – ${fmtDay(addDays(weekStart, 6), { month: "short", day: "numeric" })}`;
 
   return (
     <div className={card + " overflow-hidden"}>
@@ -602,20 +631,20 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
         <div className="min-w-[720px]">
           <div className="grid" style={{ gridTemplateColumns: `48px repeat(7,1fr)` }}>
             <div />
-            {days.map((d, i) => <div key={i} className="text-center pb-2"><div className="text-[11px] text-faint">{d.toLocaleDateString("en-US", { weekday: "short" })}</div><div className={"text-[13px] font-[600] " + (isToday(d) ? "text-gold" : "")}>{d.getDate()}</div></div>)}
+            {days.map((d, i) => <div key={i} className="text-center pb-2"><div className="text-[11px] text-faint">{fmtDay(d, { weekday: "short" })}</div><div className={"text-[13px] font-[600] " + (isToday(d) ? "text-gold" : "")}>{fmtDay(d, { day: "numeric" })}</div></div>)}
           </div>
           <div className="grid" style={{ gridTemplateColumns: `48px repeat(7,1fr)` }}>
             <div>{Array.from({ length: HE - HS }, (_, h) => <div key={h} style={{ height: RH }} className="text-[10px] text-faint text-right pr-1.5 -mt-1.5">{HS + h}:00</div>)}</div>
             {days.map((day, di) => (
               <div key={di} className="relative border-l border-border" style={{ height: (HE - HS) * RH }}>
                 {Array.from({ length: HE - HS }, (_, h) => <div key={h} style={{ top: h * RH, height: RH }} className="absolute inset-x-0 border-b border-border/40" />)}
-                {mf && avail.filter((a) => a.weekday === day.getDay()).map((a, ai) => {
+                {mf && avail.filter((a) => a.weekday === istWeekday(day)).map((a, ai) => {
                   const [sh, sm] = a.start.split(":").map(Number), [eh, em] = a.end.split(":").map(Number);
                   const top = ((sh + sm / 60) - HS) * RH, ht = ((eh + em / 60) - (sh + sm / 60)) * RH;
                   return <div key={ai} className="absolute inset-x-0.5 rounded bg-[#5b8a72]/12" style={{ top, height: ht }} />;
                 })}
                 {busyFor.flatMap((bm) => bm.intervals.filter((iv) => sameDay(iv.start, day)).map((iv, ii) => {
-                  const s = new Date(iv.start); const top = ((s.getHours() + s.getMinutes() / 60) - HS) * RH;
+                  const top = (istHM(new Date(iv.start)) - HS) * RH;
                   const dur = (Date.parse(iv.end) - Date.parse(iv.start)) / 6e4; const ht = Math.max(18, dur / 60 * RH);
                   return <div key={bm.memberId + ii} className="absolute inset-x-0.5 rounded bg-foreground/[0.09] border border-foreground/10 overflow-hidden" style={{ top, height: ht }} title={`${iv.title || "Busy"} · ${bm.name} · ${new Date(iv.start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`}>
                     <div className="text-[9px] text-foreground/60 px-1 leading-tight truncate font-[560]">{iv.title || "Busy"}</div>
@@ -623,7 +652,7 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
                   </div>;
                 }))}
                 {active.filter((b) => sameDay(b.start_utc, day)).map((b) => {
-                  const s = new Date(b.start_utc); const top = ((s.getHours() + s.getMinutes() / 60) - HS) * RH;
+                  const top = (istHM(new Date(b.start_utc)) - HS) * RH;
                   const dur = (Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 6e4; const ht = Math.max(24, dur / 60 * RH);
                   return <div key={b.id} className="absolute inset-x-0.5 rounded-md px-1.5 py-0.5 overflow-hidden text-white shadow-sm" style={{ top, height: ht, background: colorOf(b.member_ids[0] || ""), opacity: b.status === "pending" ? 0.6 : 1 }} title={`${fmtT(b.start_utc)} · ${b.client_name} · ${b.meetingTypeName} · ${b.memberNames.join(", ")}${b.status === "pending" ? " (pending)" : ""}`}>
                     <div className="text-[10px] font-[600] leading-tight truncate">{fmtT(b.start_utc)} {b.client_name}</div>
