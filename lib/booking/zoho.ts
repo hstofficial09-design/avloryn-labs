@@ -8,7 +8,6 @@
  * Redirect URI: {origin}/api/meet/zoho/callback
  */
 import { getZoho, saveZoho, listMembers } from "./db";
-import type { Interval } from "./availability";
 
 const SCOPE = "ZohoCalendar.event.ALL,ZohoCalendar.calendar.READ";
 
@@ -23,9 +22,9 @@ const calBase = () => `https://calendar.zoho.${region()}/api/v1`;
 const canonicalBase = (origin: string) => (/localhost|127\.0\.0\.1/.test(origin) ? origin.replace(/\/$/, "") : "https://avloryn.com");
 const redirectUri = (origin: string) => `${canonicalBase(origin)}/api/meet/zoho/callback`;
 
-/** ISO → Zoho datetime "yyyyMMddTHHmmss+0000" (Zoho wants an explicit offset, not "Z"). */
+/** ISO → Zoho datetime "yyyyMMddTHHmmssZ" (UTC). Zoho's range + event APIs want the literal Z. */
 function zdt(iso: string): string {
-  return new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "+0000");
+  return new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
 export function zohoAuthUrl(memberId: string, origin: string): string | null {
@@ -171,8 +170,9 @@ function zohoDtToISO(s?: string): string | null {
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-/** A member's Zoho calendar events in [from,to] as busy intervals (best-effort). */
-export async function getZohoBusy(memberId: string, fromISO: string, toISO: string): Promise<Interval[]> {
+export type BusyBlock = { start: string; end: string; title?: string };
+/** A member's Zoho calendar events in [from,to] as busy blocks with titles (best-effort). */
+export async function getZohoBusy(memberId: string, fromISO: string, toISO: string): Promise<BusyBlock[]> {
   if (!zohoConfigured()) return [];
   try {
     const z = await zohoAccess(memberId);
@@ -182,10 +182,10 @@ export async function getZohoBusy(memberId: string, fromISO: string, toISO: stri
     const r = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${z.token}` } });
     const j = await r.json();
     const events: any[] = j?.events || [];
-    const out: Interval[] = [];
+    const out: BusyBlock[] = [];
     for (const e of events) {
       const si = zohoDtToISO(e?.dateandtime?.start), ei = zohoDtToISO(e?.dateandtime?.end);
-      if (si && ei) out.push({ start: si, end: ei });
+      if (si && ei) out.push({ start: si, end: ei, title: (e?.title ? String(e.title).slice(0, 80) : undefined) });
     }
     return out;
   } catch { return []; }

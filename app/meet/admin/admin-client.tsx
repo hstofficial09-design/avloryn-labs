@@ -43,6 +43,10 @@ export default function MeetAdmin({ googleReady }: { googleReady: boolean }) {
   const loadBookings = useCallback(async () => { try { setBookings((await api("/api/meet/admin/bookings")).bookings); } catch (e) { setErr(msg(e)); } }, []);
   useEffect(() => { loadMembers(); loadTypes(); loadBookings(); }, [loadMembers, loadTypes, loadBookings]);
 
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  async function refreshAll() { setRefreshing(true); try { await Promise.all([loadMembers(), loadTypes(), loadBookings()]); setRefreshTick((t) => t + 1); } finally { setRefreshing(false); } }
+
   function copy(text: string, id: string) { navigator.clipboard?.writeText(text).then(() => { setCopied(id); setTimeout(() => setCopied(""), 1600); }); }
 
   return (
@@ -52,7 +56,10 @@ export default function MeetAdmin({ googleReady }: { googleReady: boolean }) {
           <LogoMark size={32} />
           <div><div className="font-serif text-[18px] font-[600] leading-none">Avloryn <span className="text-gold">Labs</span></div><div className="section-label mt-1.5">Scheduling</div></div>
         </div>
-        <a href="/portal" className={btnNeu}>← Portal</a>
+        <div className="flex items-center gap-2">
+          <button onClick={refreshAll} disabled={refreshing} className={btnNeu + " disabled:opacity-60"}>{refreshing ? "Refreshing…" : "↻ Refresh"}</button>
+          <a href="/portal" className={btnNeu}>← Portal</a>
+        </div>
       </div>
 
       {!googleReady && <div className="rounded-2xl bg-[#fff7e6] border border-[#f0dca8] px-4 py-3 mb-5 text-[12.5px] text-[#7a5c15]">Google isn&rsquo;t configured yet — set <code>GOOGLE_CLIENT_ID</code> / <code>GOOGLE_CLIENT_SECRET</code>. Everything else still works.</div>}
@@ -64,7 +71,7 @@ export default function MeetAdmin({ googleReady }: { googleReady: boolean }) {
         ))}
       </div>
 
-      {tab === "calendar" && <TeamCalendar bookings={bookings} members={members} reload={loadBookings} />}
+      {tab === "calendar" && <TeamCalendar bookings={bookings} members={members} reload={loadBookings} refreshTick={refreshTick} />}
       {tab === "members" && <MembersTab members={members} reload={loadMembers} copy={copy} copied={copied} origin={origin} zohoReady={zohoReady} />}
       {tab === "types" && <TypesTab types={types} members={members} reload={loadTypes} copy={copy} copied={copied} origin={origin} />}
       {tab === "availability" && <AvailabilityTab members={members} />}
@@ -547,13 +554,13 @@ function mondayOf(d: Date) { const x = new Date(d); const day = (x.getDay() + 6)
 function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function isToday(d: Date) { const n = new Date(); return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate(); }
 
-function TeamCalendar({ bookings, members, reload }: { bookings: Booking[]; members: Member[]; reload: () => void }) {
+function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Booking[]; members: Member[]; reload: () => void; refreshTick?: number }) {
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const [mf, setMf] = useState("");
   const [avail, setAvail] = useState<{ weekday: number; start: string; end: string }[]>([]);
-  const [busy, setBusy] = useState<{ memberId: string; name: string; intervals: { start: string; end: string }[] }[]>([]);
+  const [busy, setBusy] = useState<{ memberId: string; name: string; intervals: { start: string; end: string; title?: string }[] }[]>([]);
   const [loadingBusy, setLoadingBusy] = useState(false);
-  useEffect(() => { if (mf) fetch(`/api/meet/admin/availability?memberId=${mf}`).then((r) => r.json()).then((d) => setAvail(d.rules || [])).catch(() => setAvail([])); else setAvail([]); }, [mf]);
+  useEffect(() => { if (mf) fetch(`/api/meet/admin/availability?memberId=${mf}`).then((r) => r.json()).then((d) => setAvail(d.rules || [])).catch(() => setAvail([])); else setAvail([]); }, [mf, refreshTick]);
   // Pull each member's REAL calendar events (Google + Zoho) for a given week.
   const fetchBusy = useCallback(async (ws: Date) => {
     setLoadingBusy(true);
@@ -561,7 +568,7 @@ function TeamCalendar({ bookings, members, reload }: { bookings: Booking[]; memb
     try { const d = await (await fetch(`/api/meet/admin/calendar-busy?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)).json(); setBusy(d.busy || []); }
     catch { setBusy([]); } finally { setLoadingBusy(false); }
   }, []);
-  useEffect(() => { fetchBusy(weekStart); }, [weekStart, fetchBusy]);
+  useEffect(() => { fetchBusy(weekStart); }, [weekStart, fetchBusy, refreshTick]);
   const goToday = () => { const m = mondayOf(new Date()); setWeekStart(m); fetchBusy(m); };
   const refreshAll = () => { reload(); fetchBusy(weekStart); if (mf) fetch(`/api/meet/admin/availability?memberId=${mf}`).then((r) => r.json()).then((d) => setAvail(d.rules || [])).catch(() => {}); };
   const colorOf = (id: string) => CAL_COLORS[Math.max(0, members.findIndex((m) => m.id === id)) % CAL_COLORS.length];
@@ -610,8 +617,9 @@ function TeamCalendar({ bookings, members, reload }: { bookings: Booking[]; memb
                 {busyFor.flatMap((bm) => bm.intervals.filter((iv) => sameDay(iv.start, day)).map((iv, ii) => {
                   const s = new Date(iv.start); const top = ((s.getHours() + s.getMinutes() / 60) - HS) * RH;
                   const dur = (Date.parse(iv.end) - Date.parse(iv.start)) / 6e4; const ht = Math.max(18, dur / 60 * RH);
-                  return <div key={bm.memberId + ii} className="absolute inset-x-0.5 rounded bg-foreground/[0.09] border border-foreground/10 overflow-hidden" style={{ top, height: ht }} title={`Busy · ${bm.name} · ${new Date(iv.start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`}>
-                    <div className="text-[9px] text-foreground/45 px-1 leading-tight truncate">Busy{mf ? "" : " · " + bm.name.split(" ")[0]}</div>
+                  return <div key={bm.memberId + ii} className="absolute inset-x-0.5 rounded bg-foreground/[0.09] border border-foreground/10 overflow-hidden" style={{ top, height: ht }} title={`${iv.title || "Busy"} · ${bm.name} · ${new Date(iv.start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`}>
+                    <div className="text-[9px] text-foreground/60 px-1 leading-tight truncate font-[560]">{iv.title || "Busy"}</div>
+                    {!mf && <div className="text-[8px] text-foreground/40 px-1 leading-tight truncate">{bm.name.split(" ")[0]}</div>}
                   </div>;
                 }))}
                 {active.filter((b) => sameDay(b.start_utc, day)).map((b) => {

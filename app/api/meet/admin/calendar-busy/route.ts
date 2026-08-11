@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   const [g, z] = await Promise.all([membersWithGoogle(ids), membersWithZoho(ids)]);
 
   const busy = await Promise.all(members.map(async (m) => {
-    const parts: { start: string; end: string }[] = [];
+    const parts: { start: string; end: string; title?: string }[] = [];
     if (g.has(m.id)) { try { parts.push(...await memberBusy(m.id, from, to)); } catch { /* skip */ } }
     if (z.has(m.id)) { try { parts.push(...await getZohoBusy(m.id, from, to)); } catch { /* skip */ } }
     return { memberId: m.id, name: m.name, intervals: parts };
