@@ -7,7 +7,9 @@ const DAY = 24 * 3600 * 1000;
 const WINDOW_DAYS = 14;
 
 export default function ReschedulePage() {
-  const tz = useMemo(() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } }, []);
+  // UTC first (matches SSR); switch to the browser's real zone after mount — no hydration mismatch.
+  const [tz, setTz] = useState("UTC");
+  useEffect(() => { try { setTz(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"); } catch { /* keep UTC */ } }, []);
   const [token, setToken] = useState<string | null>(null);
   const [info, setInfo] = useState<{ slug: string | null; name: string; currentStartISO: string; memberIds: string[]; clientName: string } | null>(null);
   const [loadErr, setLoadErr] = useState("");

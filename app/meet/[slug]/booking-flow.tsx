@@ -11,9 +11,10 @@ const DAY = 24 * 3600 * 1000;
 const WINDOW_STEP = 14;
 
 export default function BookingFlow({ mt, members }: { mt: MT; members: Member[] }) {
-  const tz = useMemo(() => {
-    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
-  }, []);
+  // Start as UTC so the server-rendered HTML and the first client render match
+  // (the browser's real timezone is only known after mount → avoids a hydration mismatch).
+  const [tz, setTz] = useState("UTC");
+  useEffect(() => { try { setTz(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"); } catch { /* keep UTC */ } }, []);
   const embed = useMemo(() => { try { return new URLSearchParams(window.location.search).get("embed") === "1"; } catch { return false; } }, []);
 
   const [prefer, setPrefer] = useState<string>(""); // "any" mode: optional member filter
