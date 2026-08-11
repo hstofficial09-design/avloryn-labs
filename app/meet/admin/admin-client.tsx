@@ -466,7 +466,7 @@ function BookingsTab({ bookings, reload, members, copy, copied }: { bookings: Bo
   const now = Date.now();
   const upcoming = bookings.filter((b) => b.status !== "cancelled" && Date.parse(b.end_utc) >= now);
   const past = bookings.filter((b) => b.status === "cancelled" || Date.parse(b.end_utc) < now);
-  const fmt = (iso: string) => new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  const fmt = (iso: string) => new Date(iso).toLocaleString("en-US", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }) + " IST";
   async function cancel(id: string) { if (!confirm("Cancel this booking? It's removed from calendars.")) return; try { await api("/api/meet/admin/bookings", "PATCH", { id, action: "cancel" }); reload(); } catch (e) { alert(msg(e)); } }
   async function attend(id: string, attendance: string) { try { await api("/api/meet/admin/bookings", "PATCH", { id, action: "attendance", attendance }); reload(); } catch (e) { alert(msg(e)); } }
   async function approve(id: string) { try { await api("/api/meet/admin/bookings", "PATCH", { id, action: "approve" }); reload(); } catch (e) { alert(msg(e)); } }
@@ -626,7 +626,7 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
       <div className="overflow-x-auto">
         <div className="min-w-[720px]">
           <div className="grid" style={{ gridTemplateColumns: `48px repeat(7,1fr)` }}>
-            <div />
+            <div className="text-[9px] text-faint font-semibold self-end pb-2 text-center">IST</div>
             {days.map((d, i) => <div key={i} className="text-center pb-2"><div className="text-[11px] text-faint">{fmtDay(d, { weekday: "short" })}</div><div className={"text-[13px] font-[600] " + (isToday(d) ? "text-gold" : "")}>{fmtDay(d, { day: "numeric" })}</div></div>)}
           </div>
           <div className="grid" style={{ gridTemplateColumns: `48px repeat(7,1fr)` }}>
@@ -642,7 +642,7 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
                 {busyFor.flatMap((bm) => bm.intervals.filter((iv) => sameDay(iv.start, day)).map((iv, ii) => {
                   const top = (istHM(new Date(iv.start)) - HS) * RH;
                   const dur = (Date.parse(iv.end) - Date.parse(iv.start)) / 6e4; const ht = Math.max(18, dur / 60 * RH);
-                  return <div key={bm.memberId + ii} className="absolute inset-x-0.5 rounded bg-foreground/[0.09] border border-foreground/10 overflow-hidden" style={{ top, height: ht }} title={`${iv.title || "Busy"} · ${bm.name} · ${new Date(iv.start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`}>
+                  return <div key={bm.memberId + ii} className="absolute inset-x-0.5 rounded bg-foreground/[0.09] border border-foreground/10 overflow-hidden" style={{ top, height: ht }} title={`${iv.title || "Busy"} · ${bm.name} · ${new Date(iv.start).toLocaleTimeString("en-US", { timeZone: CAL_TZ, hour: "numeric", minute: "2-digit" })} IST`}>
                     <div className="text-[9px] text-foreground/60 px-1 leading-tight truncate font-[560]">{iv.title || "Busy"}</div>
                     {!mf && <div className="text-[8px] text-foreground/40 px-1 leading-tight truncate">{bm.name.split(" ")[0]}</div>}
                   </div>;
