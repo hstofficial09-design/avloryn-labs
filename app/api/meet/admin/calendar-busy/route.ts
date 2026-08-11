@@ -7,6 +7,13 @@ import { getZohoBusy } from "@/lib/booking/zoho";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Short in-memory cache so flipping weeks / re-opening the calendar doesn't re-hit
+// Google + Zoho every time (those live reads are the slow part). Works on Railway's
+// persistent server; harmless on serverless. Pass ?fresh=1 (the Refresh button) to bypass.
+type Payload = { busy: unknown[] };
+const _cache = new Map<string, { t: number; data: Payload }>();
+const CACHE_TTL = 45_000;
+
 // Each connected member's REAL calendar events (Google + Zoho) as busy intervals,
 // so the Team Calendar shows meetings created directly in Gmail/Zoho too.
 export async function GET(req: Request) {
@@ -14,6 +21,12 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const from = sp.get("from"), to = sp.get("to");
   if (!from || !to) return NextResponse.json({ error: "from/to required" }, { status: 400 });
+
+  const cacheKey = `${from}|${to}`;
+  if (!sp.get("fresh")) {
+    const hit = _cache.get(cacheKey);
+    if (hit && Date.now() - hit.t < CACHE_TTL) return NextResponse.json(hit.data);
+  }
 
   const members = await listMembers(true);
   const ids = members.map((m) => m.id);
@@ -48,5 +61,9 @@ export async function GET(req: Request) {
     return { memberId: m.id, name: m.name, intervals: kept };
   }));
 
-  return NextResponse.json({ busy: busy.filter((b) => b.intervals.length) });
+  const payload: Payload = { busy: busy.filter((b) => b.intervals.length) };
+  _cache.set(cacheKey, { t: Date.now(), data: payload });
+  // Keep the cache from growing unbounded across many week ranges.
+  if (_cache.size > 40) { const oldest = [..._cache.entries()].sort((a, b) => a[1].t - b[1].t)[0]; if (oldest) _cache.delete(oldest[0]); }
+  return NextResponse.json(payload);
 }

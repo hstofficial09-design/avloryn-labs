@@ -633,15 +633,15 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
   const [sel, setSel] = useState<Booking | null>(null);
   useEffect(() => { if (mf) fetch(`/api/meet/admin/availability?memberId=${mf}`).then((r) => r.json()).then((d) => setAvail(d.rules || [])).catch(() => setAvail([])); else setAvail([]); }, [mf, refreshTick]);
   // Pull each member's REAL calendar events (Google + Zoho) for a given week.
-  const fetchBusy = useCallback(async (ws: Date) => {
+  const fetchBusy = useCallback(async (ws: Date, fresh = false) => {
     setLoadingBusy(true);
     const from = ws.toISOString(), to = new Date(ws.getTime() + 7 * 864e5).toISOString();
-    try { const d = await (await fetch(`/api/meet/admin/calendar-busy?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)).json(); setBusy(d.busy || []); }
+    try { const d = await (await fetch(`/api/meet/admin/calendar-busy?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${fresh ? "&fresh=1" : ""}`)).json(); setBusy(d.busy || []); }
     catch { setBusy([]); } finally { setLoadingBusy(false); }
   }, []);
   useEffect(() => { fetchBusy(weekStart); }, [weekStart, fetchBusy, refreshTick]);
   const goToday = () => { const m = mondayOf(new Date()); setWeekStart(m); fetchBusy(m); };
-  const refreshAll = () => { reload(); fetchBusy(weekStart); if (mf) fetch(`/api/meet/admin/availability?memberId=${mf}`).then((r) => r.json()).then((d) => setAvail(d.rules || [])).catch(() => {}); };
+  const refreshAll = () => { reload(); fetchBusy(weekStart, true); if (mf) fetch(`/api/meet/admin/availability?memberId=${mf}`).then((r) => r.json()).then((d) => setAvail(d.rules || [])).catch(() => {}); };
   const colorOf = (id: string) => CAL_COLORS[Math.max(0, members.findIndex((m) => m.id === id)) % CAL_COLORS.length];
   const HS = 7, HE = 21, RH = 46;
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
