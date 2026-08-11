@@ -552,12 +552,18 @@ function TeamCalendar({ bookings, members, reload }: { bookings: Booking[]; memb
   const [mf, setMf] = useState("");
   const [avail, setAvail] = useState<{ weekday: number; start: string; end: string }[]>([]);
   const [busy, setBusy] = useState<{ memberId: string; name: string; intervals: { start: string; end: string }[] }[]>([]);
+  const [loadingBusy, setLoadingBusy] = useState(false);
   useEffect(() => { if (mf) fetch(`/api/meet/admin/availability?memberId=${mf}`).then((r) => r.json()).then((d) => setAvail(d.rules || [])).catch(() => setAvail([])); else setAvail([]); }, [mf]);
-  // Pull each member's REAL calendar events (Google + Zoho) for the visible week.
-  useEffect(() => {
-    const from = weekStart.toISOString(), to = new Date(weekStart.getTime() + 7 * 864e5).toISOString();
-    fetch(`/api/meet/admin/calendar-busy?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`).then((r) => r.json()).then((d) => setBusy(d.busy || [])).catch(() => setBusy([]));
-  }, [weekStart]);
+  // Pull each member's REAL calendar events (Google + Zoho) for a given week.
+  const fetchBusy = useCallback(async (ws: Date) => {
+    setLoadingBusy(true);
+    const from = ws.toISOString(), to = new Date(ws.getTime() + 7 * 864e5).toISOString();
+    try { const d = await (await fetch(`/api/meet/admin/calendar-busy?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)).json(); setBusy(d.busy || []); }
+    catch { setBusy([]); } finally { setLoadingBusy(false); }
+  }, []);
+  useEffect(() => { fetchBusy(weekStart); }, [weekStart, fetchBusy]);
+  const goToday = () => { const m = mondayOf(new Date()); setWeekStart(m); fetchBusy(m); };
+  const refreshAll = () => { reload(); fetchBusy(weekStart); if (mf) fetch(`/api/meet/admin/availability?memberId=${mf}`).then((r) => r.json()).then((d) => setAvail(d.rules || [])).catch(() => {}); };
   const colorOf = (id: string) => CAL_COLORS[Math.max(0, members.findIndex((m) => m.id === id)) % CAL_COLORS.length];
   const HS = 7, HE = 21, RH = 46;
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -574,14 +580,14 @@ function TeamCalendar({ bookings, members, reload }: { bookings: Booking[]; memb
           <button onClick={() => setWeekStart(addDays(weekStart, -7))} className={btnNeu}>‹</button>
           <span className="text-[14px] font-[600] min-w-[150px] text-center">{weekLabel}</span>
           <button onClick={() => setWeekStart(addDays(weekStart, 7))} className={btnNeu}>›</button>
-          <button onClick={() => setWeekStart(mondayOf(new Date()))} className={btnNeu}>Today</button>
+          <button onClick={goToday} className={btnNeu}>Today</button>
         </div>
         <div className="flex items-center gap-2">
           <select value={mf} onChange={(e) => setMf(e.target.value)} className={input + " max-w-[190px] text-[12.5px]"}>
             <option value="">All members</option>
             {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-          <button onClick={reload} className={btnNeu}>Refresh</button>
+          <button onClick={refreshAll} disabled={loadingBusy} className={btnNeu + " disabled:opacity-60"}>{loadingBusy ? "…" : "Refresh"}</button>
         </div>
       </div>
       <div className="flex gap-3 flex-wrap mb-3">{members.map((m) => <span key={m.id} className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded-full" style={{ background: colorOf(m.id) }} />{m.name}</span>)}{mf && <span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded bg-[#5b8a72]/30" />available</span>}<span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded bg-foreground/10 border border-foreground/15" />busy (their calendar)</span></div>
