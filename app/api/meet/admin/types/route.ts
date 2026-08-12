@@ -9,17 +9,25 @@ const deny = () => NextResponse.json({ error: "Not authorized" }, { status: 401 
 const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "meeting";
 // Sanitise custom intake questions → [{id,label,required}] with stable slug ids.
+const QUESTION_TYPES = new Set(["text", "textarea", "email", "phone", "number", "select"]);
 function cleanQuestions(raw: unknown) {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
-  const out: { id: string; label: string; required: boolean }[] = [];
-  for (const q of raw.slice(0, 15)) {
+  const out: { id: string; label: string; required: boolean; type: string; options?: string[] }[] = [];
+  for (const q of raw.slice(0, 20)) {
     const label = String((q as any)?.label || "").trim().slice(0, 120);
     if (!label) continue;
-    let id = slugify(label).slice(0, 40);
+    let id = slugify(label).slice(0, 40) || "q";
     while (seen.has(id)) id += "x";
     seen.add(id);
-    out.push({ id, label, required: !!(q as any)?.required });
+    const type = QUESTION_TYPES.has(String((q as any)?.type)) ? String((q as any).type) : "text";
+    let options: string[] | undefined;
+    if (type === "select") {
+      const raw2 = (q as any)?.options;
+      options = (Array.isArray(raw2) ? raw2 : []).map((o: unknown) => String(o).trim()).filter(Boolean).slice(0, 25);
+      if (!options.length) options = undefined;
+    }
+    out.push({ id, label, required: !!(q as any)?.required, type, ...(options ? { options } : {}) });
   }
   return out;
 }

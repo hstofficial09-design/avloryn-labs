@@ -14,7 +14,7 @@ export type GoogleTokens = {
   member_id: string; google_email: string | null; access_token: string | null;
   refresh_token: string | null; expiry: string | null; calendar_id: string; scope: string | null;
 };
-export type IntakeQuestion = { id: string; label: string; required: boolean };
+export type IntakeQuestion = { id: string; label: string; required: boolean; type?: string; options?: string[] };
 export type IntakeAnswer = { q: string; a: string };
 export type MeetingType = {
   id: string; name: string; slug: string; duration_min: number;

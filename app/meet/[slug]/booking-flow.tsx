@@ -5,7 +5,7 @@ import { LogoMark } from "@/components/ui/logo";
 type MT = { name: string; slug: string; description: string; duration_min: number; mode: "any" | "all" };
 type Member = { id: string; name: string };
 type Slot = { startISO: string; endISO: string; memberIds: string[] };
-type Question = { id: string; label: string; required: boolean };
+type Question = { id: string; label: string; required: boolean; type?: string; options?: string[] };
 
 const DAY = 24 * 3600 * 1000;
 const WINDOW_STEP = 14;
@@ -285,12 +285,29 @@ export default function BookingFlow({ mt, members }: { mt: MT; members: Member[]
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={input + " mb-4"} required autoComplete="email" />
               <label className={label}>Anything we should know? <span className="text-faint font-normal">(optional)</span></label>
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className={input + " mb-4 resize-none"} />
-              {questions.map((q) => (
-                <div key={q.id}>
-                  <label className={label}>{q.label}{q.required && <span className="text-gold"> *</span>}</label>
-                  <input value={answers[q.id] || ""} onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))} className={input + " mb-4"} required={q.required} />
-                </div>
-              ))}
+              {questions.map((q) => {
+                const set = (v: string) => setAnswers((a) => ({ ...a, [q.id]: v }));
+                const val = answers[q.id] || "";
+                return (
+                  <div key={q.id}>
+                    <label className={label}>{q.label}{q.required && <span className="text-gold"> *</span>}</label>
+                    {q.type === "textarea" ? (
+                      <textarea value={val} onChange={(e) => set(e.target.value)} rows={3} className={input + " mb-4 resize-none"} required={q.required} />
+                    ) : q.type === "select" ? (
+                      <select value={val} onChange={(e) => set(e.target.value)} className={input + " mb-4"} required={q.required}>
+                        <option value="">Select…</option>
+                        {(q.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        type={q.type === "email" ? "email" : q.type === "phone" ? "tel" : q.type === "number" ? "number" : "text"}
+                        inputMode={q.type === "phone" ? "tel" : q.type === "number" ? "numeric" : undefined}
+                        value={val} onChange={(e) => set(e.target.value)} className={input + " mb-4"} required={q.required}
+                      />
+                    )}
+                  </div>
+                );
+              })}
               {price > 0 && (
                 <>
                   <label className={label}>Coupon code <span className="text-faint font-normal">(optional)</span></label>

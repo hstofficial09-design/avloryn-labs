@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LogoMark } from "@/components/ui/logo";
 
 type Member = { id: string; name: string; email: string; timezone: string; active: boolean; is_organizer: boolean; googleConnected: boolean; googleEmail: string | null; zohoConnected: boolean; zohoEmail: string | null; connectLink: string; zohoConnectLink: string };
-type Question = { id?: string; label: string; required: boolean };
+type Question = { id?: string; label: string; required: boolean; type?: string; options?: string[] };
 type MType = { id: string; name: string; slug: string; duration_min: number; buffer_before_min: number; buffer_after_min: number; min_notice_min: number; slot_granularity_min: number; mode: "any" | "all"; member_ids: string[]; description: string; active: boolean; max_advance_days?: number; followup_enabled?: boolean; questions?: Question[]; price_inr?: number; requires_approval?: boolean; durations?: number[]; reminders?: number[] };
 type Coupon = { code: string; kind: "percent" | "flat"; value: number; active: boolean; max_uses: number; uses: number };
 type Answer = { q: string; a: string };
@@ -225,7 +225,7 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
   }
   const nameOf = (id: string) => members.find((m) => m.id === id)?.name || "—";
   // questions editor
-  const addQ = () => set("questions", [...form.questions, { label: "", required: false }]);
+  const addQ = () => set("questions", [...form.questions, { label: "", required: false, type: "text" }]);
   const updQ = (i: number, patch: Partial<Question>) => set("questions", form.questions.map((q, idx) => idx === i ? { ...q, ...patch } : q));
   const delQ = (i: number) => set("questions", form.questions.filter((_, idx) => idx !== i));
   const toggleReminder = (min: number) => set("reminders", form.reminders.includes(min) ? form.reminders.filter((x) => x !== min) : [...form.reminders, min].sort((a, b) => a - b));
@@ -299,18 +299,31 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
           </div>
           <div className="sm:col-span-2"><label className={label}>Description <span className="text-faint font-normal">(optional)</span></label><textarea value={form.description} onChange={(x) => set("description", x.target.value)} rows={2} className={input + " resize-none"} /></div>
 
-          {/* custom intake questions */}
+          {/* custom booking-form fields */}
           <div className="sm:col-span-2">
-            <label className={label}>Intake questions <span className="text-faint font-normal">(asked on the booking form)</span></label>
+            <label className={label}>Booking form fields <span className="text-faint font-normal">(name &amp; email are always asked — add your own below)</span></label>
             <div className="grid gap-2">
               {form.questions.map((q, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input value={q.label} onChange={(x) => updQ(i, { label: x.target.value })} placeholder="Question label, e.g. Company" className={input} />
-                  <label className="flex items-center gap-1 text-[12px] shrink-0"><input type="checkbox" checked={q.required} onChange={(x) => updQ(i, { required: x.target.checked })} className="accent-[#c8a24a]" />req</label>
-                  <button type="button" onClick={() => delQ(i)} className="text-[#b3341f] text-[16px] px-1">×</button>
+                <div key={i} className="neu-inset rounded-xl p-2.5 grid gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input value={q.label} onChange={(x) => updQ(i, { label: x.target.value })} placeholder="Field label, e.g. Company" className={input + " flex-1 min-w-[140px]"} />
+                    <select value={q.type || "text"} onChange={(x) => updQ(i, { type: x.target.value, ...(x.target.value === "select" && !q.options ? { options: [] } : {}) })} className={input + " max-w-[150px] text-[12.5px]"}>
+                      <option value="text">Short text</option>
+                      <option value="textarea">Long text</option>
+                      <option value="email">Email</option>
+                      <option value="phone">Phone</option>
+                      <option value="number">Number</option>
+                      <option value="select">Dropdown</option>
+                    </select>
+                    <label className="flex items-center gap-1 text-[12px] shrink-0"><input type="checkbox" checked={q.required} onChange={(x) => updQ(i, { required: x.target.checked })} className="accent-[#c8a24a]" />required</label>
+                    <button type="button" onClick={() => delQ(i)} className="text-[#b3341f] text-[16px] px-1 shrink-0">×</button>
+                  </div>
+                  {q.type === "select" && (
+                    <input value={(q.options || []).join(", ")} onChange={(x) => updQ(i, { options: x.target.value.split(",").map((o) => o.trim()).filter(Boolean) })} placeholder="Dropdown options, comma-separated: e.g. Startup, Enterprise, Student" className={input + " text-[12.5px]"} />
+                  )}
                 </div>
               ))}
-              <button type="button" onClick={addQ} className={btnNeu + " w-fit"}>+ add question</button>
+              <button type="button" onClick={addQ} className={btnNeu + " w-fit"}>+ add form field</button>
             </div>
           </div>
 
