@@ -215,7 +215,7 @@ export default function BookingFlow({ mt, members }: { mt: MT; members: Member[]
   return (
     <div className={`max-w-[860px] mx-auto px-5 ${embed ? "py-6" : "py-12"}`}>
       {!embed && <Brand sub="Book a meeting" />}
-      <div className="grid md:grid-cols-[300px_1fr] gap-5">
+      <div className="grid md:grid-cols-[300px_minmax(0,1fr)] gap-5">
         {/* Left: meeting details */}
         <div className={card + " h-fit"}>
           <div className="section-label mb-2">Meeting</div>
@@ -256,7 +256,7 @@ export default function BookingFlow({ mt, members }: { mt: MT; members: Member[]
         </div>
 
         {/* Right: dates + slots + form */}
-        <div className={card}>
+        <div className={card + " min-w-0"}>
           {loading ? (
             <div className="py-16 text-center text-[13px] text-muted-foreground">Loading available times…</div>
           ) : loadErr ? (
