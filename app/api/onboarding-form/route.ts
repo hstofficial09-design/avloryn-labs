@@ -256,7 +256,7 @@ export async function POST(req: Request) {
   // env
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
   const FROM = process.env.CONTACT_FROM_EMAIL || "Avloryn Labs <onboarding@resend.dev>";
-  const OWNER = process.env.INTERN_TO_EMAIL || process.env.CONTACT_TO_EMAIL || "care@avloryn.com";
+  const OWNER = process.env.INTERN_TO_EMAIL || process.env.CONTACT_TO_EMAIL || "contact@avloryn.com";
   if (!RESEND_API_KEY) {
     return NextResponse.json({ ok: false, error: "Email is not configured on the server." }, { status: 500 });
   }
@@ -342,7 +342,7 @@ export async function POST(req: Request) {
       nd.y -= h + 4;
     } catch {}
     nd.para(`${DOC_META.FOUNDER}`, { font: n.fonts.bold, size: 10.5, gap: 1 });
-    nd.para(`Founder, ${DOC_META.COMPANY}  ·  care@avloryn.com`, { size: 9.5, color: MUTED });
+    nd.para(`Founder, ${DOC_META.COMPANY}  ·  contact@avloryn.com`, { size: 9.5, color: MUTED });
     addAgreement(nd, ia, signImgN, d);
     addAgreement(nd, nda, signImgN, d);
     const internBytes = await n.pdf.save();

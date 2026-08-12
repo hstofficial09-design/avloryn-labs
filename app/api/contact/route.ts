@@ -74,7 +74,7 @@ export async function POST(req: Request) {
   const resendKey = process.env.RESEND_API_KEY;
   if (resendKey) {
     const from = process.env.CONTACT_FROM_EMAIL || "Avloryn Labs <onboarding@resend.dev>";
-    const to = process.env.CONTACT_TO_EMAIL || "care@avloryn.com";
+    const to = process.env.CONTACT_TO_EMAIL || "contact@avloryn.com";
     try {
       const resend = new Resend(resendKey);
       await resend.emails.send({
@@ -131,7 +131,7 @@ export async function POST(req: Request) {
       {
         ok: false,
         error:
-          "We couldn't send your message right now. Please email care@avloryn.com directly.",
+          "We couldn't send your message right now. Please email contact@avloryn.com directly.",
       },
       { status: 500 }
     );

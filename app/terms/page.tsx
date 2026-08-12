@@ -72,7 +72,7 @@ export default function TermsPage() {
       <h2>Contact</h2>
       <p>
         Questions about these Terms? Write to{" "}
-        <a href="mailto:care@avloryn.com">care@avloryn.com</a>.
+        <a href="mailto:contact@avloryn.com">contact@avloryn.com</a>.
       </p>
     </LegalShell>
   );

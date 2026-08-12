@@ -69,14 +69,20 @@ export default function ProfileForm({ profile, isOwner }: { profile: any; isOwne
         <h1 className="font-serif text-[24px] font-[600] mb-1">Your details</h1>
         <p className="text-[12.5px] text-muted-foreground mb-6">Role: <b className="text-foreground/75">{role}</b></p>
         <form onSubmit={save} className="grid sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2"><label className={label}>Full name</label><input value={name} onChange={(e) => setName(e.target.value)} className={input} required /></div>
+          <div className="sm:col-span-2">
+            <label className={label}>Full name {!isOwner && <span className="text-faint font-normal">(set by admin — fixed)</span>}</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} className={input + (isOwner ? "" : " opacity-70")} readOnly={!isOwner} required />
+          </div>
           <div>
             <label className={label}>Email {!isOwner && <span className="text-faint font-normal">(login — fixed)</span>}</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={input + (isOwner ? "" : " opacity-70")} readOnly={!isOwner} />
           </div>
           <div><label className={label}>Mobile</label><input value={mobile} onChange={(e) => setMobile(e.target.value)} className={input} /></div>
           <div><label className={label}>Date of birth {mustComplete && <span className="text-gold">*</span>}</label><input type="date" value={dob} onChange={(e) => setDob(e.target.value)} className={input} /></div>
-          <div><label className={label}>Start date {mustComplete && !startDate && <span className="text-gold">*</span>}</label><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={input} /></div>
+          <div>
+            <label className={label}>Start date {!isOwner && <span className="text-faint font-normal">(set by admin — fixed)</span>}</label>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={input + (isOwner ? "" : " opacity-70")} readOnly={!isOwner} />
+          </div>
           <div className="sm:col-span-2"><label className={label}>Address</label><textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={2} className={input + " resize-none"} /></div>
           <div className="sm:col-span-2 flex items-center gap-3">
             <button type="submit" disabled={busy} className={GOLD + " px-5 py-2.5 text-[13px] disabled:opacity-60"}>{busy ? "Saving…" : "Save profile"}</button>

@@ -1,7 +1,11 @@
 # dependencies
 /node_modules
+node_modules/
 /.pnp
 .pnp.js
+
+# local tooling & working artifacts (video-tools, generated media, reports) — never pushed
+/video-tools/node_modules/
 
 # next.js
 /.next/

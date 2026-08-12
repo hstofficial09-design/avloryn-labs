@@ -37,7 +37,7 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole }: { r
   cards.push({ title: "My Profile", desc: "Your personal details — name, contact, date of birth, address.", href: "/portal/profile", icon: <UserIcon /> });
   cards.push({ title: "Company site", desc: "View the public Avloryn Labs website.", href: "/", icon: <GlobeIcon /> });
   cards.push({ title: "Password", desc: "Change your account password securely.", onClick: () => setShowPw((v) => !v), icon: <LockIcon /> });
-  cards.push({ title: "Support", desc: "Questions or an issue? Reach the team.", href: "mailto:care@avloryn.com", external: true, icon: <MailIcon /> });
+  cards.push({ title: "Support", desc: "Questions or an issue? Email contact@avloryn.com", href: "mailto:contact@avloryn.com", external: true, icon: <MailIcon /> });
 
   return (
     <div className="relative min-h-screen overflow-hidden">

@@ -28,7 +28,10 @@ export async function POST(req: Request) {
     if (s.role === "owner") {
       await saveCompanyProfile({ full_name: d.name || d.full_name, email: d.email, mobile: d.mobile, dob: d.dob, address: d.address, start_date: d.start_date });
     } else {
-      await updateEmployeeProfile(s.email, { name: d.name, mobile: d.mobile, dob: d.dob, address: d.address, start_date: d.start_date });
+      // Employees may only edit their own contact details. Name + start date (joining date)
+      // are official records set by the admin via the Team panel — never self-editable
+      // (COALESCE keeps the stored values when we omit them here).
+      await updateEmployeeProfile(s.email, { mobile: d.mobile, dob: d.dob, address: d.address });
     }
     return NextResponse.json({ ok: true });
   } catch (e: any) {

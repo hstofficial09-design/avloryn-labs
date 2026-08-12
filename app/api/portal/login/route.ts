@@ -5,10 +5,11 @@ import { verifyPassword, signSession, isOwnerLogin, SESSION_COOKIE } from "@/lib
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const { email, password } = await req.json().catch(() => ({}));
+  const { email, password, remember } = await req.json().catch(() => ({}));
   if (!email || !password) {
     return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
   }
+  const rememberMe = !!remember;
 
   let session: { email: string; role: "owner" | "employee"; name?: string } | null = null;
 
@@ -30,14 +31,27 @@ export async function POST(req: Request) {
     session = { email: String(emp.email || "").toLowerCase(), role: "employee", name: emp.name };
   }
 
-  const token = signSession(session);
+  // Remembered → 30-day persistent cookie. Not remembered → a browser-session cookie
+  // (cleared when the browser closes) with a short 12h ceiling; the client SessionGuard
+  // signs out after 30 min idle / on a Back-cache restore.
+  const prod = process.env.NODE_ENV === "production";
+  const ttlSec = rememberMe ? 30 * 24 * 3600 : 12 * 3600;
+  const token = signSession({ ...session, exp: Date.now() + ttlSec * 1000 });
   const res = NextResponse.json({ success: true, role: session.role });
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: prod,
     path: "/",
-    maxAge: 7 * 24 * 3600,
+    ...(rememberMe ? { maxAge: ttlSec } : {}), // omit maxAge ⇒ session cookie
+  });
+  // Readable flag so the client-side idle/back guard knows whether to auto sign-out.
+  res.cookies.set("portal_remember", rememberMe ? "1" : "0", {
+    httpOnly: false,
+    sameSite: "lax",
+    secure: prod,
+    path: "/",
+    ...(rememberMe ? { maxAge: ttlSec } : {}),
   });
   return res;
 }

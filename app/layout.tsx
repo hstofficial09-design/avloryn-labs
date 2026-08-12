@@ -109,13 +109,13 @@ const entityGraph = {
       image: { "@id": `${SITE_URL}/#logo` },
       description:
         "Avloryn Labs is an independent Indian software product company that builds intelligent tools to reduce effort — including LivoDraft, an AI-assisted academic drafting studio.",
-      email: "care@avloryn.com",
+      email: "contact@avloryn.com",
       foundingDate: "2026",
       founder: { "@type": "Person", name: "Hardev Singh Thakur" },
       address: { "@type": "PostalAddress", addressCountry: "IN" },
       contactPoint: {
         "@type": "ContactPoint",
-        email: "care@avloryn.com",
+        email: "contact@avloryn.com",
         contactType: "customer support",
         areaServed: "IN",
         availableLanguage: ["en", "hi"],

@@ -12,6 +12,7 @@ export default function PortalLogin() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [remember, setRemember] = useState(false);
 
   const input = "w-full text-[14px] neu-inset text-foreground placeholder:text-faint rounded-[12px] px-3.5 py-3 outline-none focus:ring-2 focus:ring-gold/25 mb-4";
   const label = "block text-[12px] font-medium text-foreground/70 mb-1.5";
@@ -26,7 +27,7 @@ export default function PortalLogin() {
       const r = await fetch("/api/portal/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password: pw }),
+        body: JSON.stringify({ email, password: pw, remember }),
       });
       const d = await r.json().catch(() => ({}));
       if (r.ok && d.success) {
@@ -84,6 +85,11 @@ export default function PortalLogin() {
               <label className={label}>Password</label>
               <PasswordInput value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" className={input} />
 
+              <label className="flex items-center gap-2 mb-4 text-[12.5px] text-muted-foreground cursor-pointer select-none">
+                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="accent-gold w-[15px] h-[15px]" />
+                Keep me signed in on this device
+              </label>
+
               {err && <div className="text-[13px] text-[#b3341f] bg-[#fdeeea] border border-[#f3cfc6] rounded-xl px-3 py-2 mb-4">{err}</div>}
 
               <button type="submit" disabled={busy} className={cta}>{busy ? "Signing in…" : "Sign in"}</button>
@@ -110,7 +116,7 @@ export default function PortalLogin() {
             </form>
           )}
         </div>
-        <p className="text-center text-[12px] text-faint mt-5">Access issue? care@avloryn.com</p>
+        <p className="text-center text-[12px] text-faint mt-5">Access issue? contact@avloryn.com</p>
       </div>
     </main>
   );

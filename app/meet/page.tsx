@@ -17,7 +17,7 @@ export default function MeetIndex() {
           <h1 className="font-serif text-[24px] font-[600] mb-2">You need a booking link</h1>
           <p className="text-[13px] text-muted-foreground">
             To schedule a meeting, please use the specific booking link shared with you by the Avloryn Labs team.
-            Questions? <a href="mailto:care@avloryn.com" className="text-gold font-semibold hover:underline">care@avloryn.com</a>
+            Questions? <a href="mailto:contact@avloryn.com" className="text-gold font-semibold hover:underline">contact@avloryn.com</a>
           </p>
         </div>
       </div>

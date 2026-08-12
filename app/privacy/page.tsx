@@ -61,7 +61,7 @@ export default function PrivacyPage() {
       <p>
         You can ask us to access, correct, or delete the information you&rsquo;ve shared at any
         time. To do so, email{" "}
-        <a href="mailto:care@avloryn.com">care@avloryn.com</a> and we&rsquo;ll act on your
+        <a href="mailto:contact@avloryn.com">contact@avloryn.com</a> and we&rsquo;ll act on your
         request promptly.
       </p>
 
@@ -81,7 +81,7 @@ export default function PrivacyPage() {
       <h2>Contact</h2>
       <p>
         Questions about your privacy? Write to{" "}
-        <a href="mailto:care@avloryn.com">care@avloryn.com</a>.
+        <a href="mailto:contact@avloryn.com">contact@avloryn.com</a>.
       </p>
     </LegalShell>
   );

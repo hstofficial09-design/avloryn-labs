@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/portal-auth";
 import { googleConfigured } from "@/lib/booking/google";
+import SessionGuard from "@/components/portal/session-guard";
 import MeetAdmin from "./admin-client";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,7 @@ export default async function MeetAdminPage() {
   if (!s) redirect("/portal/login?next=/meet/admin");
   return (
     <main className="portal-light min-h-screen">
+      <SessionGuard />
       <MeetAdmin googleReady={googleConfigured()} />
     </main>
   );

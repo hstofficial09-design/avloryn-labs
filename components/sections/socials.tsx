@@ -10,7 +10,7 @@ interface Social {
 const SOCIALS: Social[] = [
   {
     label: "Email",
-    href: "mailto:care@avloryn.com",
+    href: "mailto:contact@avloryn.com",
     icon: (
       <>
         <rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
