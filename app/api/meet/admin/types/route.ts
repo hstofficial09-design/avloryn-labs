@@ -9,7 +9,7 @@ const deny = () => NextResponse.json({ error: "Not authorized" }, { status: 401 
 const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "meeting";
 // Sanitise custom intake questions → [{id,label,required}] with stable slug ids.
-const QUESTION_TYPES = new Set(["text", "textarea", "email", "phone", "number", "select"]);
+const QUESTION_TYPES = new Set(["text", "textarea", "email", "phone", "number", "select", "date"]);
 function cleanQuestions(raw: unknown) {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();

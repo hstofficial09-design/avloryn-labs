@@ -185,18 +185,31 @@ const REMINDER_PRESETS: { min: number; label: string }[] = [
   { min: 120, label: "2 hours" }, { min: 1440, label: "1 day" },
 ];
 const parseDurations = (s: string): number[] => [...new Set(s.split(/[,\s]+/).map((x) => Math.round(Number(x))).filter((n) => n > 0 && n <= 600))].sort((a, b) => a - b);
-// Common booking-form fields the creator can one-click add.
+// Common booking-form fields the creator can one-click add (name & email are always
+// asked, so these are the extras — grouped: contact/personal, then business, then engagement).
 const FIELD_SUGGESTIONS: { label: string; type: string; options?: string[] }[] = [
-  { label: "Company", type: "text" },
+  // contact & personal
+  { label: "Full name", type: "text" },
   { label: "Phone", type: "phone" },
+  { label: "WhatsApp number", type: "phone" },
+  { label: "Alternate email", type: "email" },
+  { label: "City", type: "text" },
+  { label: "Country", type: "text" },
+  { label: "Address", type: "textarea" },
+  { label: "Date of birth", type: "date" },
+  { label: "Gender", type: "select", options: ["Male", "Female", "Other", "Prefer not to say"] },
+  { label: "Occupation", type: "text" },
+  { label: "Preferred contact", type: "select", options: ["Email", "Phone call", "WhatsApp"] },
+  // business
+  { label: "Company", type: "text" },
   { label: "Role / Designation", type: "text" },
   { label: "Website", type: "text" },
   { label: "LinkedIn", type: "text" },
   { label: "Team size", type: "select", options: ["Just me", "2–10", "11–50", "50+"] },
   { label: "Budget", type: "select", options: ["Under ₹50k", "₹50k–2L", "₹2L–5L", "₹5L+"] },
+  // engagement
   { label: "How did you hear about us?", type: "select", options: ["Google", "LinkedIn", "Referral", "Twitter / X", "Instagram", "Other"] },
   { label: "What would you like to discuss?", type: "textarea" },
-  { label: "Country", type: "text" },
 ];
 
 function TypesTab({ types, members, reload, copy, copied, origin }: { types: MType[]; members: Member[]; reload: () => void; copy: (t: string, id: string) => void; copied: string; origin: string }) {
@@ -328,6 +341,7 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
                       <option value="email">Email</option>
                       <option value="phone">Phone</option>
                       <option value="number">Number</option>
+                      <option value="date">Date</option>
                       <option value="select">Dropdown</option>
                     </select>
                     <label className="flex items-center gap-1 text-[12px] shrink-0"><input type="checkbox" checked={q.required} onChange={(x) => updQ(i, { required: x.target.checked })} className="accent-[#c8a24a]" />required</label>

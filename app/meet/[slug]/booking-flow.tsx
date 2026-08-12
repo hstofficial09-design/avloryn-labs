@@ -300,7 +300,7 @@ export default function BookingFlow({ mt, members }: { mt: MT; members: Member[]
                       </select>
                     ) : (
                       <input
-                        type={q.type === "email" ? "email" : q.type === "phone" ? "tel" : q.type === "number" ? "number" : "text"}
+                        type={q.type === "email" ? "email" : q.type === "phone" ? "tel" : q.type === "number" ? "number" : q.type === "date" ? "date" : "text"}
                         inputMode={q.type === "phone" ? "tel" : q.type === "number" ? "numeric" : undefined}
                         value={val} onChange={(e) => set(e.target.value)} className={input + " mb-4"} required={q.required}
                       />
