@@ -185,6 +185,19 @@ const REMINDER_PRESETS: { min: number; label: string }[] = [
   { min: 120, label: "2 hours" }, { min: 1440, label: "1 day" },
 ];
 const parseDurations = (s: string): number[] => [...new Set(s.split(/[,\s]+/).map((x) => Math.round(Number(x))).filter((n) => n > 0 && n <= 600))].sort((a, b) => a - b);
+// Common booking-form fields the creator can one-click add.
+const FIELD_SUGGESTIONS: { label: string; type: string; options?: string[] }[] = [
+  { label: "Company", type: "text" },
+  { label: "Phone", type: "phone" },
+  { label: "Role / Designation", type: "text" },
+  { label: "Website", type: "text" },
+  { label: "LinkedIn", type: "text" },
+  { label: "Team size", type: "select", options: ["Just me", "2–10", "11–50", "50+"] },
+  { label: "Budget", type: "select", options: ["Under ₹50k", "₹50k–2L", "₹2L–5L", "₹5L+"] },
+  { label: "How did you hear about us?", type: "select", options: ["Google", "LinkedIn", "Referral", "Twitter / X", "Instagram", "Other"] },
+  { label: "What would you like to discuss?", type: "textarea" },
+  { label: "Country", type: "text" },
+];
 
 function TypesTab({ types, members, reload, copy, copied, origin }: { types: MType[]; members: Member[]; reload: () => void; copy: (t: string, id: string) => void; copied: string; origin: string }) {
   const [form, setForm] = useState({ ...EMPTY_TYPE });
@@ -226,6 +239,8 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
   const nameOf = (id: string) => members.find((m) => m.id === id)?.name || "—";
   // questions editor
   const addQ = () => set("questions", [...form.questions, { label: "", required: false, type: "text" }]);
+  const hasField = (lbl: string) => form.questions.some((q) => (q.label || "").trim().toLowerCase() === lbl.trim().toLowerCase());
+  const addSuggested = (s: { label: string; type: string; options?: string[] }) => { if (hasField(s.label)) return; set("questions", [...form.questions, { label: s.label, required: false, type: s.type, ...(s.options ? { options: s.options } : {}) }]); };
   const updQ = (i: number, patch: Partial<Question>) => set("questions", form.questions.map((q, idx) => idx === i ? { ...q, ...patch } : q));
   const delQ = (i: number) => set("questions", form.questions.filter((_, idx) => idx !== i));
   const toggleReminder = (min: number) => set("reminders", form.reminders.includes(min) ? form.reminders.filter((x) => x !== min) : [...form.reminders, min].sort((a, b) => a - b));
@@ -325,6 +340,14 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
               ))}
               <button type="button" onClick={addQ} className={btnNeu + " w-fit"}>+ add form field</button>
             </div>
+            {FIELD_SUGGESTIONS.some((s) => !hasField(s.label)) && (
+              <div className="flex gap-1.5 flex-wrap items-center mt-2.5">
+                <span className="text-[11px] text-faint">Suggestions:</span>
+                {FIELD_SUGGESTIONS.filter((s) => !hasField(s.label)).map((s) => (
+                  <button type="button" key={s.label} onClick={() => addSuggested(s)} className="neu-chip rounded-full px-2.5 py-1 text-[11.5px] font-[540] text-foreground/70 hover:text-gold transition">+ {s.label}</button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div><label className={label}>Price ₹ <span className="text-faint font-normal">(0 = free)</span></label><input type="number" min={0} value={form.price_inr} onChange={(x) => set("price_inr", +x.target.value)} className={input} /></div>
