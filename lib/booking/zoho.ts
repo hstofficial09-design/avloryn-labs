@@ -99,6 +99,16 @@ async function zohoAccess(memberId: string): Promise<{ token: string; calUid: st
 export type ZohoEvent = { memberId: string; eventUid: string; calUid: string };
 
 /** Mirror the meeting onto each connected member's Zoho Calendar. Best-effort. */
+/** Does this member's stored Zoho grant STILL work? Same reasoning as the Google check:
+ *  a saved refresh token is not evidence the grant is alive, so ask Zoho for an access token. */
+export async function verifyMemberZoho(memberId: string): Promise<boolean> {
+  try {
+    return !!(await zohoAccess(memberId));
+  } catch {
+    return false;
+  }
+}
+
 export async function createZohoForMembers(opts: {
   memberIds: string[]; summary: string; description: string; startISO: string; endISO: string; meetLink: string | null;
 }): Promise<ZohoEvent[]> {

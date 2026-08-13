@@ -92,6 +92,22 @@ async function memberClient(memberId: string, origin = "https://avloryn.com") {
   return { client: c, calendarId: t.calendar_id || "primary" };
 }
 
+/** Does this member's stored Google grant STILL work?
+ *  A refresh token sitting in the database proves nothing — a revoked or expired grant only
+ *  fails when it is used, which is why the admin list kept showing a healthy tick for a member
+ *  whose calendar had already stopped accepting events. getAccessToken() returns the cached
+ *  token when it is still valid and otherwise performs a real refresh, so this is cheap. */
+export async function verifyMemberGoogle(memberId: string): Promise<boolean> {
+  try {
+    const m = await memberClient(memberId);
+    if (!m) return false;
+    const t = await m.client.getAccessToken();
+    return !!t?.token;
+  } catch {
+    return false;
+  }
+}
+
 /** Busy intervals for a member between two instants (empty if not connected / on error). */
 export async function memberBusy(memberId: string, fromISO: string, toISO: string): Promise<Interval[]> {
   try {
@@ -218,34 +234,46 @@ export async function createMeetingForMembers(opts: {
   const start = { dateTime: opts.startISO, timeZone: "UTC" };
   const end = { dateTime: opts.endISO, timeZone: "UTC" };
 
-  // Host = first member we can actually authenticate.
+  // Host = the first member whose calendar ACTUALLY accepts the event (they create the Meet
+  // link and the client is invited from their calendar).
+  //
+  // A stored refresh token is not proof it still works — a revoked/expired grant only fails at
+  // call time. Previously the first member with a token row was assumed to be the host and the
+  // insert ran unguarded, so ONE stale connection threw and the whole meeting was created with
+  // no calendar event and no Meet link, even when other members were connected fine. Try each
+  // candidate in turn instead.
   let hostId: string | null = null;
-  let hostClient: Awaited<ReturnType<typeof memberClient>> = null;
+  let meetLink: string | null = null;
   for (const id of opts.memberIds) {
     const m = await memberClient(id);
-    if (m) { hostId = id; hostClient = m; break; }
+    if (!m) continue;
+    try {
+      const cal = google.calendar({ version: "v3", auth: m.client });
+      const res = await cal.events.insert({
+        calendarId: m.calendarId,
+        conferenceDataVersion: 1,
+        sendUpdates: "all",
+        requestBody: {
+          summary: opts.summary,
+          description: opts.description,
+          start, end,
+          attendees: opts.clientEmail ? [{ email: opts.clientEmail }] : undefined,
+          conferenceData: { createRequest: { requestId: randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } } },
+        },
+      });
+      meetLink =
+        res.data.hangoutLink ||
+        res.data.conferenceData?.entryPoints?.find((e) => e.entryPointType === "video")?.uri ||
+        null;
+      if (res.data.id) events.push({ memberId: id, eventId: res.data.id });
+      hostId = id;
+      break;
+    } catch (e) {
+      // Surface it — a member whose Google connection has gone stale needs reconnecting.
+      console.error(`[meet] host calendar failed for member ${id}; trying the next member:`, e);
+    }
   }
-  if (!hostId || !hostClient) return { meetLink: null, events: [] };
-
-  // Host event: real Meet conference + client invited.
-  const hostCal = google.calendar({ version: "v3", auth: hostClient.client });
-  const hostRes = await hostCal.events.insert({
-    calendarId: hostClient.calendarId,
-    conferenceDataVersion: 1,
-    sendUpdates: "all",
-    requestBody: {
-      summary: opts.summary,
-      description: opts.description,
-      start, end,
-      attendees: opts.clientEmail ? [{ email: opts.clientEmail }] : undefined,
-      conferenceData: { createRequest: { requestId: randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } } },
-    },
-  });
-  const meetLink =
-    hostRes.data.hangoutLink ||
-    hostRes.data.conferenceData?.entryPoints?.find((e) => e.entryPointType === "video")?.uri ||
-    null;
-  if (hostRes.data.id) events.push({ memberId: hostId, eventId: hostRes.data.id });
+  if (!hostId) return { meetLink: null, events: [] };
 
   // Every other member: write the same meeting to their own calendar (auto-add, no dup invite).
   const desc = (meetLink ? `Join Google Meet: ${meetLink}\n\n` : "") + opts.description;

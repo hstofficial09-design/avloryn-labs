@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { LogoMark } from "@/components/ui/logo";
 
-type Member = { id: string; name: string; email: string; timezone: string; active: boolean; is_organizer: boolean; googleConnected: boolean; googleEmail: string | null; zohoConnected: boolean; zohoEmail: string | null; connectLink: string; zohoConnectLink: string };
+type Member = { id: string; name: string; email: string; timezone: string; active: boolean; is_organizer: boolean; googleConnected: boolean; googleNeedsReconnect?: boolean; googleEmail: string | null; zohoConnected: boolean; zohoNeedsReconnect?: boolean; zohoEmail: string | null; connectLink: string; zohoConnectLink: string };
 type Question = { id?: string; label: string; required: boolean; type?: string; options?: string[] };
 type MType = { id: string; name: string; slug: string; duration_min: number; buffer_before_min: number; buffer_after_min: number; min_notice_min: number; slot_granularity_min: number; mode: "any" | "all"; member_ids: string[]; description: string; active: boolean; max_advance_days?: number; followup_enabled?: boolean; questions?: Question[]; price_inr?: number; requires_approval?: boolean; durations?: number[]; reminders?: number[] };
 type Coupon = { code: string; kind: "percent" | "flat"; value: number; active: boolean; max_uses: number; uses: number };
@@ -110,8 +110,16 @@ function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { memb
                 <div>
                   <div className="text-[14px] font-[600] flex items-center gap-2 flex-wrap">{m.name}
                     {m.is_organizer && <span className={chip + " text-gold"}>Organizer</span>}
-                    {m.googleConnected ? <span className={chip + " text-[#2b7a4b]"}>Google ✓</span> : <span className={chip + " text-[#b3341f]"}>Google —</span>}
-                    {m.zohoConnected && <span className={chip + " text-[#2b7a4b]"}>Zoho ✓</span>}
+                    {m.googleConnected
+                      ? <span className={chip + " text-[#2b7a4b]"}>Google ✓</span>
+                      : m.googleNeedsReconnect
+                        ? <span className={chip + " text-[#b3341f]"} title="Google revoked or expired this connection — open the connect link below to reconnect.">Google · reconnect needed</span>
+                        : <span className={chip + " text-[#b3341f]"}>Google —</span>}
+                    {m.zohoConnected
+                      ? <span className={chip + " text-[#2b7a4b]"}>Zoho ✓</span>
+                      : m.zohoNeedsReconnect
+                        ? <span className={chip + " text-[#b3341f]"} title="Zoho revoked or expired this connection — open the connect link below to reconnect.">Zoho · reconnect needed</span>
+                        : null}
                   </div>
                   <div className="text-[12.5px] text-muted-foreground">{m.email}</div>
                   <div className="text-[11.5px] text-faint mt-0.5">{m.timezone}{m.googleEmail ? ` · G:${m.googleEmail}` : ""}{m.zohoEmail ? ` · Z:${m.zohoEmail}` : ""}</div>

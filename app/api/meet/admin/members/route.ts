@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { canSchedule } from "@/lib/booking/admin";
 import { listMembers, addMember, updateMember, deleteMember, membersWithGoogle, getGoogle, membersWithZoho, getZoho, setAvailability } from "@/lib/booking/db";
 import { signMemberToken } from "@/lib/booking/link";
-import { googleConfigured } from "@/lib/booking/google";
-import { zohoConfigured } from "@/lib/booking/zoho";
+import { googleConfigured, verifyMemberGoogle } from "@/lib/booking/google";
+import { zohoConfigured, verifyMemberZoho } from "@/lib/booking/zoho";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,11 +26,22 @@ export async function GET() {
         zConnected.has(m.id) ? getZoho(m.id) : Promise.resolve(null),
       ]);
       const token = signMemberToken(m.id);
+      // Verify rather than assume: a stored token can be revoked without us knowing.
+      // Verify rather than assume: a stored token can be revoked without us knowing. One check
+      // each — getAccessToken()/zohoAccess() reuse a still-valid token and only hit the network
+      // when a real refresh is due.
+      const [googleWorks, zohoWorks] = await Promise.all([
+        g ? verifyMemberGoogle(m.id) : Promise.resolve(false),
+        z ? verifyMemberZoho(m.id) : Promise.resolve(false),
+      ]);
       return {
         ...m,
-        googleConnected: !!g,
+        googleConnected: googleWorks,
+        // Tokens on file but the grant no longer works → needs reconnecting, not first-time setup.
+        googleNeedsReconnect: !!g && !googleWorks,
         googleEmail: g?.google_email || null,
-        zohoConnected: !!z,
+        zohoConnected: zohoWorks,
+        zohoNeedsReconnect: !!z && !zohoWorks,
         zohoEmail: z?.zoho_email || null,
         // Signed links the owner shares so the member connects their own calendar(s).
         connectLink: `/api/meet/google/connect?t=${token}`,
