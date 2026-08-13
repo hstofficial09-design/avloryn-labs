@@ -301,33 +301,43 @@ export async function createMeetingForMembers(opts: {
 export async function moveMeetingEvents(events: MemberEvent[], startISO: string, endISO: string): Promise<void> {
   const start = { dateTime: startISO, timeZone: "UTC" };
   const end = { dateTime: endISO, timeZone: "UTC" };
-  for (let i = 0; i < events.length; i++) {
+  // The guest is an attendee on the host's event only, so exactly one patch must carry
+  // sendUpdates:"all" to notify them. Sending it on index 0 regardless meant a host whose
+  // connection had gone stale swallowed the notification and the guest kept the old time.
+  // Send it on the first patch that actually SUCCEEDS instead.
+  let notified = false;
+  for (const ev of events) {
     try {
-      const m = await memberClient(events[i].memberId);
+      const m = await memberClient(ev.memberId);
       if (!m) continue;
       const cal = google.calendar({ version: "v3", auth: m.client });
       await cal.events.patch({
         calendarId: m.calendarId,
-        eventId: events[i].eventId,
-        sendUpdates: i === 0 ? "all" : "none",
+        eventId: ev.eventId,
+        sendUpdates: notified ? "none" : "all",
         requestBody: { start, end },
       });
-    } catch {
-      /* best-effort */
+      notified = true;
+    } catch (e) {
+      console.error(`[meet] could not move event for member ${ev.memberId}:`, e);
     }
   }
 }
 
 /** Delete each per-member event on its own calendar (host first → notifies the client). */
 export async function deleteMeetingEvents(events: MemberEvent[]): Promise<void> {
-  for (let i = 0; i < events.length; i++) {
+  // Same reasoning as moveMeetingEvents: the cancellation notice must ride on a delete that
+  // actually goes through, not on whichever event happens to be first.
+  let notified = false;
+  for (const ev of events) {
     try {
-      const m = await memberClient(events[i].memberId);
+      const m = await memberClient(ev.memberId);
       if (!m) continue;
       const cal = google.calendar({ version: "v3", auth: m.client });
-      await cal.events.delete({ calendarId: m.calendarId, eventId: events[i].eventId, sendUpdates: i === 0 ? "all" : "none" });
-    } catch {
-      /* best-effort */
+      await cal.events.delete({ calendarId: m.calendarId, eventId: ev.eventId, sendUpdates: notified ? "none" : "all" });
+      notified = true;
+    } catch (e) {
+      console.error(`[meet] could not delete event for member ${ev.memberId}:`, e);
     }
   }
 }

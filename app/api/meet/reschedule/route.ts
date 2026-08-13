@@ -3,7 +3,7 @@ import { Resend } from "resend";
 import { getBookingByCancelToken, getMeetingTypeById, updateBookingTime, listMembers } from "@/lib/booking/db";
 import { moveMeetingEvents, type MemberEvent } from "@/lib/booking/google";
 import { moveZohoEvents, type ZohoEvent } from "@/lib/booking/zoho";
-import { buildICS } from "@/lib/booking/ics";
+import { buildICS, icsSequence } from "@/lib/booking/ics";
 import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
 import { SITE_URL } from "@/lib/seo";
 
@@ -70,6 +70,8 @@ export async function POST(req: Request) {
       const cancelUrl = `${SITE_URL}/meet/cancel?t=${b.cancel_token}`;
       const rescheduleUrl = `${SITE_URL}/meet/reschedule?t=${b.cancel_token}`;
       const ics = buildICS({
+        // Higher revision than the original invite, or clients ignore the new time.
+        sequence: icsSequence(),
         uid: b.id, startISO, endISO,
         summary: `${title} — Avloryn Labs`,
         description: (b.meet_link ? `Join Google Meet: ${b.meet_link}\n\n` : "") + `${title} with ${memberNames || "Avloryn Labs"}.`,

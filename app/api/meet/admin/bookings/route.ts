@@ -7,7 +7,7 @@ import {
 } from "@/lib/booking/db";
 import { deleteMeetingEvents, createMeetingForMembers, type MemberEvent } from "@/lib/booking/google";
 import { deleteZohoEvents, createZohoForMembers, type ZohoEvent } from "@/lib/booking/zoho";
-import { buildICS } from "@/lib/booking/ics";
+import { buildICS, icsSequence } from "@/lib/booking/ics";
 import { meetingCancelledHTML, whenIST } from "@/lib/booking/email";
 import { SITE_URL } from "@/lib/seo";
 
@@ -65,17 +65,29 @@ export async function PATCH(req: Request) {
         const title = mt?.name || "Meeting";
         const clientWhen = new Date(b.start_utc).toLocaleString("en-IN", { timeZone: b.client_timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" });
         const rz = new Resend(key);
+        // Same UID, METHOD:CANCEL, higher SEQUENCE → the meeting disappears from whatever
+        // calendar the original .ics was added to, not just from Google invites.
+        const memberEmails = b.member_ids.map((mid) => byId.get(mid)?.email).filter(Boolean) as string[];
+        const cancelAttach = [{ filename: "invite.ics", content: Buffer.from(buildICS({
+          uid: b.id, startISO: b.start_utc, endISO: b.end_utc,
+          summary: `${title} — Avloryn Labs`, location: b.meet_link || "Online",
+          organizerName: "Avloryn Labs", organizerEmail: memberEmails[0] || undefined,
+          attendeeEmails: [b.client_email, ...memberEmails].filter(Boolean),
+          method: "CANCEL", status: "CANCELLED", sequence: icsSequence(),
+        })).toString("base64") }];
         if (b.client_email && EMAIL_RE.test(b.client_email)) {
           await rz.emails.send({ from, to: b.client_email, subject: `Cancelled: ${title} with Avloryn Labs`,
             html: meetingCancelledHTML({ title, whenText: clientWhen, withNames: memberNames || "Avloryn Labs", greetingName: (b.client_name || "").split(" ")[0] || undefined }),
-            text: `Your ${title} on ${clientWhen} has been cancelled and removed from the calendar. — Avloryn Labs` });
+            text: `Your ${title} on ${clientWhen} has been cancelled and removed from the calendar. — Avloryn Labs`,
+            attachments: cancelAttach });
         }
         for (const mid of b.member_ids) {
           const em = byId.get(mid)?.email;
           if (!em || !EMAIL_RE.test(em)) continue;
           await rz.emails.send({ from, to: em, subject: `Cancelled: ${title}${b.client_name ? ` with ${b.client_name}` : ""}`,
             html: meetingCancelledHTML({ title, whenText: whenIST(b.start_utc), withNames: b.client_name || "—", greetingName: (byId.get(mid)?.name || "").split(" ")[0] || undefined }),
-            text: `${title}${b.client_name ? ` with ${b.client_name}` : ""} on ${whenIST(b.start_utc)} has been cancelled and removed from the calendar.` });
+            text: `${title}${b.client_name ? ` with ${b.client_name}` : ""} on ${whenIST(b.start_utc)} has been cancelled and removed from the calendar.`,
+            attachments: cancelAttach });
         }
       }
     } catch { /* best-effort */ }

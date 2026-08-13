@@ -84,7 +84,7 @@ export default function MeetAdmin({ googleReady }: { googleReady: boolean }) {
 }
 
 /* ─────────────── Members ─────────────── */
-function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { members: Member[]; reload: () => void; copy: (t: string, id: string) => void; copied: string; origin: string; zohoReady: boolean }) {
+function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { members: Member[]; reload: () => void | Promise<void>; copy: (t: string, id: string) => void; copied: string; origin: string; zohoReady: boolean }) {
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [tz, setTz] = useState("Asia/Kolkata");
   const [busy, setBusy] = useState(false); const [e, setE] = useState("");
   const [team, setTeam] = useState<{ name: string; email: string }[]>([]); const [pick, setPick] = useState("");
@@ -96,12 +96,22 @@ function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { memb
   async function add(ev: React.FormEvent) { ev.preventDefault(); setBusy(true); setE(""); try { await api("/api/meet/admin/members", "POST", { name, email, timezone: tz }); setName(""); setEmail(""); reload(); } catch (x) { setE(msg(x)); } finally { setBusy(false); } }
   async function addFromTeam() { const p = addable.find((x) => x.email === pick); if (!p) return; setBusy(true); setE(""); try { await api("/api/meet/admin/members", "POST", { name: p.name, email: p.email, timezone: "Asia/Kolkata" }); setPick(""); reload(); } catch (x) { setE(msg(x)); } finally { setBusy(false); } }
   async function del(id: string) { if (!confirm("Remove this member?")) return; try { await api(`/api/meet/admin/members?id=${id}`, "DELETE"); reload(); } catch (x) { alert(msg(x)); } }
+  const [checking, setChecking] = useState(false);
   async function toggleOrg(m: Member) { try { await api("/api/meet/admin/members", "PATCH", { id: m.id, is_organizer: !m.is_organizer }); reload(); } catch (x) { alert(msg(x)); } }
 
   return (
     <div className="grid gap-5">
       <div className={card}>
-        <h2 className="font-serif text-[19px] font-[600] mb-4">Team members</h2>
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+          <h2 className="font-serif text-[19px] font-[600]">Team members</h2>
+          {/* Connection state is checked live against Google/Zoho on every load — this re-runs it. */}
+          <button
+            onClick={async () => { setChecking(true); try { await reload(); } finally { setChecking(false); } }}
+            disabled={checking}
+            className={btnNeu + " shrink-0 disabled:opacity-60"}
+            title="Ask Google and Zoho whether each member's connection still works"
+          >{checking ? "Checking…" : "↻ Recheck connections"}</button>
+        </div>
         <div className="grid gap-3">
           {members.length === 0 && <p className="text-[13px] text-muted-foreground">No members yet — add your first below.</p>}
           {members.map((m) => (

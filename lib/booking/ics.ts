@@ -33,6 +33,10 @@ export function buildICS(o: {
   attendeeEmails?: string[];
   method?: "REQUEST" | "CANCEL";
   status?: "CONFIRMED" | "CANCELLED";
+  /** Revision number. Calendar clients IGNORE an update whose SEQUENCE is not higher than the
+   *  copy they already hold, so every reschedule/cancellation must send a bigger one than the
+   *  original invite — use icsSequence(). */
+  sequence?: number;
 }): string {
   const method = o.method || "REQUEST";
   const status = o.status || "CONFIRMED";
@@ -55,6 +59,12 @@ export function buildICS(o: {
   for (const a of o.attendeeEmails || []) {
     if (a) lines.push(`ATTENDEE;RSVP=TRUE:mailto:${a}`);
   }
-  lines.push(`STATUS:${status}`, "SEQUENCE:0", "END:VEVENT", "END:VCALENDAR");
+  lines.push(`STATUS:${status}`, `SEQUENCE:${Math.max(0, Math.floor(o.sequence ?? 0))}`, "END:VEVENT", "END:VCALENDAR");
   return lines.map(fold).join("\r\n");
+}
+
+/** A revision number that always rises: seconds since 2026-01-01. Any later update therefore
+ *  outranks whatever the attendee's calendar is already holding, without us storing a counter. */
+export function icsSequence(): number {
+  return Math.max(1, Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 1000));
 }
