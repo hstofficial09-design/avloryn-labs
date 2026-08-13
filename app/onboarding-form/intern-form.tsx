@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useEffect } from "react";
 import { LogoMark } from "@/components/ui/logo";
-import { internshipAgreement, ndaAgreement, parseTermsToContent, ROLE_LABEL, type InternData } from "@/lib/intern-docs";
+import { internshipAgreement, ndaAgreement, parseTermsToContent, isHrRole, ROLE_LABEL, type InternData } from "@/lib/intern-docs";
 
 type FilePayload = { kind: string; b64: string } | undefined;
 
@@ -313,7 +313,7 @@ export default function InternForm() {
         <Section title="Internship">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Field label="Track *">
-              <select className={inputCls} value={f.role} onChange={(e) => { const r = e.target.value; up("role", r); if (r === "HR" || r === "Human Resources") up("duration", "2"); }}>
+              <select className={inputCls} value={f.role} onChange={(e) => { const r = e.target.value; up("role", r); if (isHrRole(r)) up("duration", "2"); }}>
                 {roleOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </Field>
@@ -326,7 +326,7 @@ export default function InternForm() {
               </select>
             </Field>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-2">Your start date is prefilled to today — change it if you&apos;re joining later. {f.role === "HR" ? "On successful completion of your internship you'll receive an Internship Completion Certificate." : "Please note: a minimum of 3 months is required to be eligible for the completion certificate."}</p>
+          <p className="text-[11px] text-muted-foreground mt-2">Your start date is prefilled to today — change it if you&apos;re joining later. {isHrRole(f.role) ? "On successful completion of your internship you'll receive an Internship Completion Certificate." : "Please note: a minimum of 3 months is required to be eligible for the completion certificate."}</p>
         </Section>
 
         {/* Agreements */}

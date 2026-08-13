@@ -16,6 +16,7 @@ import {
   joiningLetter,
   ROLE_LABEL,
   roleLabel,
+  roleTitle,
   isHrRole,
   parseTermsToContent,
   DOC_META,
@@ -61,7 +62,36 @@ function b64ToBytes(dataUrlOrB64: string): Uint8Array {
   return new Uint8Array(Buffer.from(b64, "base64"));
 }
 
-function wrap(text: string, font: PDFFont, size: number, maxW: number): string[] {
+/**
+ * pdf-lib's standard fonts use WinAnsi (CP1252). Any character outside it makes
+ * widthOfTextAtSize/drawText THROW, which kills the whole submission ("Something went wrong
+ * generating your documents"). Role terms are pasted from Word/Docs, so this is inevitable —
+ * a single "₹" in an agreement broke every submission for that role.
+ *
+ * So: map what has a sensible ASCII equivalent, drop anything else, and never throw. A missing
+ * glyph is a cosmetic issue; a failed submission loses the hire's signed documents.
+ */
+const WINANSI_EXTRA = new Set("€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ");
+const CHAR_MAP: Record<string, string> = {
+  "₹": "Rs. ", "→": "->", "←": "<-", "⇒": "=>", "≥": ">=", "≤": "<=", "≠": "!=",
+  "✓": "-", "✔": "-", "✗": "x", "▪": "-", "◦": "-", "⁃": "-", "−": "-", "‑": "-", "‒": "-",
+  " ": " ", " ": " ", " ": " ", "\t": "    ",
+  "​": "", "‌": "", "‍": "", "﻿": "", "­": "",
+};
+export function pdfSafe(s: string): string {
+  let out = "";
+  for (const ch of String(s ?? "")) {
+    const mapped = CHAR_MAP[ch];
+    if (mapped !== undefined) { out += mapped; continue; }
+    const c = ch.codePointAt(0)!;
+    if (ch === "\n" || (c >= 0x20 && c <= 0x7e) || (c >= 0xa0 && c <= 0xff) || WINANSI_EXTRA.has(ch)) out += ch;
+    // anything else is dropped — better a missing character than a lost submission
+  }
+  return out;
+}
+
+function wrap(rawText: string, font: PDFFont, size: number, maxW: number): string[] {
+  const text = pdfSafe(rawText);
   const out: string[] = [];
   for (const rawLine of text.split("\n")) {
     const words = rawLine.split(/\s+/).filter(Boolean);
@@ -121,7 +151,8 @@ class Doc {
   }
   title(t: string) {
     this.ensure(40);
-    this.page.drawText(t, { x: MARGIN, y: this.y, size: 16, font: this.fonts.bold, color: INK });
+    // drawText throws on any non-WinAnsi character — sanitise here too (wrap() handles the rest).
+    this.page.drawText(pdfSafe(t).replace(/\n/g, " "), { x: MARGIN, y: this.y, size: 16, font: this.fonts.bold, color: INK });
     this.y -= 8;
     this.page.drawRectangle({ x: MARGIN, y: this.y, width: A4[0] - MARGIN * 2, height: 1.5, color: GOLD });
     this.y -= 20;
@@ -144,7 +175,7 @@ class Doc {
   }
   kv(k: string, v: string) {
     this.ensure(16);
-    this.page.drawText(k, { x: MARGIN, y: this.y, size: 10, font: this.fonts.bold, color: MUTED });
+    this.page.drawText(pdfSafe(k).replace(/\n/g, " "), { x: MARGIN, y: this.y, size: 10, font: this.fonts.bold, color: MUTED });
     for (const line of wrap(v, this.fonts.reg, 10.5, A4[0] - MARGIN * 2 - 150)) {
       this.page.drawText(line, { x: MARGIN + 150, y: this.y, size: 10.5, font: this.fonts.reg, color: INK });
       this.y -= 15;
@@ -294,7 +325,7 @@ export async function POST(req: Request) {
     od.kv("Registering as", regType);
     od.kv("Name", d.fullName);
     od.kv("Date of birth", dob);
-    od.kv("Role", `${roleLabel(d.role)} Intern`);
+    od.kv("Role", roleTitle(d.role));
     od.kv("Mobile", d.mobile);
     od.kv("Email", d.email);
     od.kv("Address", d.address);

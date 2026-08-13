@@ -12,6 +12,12 @@ export const ROLE_LABEL: Record<Role, string> = {
 // Roles are dynamic now — accept any label/code. These normalise it.
 export const roleLabel = (r: string) => ROLE_LABEL[r as Role] || r;
 export const isHrRole = (r: string) => r === "HR" || r === "Human Resources";
+/** "<Role> Intern" — but never "Business Development Intern Intern": the owner can name a
+ *  role with "Intern" already in it, so only append when it isn't there already. */
+export const roleTitle = (r: string) => {
+  const l = roleLabel(r);
+  return /\bintern\b\s*$/i.test(l) ? l : `${l} Intern`;
+};
 
 export type InternData = {
   fullName: string;
@@ -45,7 +51,6 @@ export function internshipAgreement(d: InternData): {
   intro: string;
   clauses: Clause[];
 } {
-  const role = roleLabel(d.role);
   const isHR = isHrRole(d.role);
   return {
     title: "INTERNSHIP AGREEMENT",
@@ -53,7 +58,7 @@ export function internshipAgreement(d: InternData): {
     clauses: [
       {
         h: "1. Role & Duration",
-        t: `The Intern joins as a ${role} Intern, working remotely, for ${d.duration} months starting ${d.startDate}. The internship is deliverable-based — no fixed daily hours are mandated.`,
+        t: `The Intern joins as a ${roleTitle(d.role)}, working remotely, for ${d.duration} months starting ${d.startDate}. The internship is deliverable-based — no fixed daily hours are mandated.`,
       },
       {
         h: "2. Nature of Internship",
@@ -168,17 +173,16 @@ export function joiningLetter(d: InternData): {
   paragraphs: string[];
   bullets: string[];
 } {
-  const role = roleLabel(d.role);
   const isHR = isHrRole(d.role);
   return {
     title: "Internship Joining Letter",
     paragraphs: [
       `Dear ${d.fullName},`,
-      `We are pleased to welcome you to ${COMPANY} as a ${role} Intern. We were impressed by your application and look forward to working with you.`,
+      `We are pleased to welcome you to ${COMPANY} as a ${roleTitle(d.role)}. We were impressed by your application and look forward to working with you.`,
       `Your internship details:`,
     ],
     bullets: [
-      `Role: ${role} Intern`,
+      `Role: ${roleTitle(d.role)}`,
       `Start date: ${d.startDate}`,
       `Duration: ${d.duration} months`,
       `Location: Remote / Work from Home`,
@@ -218,6 +222,8 @@ export function standardNdaText(): string {
 export function fillPlaceholders(text: string, d: InternData): string {
   return text
     .split("[Full Name]").join(d.fullName)
+    .split("[Intern Name]").join(d.fullName)
+    .split("[Name]").join(d.fullName)
     .split("[Role]").join(roleLabel(d.role))
     .split("[Duration]").join(d.duration)
     .split("[Start Date]").join(d.startDate)

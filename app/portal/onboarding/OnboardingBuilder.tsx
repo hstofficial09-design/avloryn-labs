@@ -34,8 +34,14 @@ export default function OnboardingBuilder() {
   const [form, setForm] = useState<Form>({});
   const [nda, setNda] = useState("");
   const [err, setErr] = useState("");
+  // FieldsTab seeds its state ONCE from `form`. Rendering it before the config arrives would
+  // seed it with defaults, and a save would then overwrite the real settings — so gate on this.
+  const [loaded, setLoaded] = useState(false);
   const load = useCallback(async () => {
-    try { const r = await fetch("/api/portal/onboarding-config"); const d = await r.json(); setRoles(d.roles || []); setForm(d.form || {}); setNda(d.ndaText || ""); }
+    try {
+      const r = await fetch("/api/portal/onboarding-config"); const d = await r.json();
+      setRoles(d.roles || []); setForm(d.form || {}); setNda(d.ndaText || ""); setLoaded(true);
+    }
     catch (e) { setErr(msg(e)); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -61,7 +67,9 @@ export default function OnboardingBuilder() {
         ))}
       </div>
 
-      {tab === "roles" ? <RolesTab roles={roles} nda={nda} reload={load} /> : <FieldsTab form={form} reload={load} />}
+      {!loaded
+        ? <div className="card-lux rounded-3xl p-6 text-[13px] text-muted-foreground">Loading your settings…</div>
+        : tab === "roles" ? <RolesTab roles={roles} nda={nda} reload={load} /> : <FieldsTab form={form} reload={load} />}
     </div>
   );
 }
