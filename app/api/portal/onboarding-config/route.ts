@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/portal-auth";
-import { listRoles, upsertRole, archiveRole, renameRole, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig } from "@/lib/portal-db";
+import { listRoles, upsertRole, archiveRole, renameRole, setRoleDefaultTerms, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig } from "@/lib/portal-db";
 import { defaultTermsText, standardNdaText, roleLabel, isHrRole } from "@/lib/intern-docs";
 
 export const runtime = "nodejs";
@@ -19,7 +19,14 @@ export async function GET() {
   // Attach the CURRENT default terms per role + the standard NDA, so the editor shows what exists.
   // Use the FRIENDLY label ("M&C" → "Marketing & Community"): passing the raw track code made the
   // default text read "joins as a M&C Intern", which then got saved into the role's terms.
-  const withDefaults = roles.map((r) => ({ ...r, defaultTerms: defaultTermsText(roleLabel(r.track), isHrRole(r.track) || r.sensitive, r.paid, r.salary, r.salary_period) }));
+  // "Reset to default" restores the owner's OWN saved baseline when they've set one, so a stray
+  // click can never drop a role back to the built-in template and lose their agreement.
+  const withDefaults = roles.map((r) => ({
+    ...r,
+    defaultTerms: r.default_terms
+      || defaultTermsText(roleLabel(r.track), isHrRole(r.track) || r.sensitive, r.paid, r.salary, r.salary_period),
+    defaultIsCustom: !!r.default_terms,
+  }));
   return NextResponse.json({ roles: withDefaults, form, legal, ndaText: standardNdaText() });
 }
 
@@ -52,6 +59,15 @@ export async function POST(req: Request) {
         sensitive: !!r.sensitive,
         default_emp_type: r.default_emp_type === "employee" ? "employee" : "intern",
       });
+      return NextResponse.json({ ok: true });
+    }
+    if (d.action === "role-default") {
+      const track = String(d.track || "").trim();
+      const terms = d.terms ? String(d.terms).trim() : null;
+      if (!track) return NextResponse.json({ error: "Role name required" }, { status: 400 });
+      if (terms && terms.length > TERMS_MAX)
+        return NextResponse.json({ error: `Terms are too long (${terms.length.toLocaleString()} characters). The limit is ${TERMS_MAX.toLocaleString()}.` }, { status: 400 });
+      await setRoleDefaultTerms(track, terms);
       return NextResponse.json({ ok: true });
     }
     if (d.action === "role-archive") {

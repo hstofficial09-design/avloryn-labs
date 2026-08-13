@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { LogoMark } from "@/components/ui/logo";
 
-type Role = { track: string; commission_enabled: boolean; paid: boolean; salary: number | null; salary_period: string | null; scope: string | null; terms: string | null; sensitive: boolean; default_emp_type: string; defaultTerms?: string };
+type Role = { track: string; commission_enabled: boolean; paid: boolean; salary: number | null; salary_period: string | null; scope: string | null; terms: string | null; sensitive: boolean; default_emp_type: string; defaultTerms?: string; defaultIsCustom?: boolean };
 type FieldCfg = { visible: boolean; required: boolean };
 type Custom = { label: string; type: string; required: boolean };
 type Form = { fields?: Record<string, FieldCfg>; custom?: Custom[] };
@@ -110,6 +110,8 @@ function RoleCard({ role, reload }: { role: Role; reload: () => void }) {
   const [newName, setNewName] = useState(role.track);
   const [renameErr, setRenameErr] = useState("");
   const [saveErr, setSaveErr] = useState("");
+  const [defBusy, setDefBusy] = useState(false);
+  const [defOk, setDefOk] = useState(false);
   const set = (k: keyof Role, v: any) => setR((x) => ({ ...x, [k]: v }));
   async function doRename() {
     const to = newName.trim();
@@ -123,6 +125,14 @@ function RoleCard({ role, reload }: { role: Role; reload: () => void }) {
     try { await api("role", { role: r }); setSaved(true); setTimeout(() => setSaved(false), 1500); reload(); }
     catch (e) { setSaveErr(msg(e)); }
     finally { setBusy(false); }
+  }
+  // Make the text currently in the box this role's default, so "Reset to default" restores
+  // THIS agreement instead of the built-in template — an accidental reset can't lose anything.
+  async function setAsDefault() {
+    setDefBusy(true); setSaveErr("");
+    try { await api("role-default", { track: r.track, terms: r.terms }); setDefOk(true); setTimeout(() => setDefOk(false), 2000); reload(); }
+    catch (e) { setSaveErr(msg(e)); }
+    finally { setDefBusy(false); }
   }
   async function remove() {
     if (!confirm(`Remove the “${r.track}” role? Existing employees keep their role; it just won't be offered on new onboarding.`)) return;
@@ -190,9 +200,14 @@ function RoleCard({ role, reload }: { role: Role; reload: () => void }) {
         <textarea value={r.scope || ""} onChange={(e) => set("scope", e.target.value)} rows={2} className={input + " resize-none"} placeholder="e.g. Assist with content, campaigns and community…" />
       </div>
       <div className="mb-4">
-        <div className="flex items-center justify-between">
-          <label className={label}>Terms &amp; Conditions for this role <span className="text-faint font-normal">(current text shown — edit freely; [brackets] auto-fill per hire)</span></label>
-          {role.defaultTerms && <button type="button" onClick={() => set("terms", role.defaultTerms!)} className="text-[11.5px] font-semibold text-gold hover:underline mb-1.5">Reset to default</button>}
+        <div className="flex items-center justify-between gap-x-4 flex-wrap">
+          <label className={label}>Terms &amp; Conditions for this role <span className="text-faint font-normal">(edit freely; [brackets] auto-fill per hire — reset restores {role.defaultIsCustom ? "your saved default" : "the standard template"})</span></label>
+          <div className="flex items-center gap-3 mb-1.5">
+            <button type="button" onClick={setAsDefault} disabled={defBusy || !(r.terms || "").trim()} className="text-[11.5px] font-semibold text-gold hover:underline disabled:opacity-40 disabled:no-underline">
+              {defBusy ? "Saving…" : defOk ? "Saved as default ✓" : "Set current terms as default"}
+            </button>
+            {role.defaultTerms && <button type="button" onClick={() => set("terms", role.defaultTerms!)} className="text-[11.5px] font-semibold text-muted-foreground hover:underline">Reset to default</button>}
+          </div>
         </div>
         <textarea value={r.terms || ""} onChange={(e) => set("terms", e.target.value)} rows={12} className={input + " resize-y font-sans text-[12.5px] leading-relaxed"} />
       </div>

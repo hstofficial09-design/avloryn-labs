@@ -59,6 +59,9 @@ async function ensureSchema(c: PoolClient) {
   await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS sensitive BOOLEAN NOT NULL DEFAULT FALSE`);
   await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS default_emp_type TEXT NOT NULL DEFAULT 'intern'`);
   await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE`);
+  // The owner's own baseline for "Reset to default". Without it, Reset restored the built-in
+  // template and an accidental click could wipe a role's edited agreement.
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS default_terms TEXT`);
   // HR is non-commission + handles sensitive data, by default
   await c.query(`INSERT INTO track_settings (track, commission_enabled, sensitive) VALUES ('Human Resources', FALSE, TRUE) ON CONFLICT (track) DO NOTHING`);
   // onboarding form field config + editable legal text (single JSON rows)
@@ -346,12 +349,14 @@ export async function listTrackSettings(): Promise<{ track: string; commission_e
 export type RoleConfig = {
   track: string; commission_enabled: boolean; paid: boolean; salary: number | null;
   salary_period: string | null; scope: string | null; terms: string | null; sensitive: boolean; default_emp_type: string;
+  /** Owner-saved baseline restored by "Reset to default"; null = use the built-in template. */
+  default_terms?: string | null;
 };
 export async function listRoles(): Promise<RoleConfig[]> {
   return withClient(async (c) => {
     const r = await c.query(`
       SELECT t.track, COALESCE(ts.commission_enabled,TRUE) commission_enabled, COALESCE(ts.paid,FALSE) paid,
-             ts.salary, ts.salary_period, ts.scope, ts.terms, COALESCE(ts.sensitive,FALSE) sensitive,
+             ts.salary, ts.salary_period, ts.scope, ts.terms, ts.default_terms, COALESCE(ts.sensitive,FALSE) sensitive,
              COALESCE(ts.default_emp_type,'intern') default_emp_type
       FROM (SELECT DISTINCT track FROM employees WHERE track IS NOT NULL AND track<>'' AND deleted_at IS NULL
             UNION SELECT track FROM track_settings WHERE COALESCE(archived,FALSE)=FALSE) t
@@ -361,7 +366,8 @@ export async function listRoles(): Promise<RoleConfig[]> {
     return r.rows.map((x: any) => ({
       track: x.track, commission_enabled: x.commission_enabled !== false, paid: x.paid === true,
       salary: x.salary != null ? +x.salary : null, salary_period: x.salary_period || null,
-      scope: x.scope || null, terms: x.terms || null, sensitive: x.sensitive === true, default_emp_type: x.default_emp_type || "intern",
+      scope: x.scope || null, terms: x.terms || null, default_terms: x.default_terms || null,
+      sensitive: x.sensitive === true, default_emp_type: x.default_emp_type || "intern",
     }));
   });
 }
@@ -371,6 +377,14 @@ export async function upsertRole(f: RoleConfig) {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      ON CONFLICT (track) DO UPDATE SET commission_enabled=$2, paid=$3, salary=$4, salary_period=$5, scope=$6, terms=$7, sensitive=$8, default_emp_type=$9, archived=FALSE`,
     [f.track.trim(), f.commission_enabled, f.paid, f.salary, f.salary_period, f.scope, f.terms, f.sensitive, f.default_emp_type]));
+}
+/** Make the role's current terms its "default": Reset-to-default then restores THIS text,
+ *  so a stray click can never fall back to the built-in template and lose the owner's version. */
+export async function setRoleDefaultTerms(track: string, terms: string | null) {
+  return withClient((c) => c.query(
+    `INSERT INTO track_settings (track, terms, default_terms) VALUES ($1,$2,$2)
+     ON CONFLICT (track) DO UPDATE SET terms=$2, default_terms=$2, archived=FALSE`,
+    [track.trim(), terms]));
 }
 export async function archiveRole(track: string) {
   return withClient((c) => c.query(
