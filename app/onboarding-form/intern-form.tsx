@@ -2,9 +2,17 @@
 
 import { useMemo, useRef, useState, useEffect } from "react";
 import { LogoMark } from "@/components/ui/logo";
-import { internshipAgreement, ndaAgreement, ROLE_LABEL, type InternData } from "@/lib/intern-docs";
+import { internshipAgreement, ndaAgreement, parseTermsToContent, ROLE_LABEL, type InternData } from "@/lib/intern-docs";
 
 type FilePayload = { kind: string; b64: string } | undefined;
+
+/** A role as the owner configured it in /portal/onboarding (served by /api/onboarding-form/config). */
+type RoleOpt = {
+  value: string; label: string; emp_type?: string;
+  paid?: boolean; salary?: number | null; salary_period?: string | null;
+  /** Owner-edited agreement text; null = use the built-in default. */
+  terms?: string | null;
+};
 
 const ID_TYPES = ["PAN card", "College / Student ID", "Driving Licence", "Voter ID", "Passport"];
 
@@ -64,7 +72,8 @@ export default function InternForm() {
     isStudent: null as boolean | null, collegeName: "", studentId: "",
   });
   // Roles + field settings come from the owner's Onboarding Form settings (fallback to built-in).
-  const [roleOpts, setRoleOpts] = useState<{ value: string; label: string }[]>([
+  // `terms` is the owner's edited agreement for that role — the SAME text the PDF is built from.
+  const [roleOpts, setRoleOpts] = useState<RoleOpt[]>([
     { value: "M&C", label: ROLE_LABEL["M&C"] }, { value: "P&R", label: ROLE_LABEL["P&R"] }, { value: "HR", label: "HR Intern" },
   ]);
   const [fieldsCfg, setFieldsCfg] = useState<Record<string, { visible: boolean; required: boolean }>>({});
@@ -128,13 +137,27 @@ export default function InternForm() {
     setF((s) => (s.startDate ? s : { ...s, startDate: iso }));
   }, []);
 
+  // The selected role's owner-configured settings (terms, pay) — drives the agreement below.
+  const roleCfg = useMemo(() => roleOpts.find((r) => r.value === f.role) || null, [roleOpts, f.role]);
+
   const previewData: InternData = useMemo(() => ({
     ...f, role: f.role, startDate: fmtDate(f.startDate) || "[Start Date]",
     duration: f.duration, idType: f.idType, isStudent: !!f.isStudent,
     fullName: f.fullName || "[Intern Name]", signedAt: "",
-  }), [f]);
-  const ia = internshipAgreement(previewData);
-  const nda = ndaAgreement(previewData);
+    // Mirror what the PDF builder does with the role's pay settings, so the text matches.
+    paid: !!roleCfg?.paid, salary: roleCfg?.salary ?? null, salaryPeriod: roleCfg?.salary_period ?? null,
+  }), [f, roleCfg]);
+
+  // Read the SAME agreement the PDF will contain: the owner's edited terms for this role if
+  // they set any, else the built-in default. Mirrors app/api/onboarding-form/route.ts.
+  const ia = useMemo(
+    () => (roleCfg?.terms && roleCfg.terms.trim()
+      ? parseTermsToContent(roleCfg.terms, previewData)
+      : internshipAgreement(previewData)),
+    [roleCfg, previewData],
+  );
+  // The NDA is the same standard document for every role (its HR variant is role-derived).
+  const nda = useMemo(() => ndaAgreement(previewData), [previewData]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

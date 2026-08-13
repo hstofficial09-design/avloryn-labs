@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/portal-auth";
 import { listRoles, upsertRole, archiveRole, renameRole, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig } from "@/lib/portal-db";
-import { defaultTermsText, standardNdaText } from "@/lib/intern-docs";
+import { defaultTermsText, standardNdaText, roleLabel, isHrRole } from "@/lib/intern-docs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +12,9 @@ export async function GET() {
   if (!s || s.role !== "owner") return deny();
   const [roles, form, legal] = await Promise.all([listRoles(), getFormConfig(), getLegalConfig()]);
   // Attach the CURRENT default terms per role + the standard NDA, so the editor shows what exists.
-  const withDefaults = roles.map((r) => ({ ...r, defaultTerms: defaultTermsText(r.track, r.track === "Human Resources" || r.sensitive, r.paid, r.salary, r.salary_period) }));
+  // Use the FRIENDLY label ("M&C" → "Marketing & Community"): passing the raw track code made the
+  // default text read "joins as a M&C Intern", which then got saved into the role's terms.
+  const withDefaults = roles.map((r) => ({ ...r, defaultTerms: defaultTermsText(roleLabel(r.track), isHrRole(r.track) || r.sensitive, r.paid, r.salary, r.salary_period) }));
   return NextResponse.json({ roles: withDefaults, form, legal, ndaText: standardNdaText() });
 }
 
