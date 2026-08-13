@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/portal-auth";
 import { listRoles, upsertRole, archiveRole, renameRole, setRoleDefaultTerms, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig } from "@/lib/portal-db";
-import { defaultTermsText, standardNdaText, roleLabel, isHrRole } from "@/lib/intern-docs";
+import { defaultTermsText, standardNdaText, roleLabel, isHrRole, sensitiveClause } from "@/lib/intern-docs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +27,16 @@ export async function GET() {
       || defaultTermsText(roleLabel(r.track), isHrRole(r.track) || r.sensitive, r.paid, r.salary, r.salary_period),
     defaultIsCustom: !!r.default_terms,
   }));
-  return NextResponse.json({ roles: withDefaults, form, legal, ndaText: standardNdaText() });
+  // The NDA is one shared document. Owner-edited text wins; "Reset to default" restores their
+  // own saved baseline if they set one, else the standard template.
+  const ndaText = legal?.nda || standardNdaText();
+  return NextResponse.json({
+    roles: withDefaults, form, legal, ndaText,
+    ndaDefault: legal?.ndaDefault || standardNdaText(),
+    ndaIsCustom: !!legal?.nda,
+    ndaDefaultIsCustom: !!legal?.ndaDefault,
+    sensitiveClause: sensitiveClause(),
+  });
 }
 
 export async function POST(req: Request) {
@@ -68,6 +77,18 @@ export async function POST(req: Request) {
       if (terms && terms.length > TERMS_MAX)
         return NextResponse.json({ error: `Terms are too long (${terms.length.toLocaleString()} characters). The limit is ${TERMS_MAX.toLocaleString()}.` }, { status: 400 });
       await setRoleDefaultTerms(track, terms);
+      return NextResponse.json({ ok: true });
+    }
+    if (d.action === "nda" || d.action === "nda-default") {
+      const text = d.text ? String(d.text).trim() : null;
+      if (text && text.length > TERMS_MAX)
+        return NextResponse.json({ error: `The NDA is too long (${text.length.toLocaleString()} characters). The limit is ${TERMS_MAX.toLocaleString()}.` }, { status: 400 });
+      const legal = (await getLegalConfig()) || {};
+      // "nda" saves the working text; "nda-default" also makes it the reset baseline.
+      const next = d.action === "nda-default"
+        ? { ...legal, nda: text, ndaDefault: text }
+        : { ...legal, nda: text };
+      await saveLegalConfig(next);
       return NextResponse.json({ ok: true });
     }
     if (d.action === "role-archive") {

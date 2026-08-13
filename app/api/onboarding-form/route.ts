@@ -19,11 +19,12 @@ import {
   roleTitle,
   isHrRole,
   parseTermsToContent,
+  withSensitiveClause,
   DOC_META,
   type InternData,
   type Clause,
 } from "@/lib/intern-docs";
-import { listRoles, getFormConfig } from "@/lib/portal-db";
+import { listRoles, getFormConfig, getLegalConfig } from "@/lib/portal-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -274,14 +275,32 @@ export async function POST(req: Request) {
   const regType = dRaw.regType === "employee" ? "Employee" : "Intern";
 
   // Which optional fields are required is owner-controlled (default: required).
-  let fld: Record<string, { visible?: boolean; required?: boolean }> = {};
-  try { fld = ((await getFormConfig())?.fields || {}) as any; } catch { /* default required */ }
+  let formCfg: { fields?: Record<string, { visible?: boolean; required?: boolean }>; custom?: { label: string; required?: boolean }[] } = {};
+  try { formCfg = ((await getFormConfig()) || {}) as any; } catch { /* default required */ }
+  const fld = formCfg.fields || {};
   const need = (k: string) => fld[k]?.visible !== false && fld[k]?.required !== false;
-  const custom = Array.isArray(body.custom) ? (body.custom as { q: string; a: string }[]).filter((x) => x && x.q) : [];
+
+  // Custom answers are checked against the questions the OWNER configured, not the list the
+  // client posted — otherwise a required question could simply be omitted, and any extra
+  // key the client invented would land in the record PDF.
+  const configured = Array.isArray(formCfg.custom) ? formCfg.custom.filter((q) => q?.label) : [];
+  const posted = new Map(
+    (Array.isArray(body.custom) ? (body.custom as { q: string; a: string }[]) : [])
+      .filter((x) => x && x.q)
+      .map((x) => [String(x.q).trim(), String(x.a ?? "").trim()]),
+  );
+  const custom = configured
+    .map((q) => ({ q: String(q.label).trim(), a: posted.get(String(q.label).trim()) || "" }))
+    .filter((x) => x.a);
 
   if (!d.fullName || !EMAIL_RE.test(d.email) || !signature || !consent
     || (need("mobile") && !d.mobile) || (need("address") && !d.address) || (need("govId") && !d.idType)) {
     return NextResponse.json({ ok: false, error: "Please complete all required fields, sign, and accept the terms." }, { status: 400 });
+  }
+  for (const q of configured) {
+    if (q.required && !posted.get(String(q.label).trim())) {
+      return NextResponse.json({ ok: false, error: `Please answer: ${q.label}` }, { status: 400 });
+    }
   }
 
   // env
@@ -314,7 +333,14 @@ export async function POST(req: Request) {
     const ia = (roleCfg?.terms && String(roleCfg.terms).trim())
       ? parseTermsToContent(String(roleCfg.terms), d)
       : internshipAgreement(d);
-    const nda = ndaAgreement(d);
+    // A role marked "Handles sensitive data" signs an extra NDA clause.
+    d.sensitive = !!roleCfg?.sensitive;
+    let legal: any = null;
+    try { legal = await getLegalConfig(); } catch { /* fall back to the standard NDA */ }
+    const ownNda = legal?.nda && String(legal.nda).trim();
+    const nda = ownNda
+      ? (d.sensitive ? withSensitiveClause(parseTermsToContent(String(legal.nda), d)) : parseTermsToContent(String(legal.nda), d))
+      : ndaAgreement(d);
 
     // ===== OWNER PDF: cover + uploads + signed agreements =====
     const o = await mk();
@@ -444,6 +470,7 @@ export async function POST(req: Request) {
           student_id: d.studentId,
           start_date: isoDate(d.startDate) ?? undefined,
           duration: `${d.duration} months`,
+          custom_answers: custom.length ? JSON.stringify(custom) : undefined,
         });
       }
     } catch (e) {

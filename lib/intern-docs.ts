@@ -37,6 +37,8 @@ export type InternData = {
   paid?: boolean;
   salary?: number | null;
   salaryPeriod?: string | null; // 'monthly' | 'yearly'
+  /** Role is marked "Handles sensitive data" — adds an extra NDA clause. */
+  sensitive?: boolean;
 };
 
 const COMPANY = "Avloryn Labs LLP";
@@ -128,42 +130,72 @@ export function ndaAgreement(d: InternData): {
   clauses: Clause[];
 } {
   const isHR = isHrRole(d.role);
+  // Built unnumbered then numbered below, so an extra clause can be inserted without
+  // the headings drifting out of sequence.
+  const body: Clause[] = [
+    {
+      h: "Confidential Information",
+      t: isHR
+        ? `Confidential Information includes (but is not limited to) the Company's and LivoDraft's product internals, business and financial information, pricing, user data, strategies, unreleased features, and — in the course of HR work — all candidate and recruitment data, including applicants' personal information, resumes, contact details, and evaluations, and any other non-public information.`
+        : `Confidential Information includes (but is not limited to) the Company's and LivoDraft's product internals, code, prompts, algorithms, generation pipeline, business and financial information, pricing, user data, strategies, unreleased features, and any other non-public information.`,
+    },
+    {
+      h: "Obligations",
+      t: `The Intern will (a) keep all Confidential Information strictly secret, (b) use it only for internship work, (c) not copy, share, publish, screenshot, or disclose it to anyone, and (d) not use it for personal benefit or any competing purpose.`,
+    },
+    {
+      h: "Return / Deletion",
+      t: `On completion or termination, the Intern will return or delete all Confidential Information and Company materials.`,
+    },
+    {
+      h: "Intellectual Property",
+      t: `All work product remains the Company's property, as per the Internship Agreement.`,
+    },
+    {
+      h: "Duration",
+      t: `These confidentiality obligations continue after the internship ends and survive its termination.`,
+    },
+    {
+      h: "Breach",
+      t: `Any breach may result in immediate termination and appropriate legal action.`,
+    },
+  ];
+  if (d.sensitive) body.push(sensitiveClause());
+  body.push({
+    h: "Governing Law",
+    t: `This agreement is governed by the laws of India.`,
+  });
   return {
     title: "NON-DISCLOSURE AGREEMENT (NDA)",
     intro: `This Non-Disclosure Agreement is made between ${COMPANY} (the "Company") and ${d.fullName} (the "Intern").`,
-    clauses: [
-      {
-        h: "1. Confidential Information",
-        t: isHR
-          ? `Confidential Information includes (but is not limited to) the Company's and LivoDraft's product internals, business and financial information, pricing, user data, strategies, unreleased features, and — in the course of HR work — all candidate and recruitment data, including applicants' personal information, resumes, contact details, and evaluations, and any other non-public information.`
-          : `Confidential Information includes (but is not limited to) the Company's and LivoDraft's product internals, code, prompts, algorithms, generation pipeline, business and financial information, pricing, user data, strategies, unreleased features, and any other non-public information.`,
-      },
-      {
-        h: "2. Obligations",
-        t: `The Intern will (a) keep all Confidential Information strictly secret, (b) use it only for internship work, (c) not copy, share, publish, screenshot, or disclose it to anyone, and (d) not use it for personal benefit or any competing purpose.`,
-      },
-      {
-        h: "3. Return / Deletion",
-        t: `On completion or termination, the Intern will return or delete all Confidential Information and Company materials.`,
-      },
-      {
-        h: "4. Intellectual Property",
-        t: `All work product remains the Company's property, as per the Internship Agreement.`,
-      },
-      {
-        h: "5. Duration",
-        t: `These confidentiality obligations continue after the internship ends and survive its termination.`,
-      },
-      {
-        h: "6. Breach",
-        t: `Any breach may result in immediate termination and appropriate legal action.`,
-      },
-      {
-        h: "7. Governing Law",
-        t: `This agreement is governed by the laws of India.`,
-      },
-    ],
+    clauses: numberClauses(body),
   };
+}
+
+/** The extra obligation a role marked "Handles sensitive data" takes on. Kept separate so it
+ *  can also be appended to an NDA the owner has rewritten themselves. */
+export function sensitiveClause(): Clause {
+  return {
+    h: "Handling of Sensitive Data",
+    t: `This role handles sensitive personal data (which may include candidate, applicant, customer, or employee information). The Intern will access such data only where it is necessary for assigned work; will not download, copy, or store it on personal devices, personal accounts, or any third-party tool without written approval; will not share it with anyone inside or outside the Company who does not need it for the same work; will delete or return it as soon as the work requiring it is complete; and will report any suspected loss, unauthorised access, or accidental disclosure to the Company immediately.`,
+  };
+}
+
+/** Renumber a clause list "1., 2., 3. …" so inserting a clause never breaks the sequence. */
+export function numberClauses(list: Clause[]): Clause[] {
+  return list.map((c, i) => (c.h ? { ...c, h: `${i + 1}. ${c.h.replace(/^\d+[.)]\s*/, "")}` } : c));
+}
+
+/** Append the sensitive-data clause to an NDA the owner has rewritten, continuing their
+ *  own numbering when their clause headings are numbered. */
+export function withSensitiveClause(content: { title: string; intro: string; clauses: Clause[] }) {
+  const c = sensitiveClause();
+  let max = 0;
+  for (const cl of content.clauses) {
+    const m = /^(\d+)[.)]/.exec((cl.h || "").trim());
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return { ...content, clauses: [...content.clauses, { ...c, h: max ? `${max + 1}. ${c.h}` : c.h }] };
 }
 
 /** Joining Letter — returns paragraphs + bullets. Commission-track interns get a

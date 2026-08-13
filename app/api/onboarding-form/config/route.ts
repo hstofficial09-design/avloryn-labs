@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listRoles, getFormConfig } from "@/lib/portal-db";
+import { listRoles, getFormConfig, getLegalConfig } from "@/lib/portal-db";
 import { roleLabel } from "@/lib/intern-docs";
 
 export const runtime = "nodejs";
@@ -12,10 +12,11 @@ export const dynamic = "force-dynamic";
 // hire reads and signs this exact text on the form, and the PDF is built from the SAME source
 // (app/api/onboarding-form/route.ts). Without it the form showed the built-in default while the
 // emailed PDF carried the owner's edit — two different documents for one signature.
-// Still withheld: commission_enabled/scope/sensitive and every other internal setting.
+// `sensitive` and the NDA ride along for the same reason — they change the document the hire
+// signs. Still withheld: commission_enabled/scope and every other internal setting.
 export async function GET() {
   try {
-    const [roles, form] = await Promise.all([listRoles(), getFormConfig()]);
+    const [roles, form, legal] = await Promise.all([listRoles(), getFormConfig(), getLegalConfig()]);
     return NextResponse.json({
       roles: roles.map((r) => ({
         value: r.track,
@@ -25,11 +26,14 @@ export async function GET() {
         salary: r.salary,
         salary_period: r.salary_period,
         terms: r.terms || null,
+        sensitive: r.sensitive,
       })),
+      // The NDA the hire will actually sign (owner-edited when set), so the form shows it.
+      nda: legal?.nda || null,
       fields: form?.fields || {},
       custom: Array.isArray(form?.custom) ? form.custom : [],
     });
   } catch {
-    return NextResponse.json({ roles: [], fields: {}, custom: [] });
+    return NextResponse.json({ roles: [], fields: {}, custom: [], nda: null });
   }
 }

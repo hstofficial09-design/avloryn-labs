@@ -8,6 +8,7 @@ type Emp = {
   id: string; name: string; email: string | null; mobile: string | null; emp_type: string; track: string | null;
   commission_pct: number; source: string; active: number; has_password?: boolean;
   dob?: string | null; address?: string | null; id_type?: string | null; id_number?: string | null;
+  custom_answers?: string | null;
   is_student?: string | null; college?: string | null; student_id?: string | null;
   start_date?: string | null; duration?: string | null; codes?: Code[];
   orders: number; sales: number; earned: number; pending: number; paid: number;
@@ -31,6 +32,15 @@ const dt = (s?: string | null) => {
 function purgeDate(iso: string) {
   const d = new Date(iso); d.setFullYear(d.getFullYear() + 1);
   return isNaN(d.getTime()) ? "—" : d.toISOString().slice(0, 10);
+}
+
+/** Answers to the owner's custom onboarding questions, stored as a JSON array of {q,a}. */
+function parseAnswers(raw?: string | null): { q: string; a: string }[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x) => x && x.q && x.a) : [];
+  } catch { return []; }
 }
 
 export default function OwnerDashboard({ employees, orders, deleted, names, trackMap, error }:
@@ -306,6 +316,7 @@ function DetailModal({ e, onClose, onDelete, onSetLogin, busy, codeCell }:
             <Row k="Current student" v={e.is_student} /><Row k="College" v={e.college} />
             <Row k="Student ID" v={e.student_id} /><Row k="Start date" v={dt(e.start_date)} />
             <Row k="Duration" v={e.duration} />
+            {parseAnswers(e.custom_answers).map((a) => <Row key={a.q} k={a.q} v={a.a} full />)}
           </div>
 
           <p className="mt-5 text-[11.5px] text-faint">📎 Photo &amp; ID document are in the onboarding email sent to the owner.</p>

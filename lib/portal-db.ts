@@ -42,6 +42,8 @@ async function ensureSchema(c: PoolClient) {
   await add("student_id");
   await add("start_date");
   await add("duration");
+  // Answers to the owner's custom onboarding questions (JSON array of {q,a}).
+  await add("custom_answers");
   // soft-delete: records kept, hard-purged 1 year after deleted_at
   await add("deleted_at");
   // password reset (forgot-password flow)
@@ -96,6 +98,8 @@ export type Employee = {
   dob?: string | null; address?: string | null; id_type?: string | null;
   id_number?: string | null; is_student?: string | null; college?: string | null;
   student_id?: string | null; start_date?: string | null; duration?: string | null;
+  /** JSON array of {q,a} — answers to the owner's custom onboarding questions. */
+  custom_answers?: string | null;
   deleted_at?: string | null;
   // LivoDraft promo code(s) linked to this employee + the commission % set on them
   codes?: EmployeeCode[];
@@ -140,7 +144,7 @@ async function employeeCodesMap(c: PoolClient): Promise<Record<string, EmployeeC
   }
 }
 
-const PROFILE_COLS = "e.dob,e.address,e.id_type,e.id_number,e.is_student,e.college,e.student_id,e.start_date,e.duration";
+const PROFILE_COLS = "e.dob,e.address,e.id_type,e.id_number,e.is_student,e.college,e.student_id,e.start_date,e.duration,e.custom_answers";
 
 export async function listEmployeesWithSummary(): Promise<EmployeeSummary[]> {
   return withClient(async (c) => {
@@ -208,27 +212,29 @@ export async function upsertEmployeeFromOnboarding(data: {
   name: string; email: string; mobile?: string; emp_type?: string; track?: string;
   dob?: string; address?: string; id_type?: string; id_number?: string;
   is_student?: string; college?: string; student_id?: string; start_date?: string; duration?: string;
+  custom_answers?: string;
 }): Promise<{ id: string; created: boolean }> {
   return withClient(async (c) => {
     const prof = [
       (data.dob || "").trim(), (data.address || "").trim(), (data.id_type || "").trim(),
       (data.id_number || "").trim(), (data.is_student || "").trim(), (data.college || "").trim(),
       (data.student_id || "").trim(), (data.start_date || "").trim(), (data.duration || "").trim(),
+      (data.custom_answers || "").trim() || null,
     ];
     const ex = await c.query(`SELECT id FROM employees WHERE LOWER(email)=LOWER($1) LIMIT 1`, [data.email]);
     if (ex.rows[0]) {
       await c.query(
         `UPDATE employees SET name=$1, mobile=$2, emp_type=$3, track=$4,
            dob=$5,address=$6,id_type=$7,id_number=$8,is_student=$9,college=$10,student_id=$11,start_date=$12,duration=$13,
-           deleted_at=NULL WHERE id=$14`,
+           custom_answers=COALESCE($14, custom_answers), deleted_at=NULL WHERE id=$15`,
         [data.name.trim(), (data.mobile || "").trim(), data.emp_type || "intern", data.track || "", ...prof, ex.rows[0].id]);
       return { id: ex.rows[0].id, created: false };
     }
     const id = randomUUID();
     await c.query(
       `INSERT INTO employees (id,name,email,mobile,emp_type,track,commission_pct,active,source,
-         dob,address,id_type,id_number,is_student,college,student_id,start_date,duration)
-       VALUES ($1,$2,$3,$4,$5,$6,10,1,'onboarding',$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+         dob,address,id_type,id_number,is_student,college,student_id,start_date,duration,custom_answers)
+       VALUES ($1,$2,$3,$4,$5,$6,10,1,'onboarding',$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
       [id, data.name.trim(), data.email.trim(), (data.mobile || "").trim(), data.emp_type || "intern", data.track || "", ...prof]);
     return { id, created: true };
   });

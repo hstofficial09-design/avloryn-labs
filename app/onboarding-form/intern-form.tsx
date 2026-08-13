@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useEffect } from "react";
 import { LogoMark } from "@/components/ui/logo";
-import { internshipAgreement, ndaAgreement, parseTermsToContent, isHrRole, ROLE_LABEL, type InternData } from "@/lib/intern-docs";
+import { internshipAgreement, ndaAgreement, parseTermsToContent, withSensitiveClause, isHrRole, ROLE_LABEL, type InternData } from "@/lib/intern-docs";
 
 type FilePayload = { kind: string; b64: string } | undefined;
 
@@ -12,6 +12,8 @@ type RoleOpt = {
   paid?: boolean; salary?: number | null; salary_period?: string | null;
   /** Owner-edited agreement text; null = use the built-in default. */
   terms?: string | null;
+  /** Role handles sensitive data — the NDA gains an extra clause. */
+  sensitive?: boolean;
 };
 
 const ID_TYPES = ["PAN card", "College / Student ID", "Driving Licence", "Voter ID", "Passport"];
@@ -79,6 +81,8 @@ export default function InternForm() {
   const [fieldsCfg, setFieldsCfg] = useState<Record<string, { visible: boolean; required: boolean }>>({});
   const [customQ, setCustomQ] = useState<{ label: string; type: string; required: boolean }[]>([]);
   const [customAns, setCustomAns] = useState<Record<string, string>>({});
+  // The owner can rewrite the NDA; null = the standard one.
+  const [ndaText, setNdaText] = useState<string | null>(null);
   useEffect(() => {
     fetch("/api/onboarding-form/config").then((r) => r.json()).then((d) => {
       if (Array.isArray(d.roles) && d.roles.length) {
@@ -87,6 +91,7 @@ export default function InternForm() {
       }
       if (d.fields && typeof d.fields === "object") setFieldsCfg(d.fields);
       if (Array.isArray(d.custom)) setCustomQ(d.custom.filter((q: any) => q?.label));
+      if (typeof d.nda === "string" && d.nda.trim()) setNdaText(d.nda);
     }).catch(() => {});
   }, []);
   const fVis = (k: string) => fieldsCfg[k]?.visible !== false;      // default shown
@@ -146,6 +151,7 @@ export default function InternForm() {
     fullName: f.fullName || "[Intern Name]", signedAt: "",
     // Mirror what the PDF builder does with the role's pay settings, so the text matches.
     paid: !!roleCfg?.paid, salary: roleCfg?.salary ?? null, salaryPeriod: roleCfg?.salary_period ?? null,
+    sensitive: !!roleCfg?.sensitive,
   }), [f, roleCfg]);
 
   // Read the SAME agreement the PDF will contain: the owner's edited terms for this role if
@@ -156,8 +162,13 @@ export default function InternForm() {
       : internshipAgreement(previewData)),
     [roleCfg, previewData],
   );
-  // The NDA is the same standard document for every role (its HR variant is role-derived).
-  const nda = useMemo(() => ndaAgreement(previewData), [previewData]);
+  // One shared NDA — the owner's rewrite when they've made one, else the standard document.
+  // A role marked "handles sensitive data" adds one extra clause. Mirrors the PDF builder.
+  const nda = useMemo(() => {
+    if (!ndaText) return ndaAgreement(previewData);
+    const base = parseTermsToContent(ndaText, previewData);
+    return previewData.sensitive ? withSensitiveClause(base) : base;
+  }, [ndaText, previewData]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

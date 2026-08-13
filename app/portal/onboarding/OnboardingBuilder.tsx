@@ -33,6 +33,9 @@ export default function OnboardingBuilder() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [form, setForm] = useState<Form>({});
   const [nda, setNda] = useState("");
+  const [ndaDefault, setNdaDefault] = useState("");
+  const [ndaIsCustom, setNdaIsCustom] = useState(false);
+  const [sensCl, setSensCl] = useState<{ h?: string; t: string } | null>(null);
   const [err, setErr] = useState("");
   // FieldsTab seeds its state ONCE from `form`. Rendering it before the config arrives would
   // seed it with defaults, and a save would then overwrite the real settings — so gate on this.
@@ -40,7 +43,9 @@ export default function OnboardingBuilder() {
   const load = useCallback(async () => {
     try {
       const r = await fetch("/api/portal/onboarding-config"); const d = await r.json();
-      setRoles(d.roles || []); setForm(d.form || {}); setNda(d.ndaText || ""); setLoaded(true);
+      setRoles(d.roles || []); setForm(d.form || {}); setNda(d.ndaText || "");
+      setNdaDefault(d.ndaDefault || ""); setNdaIsCustom(!!d.ndaIsCustom); setSensCl(d.sensitiveClause || null);
+      setLoaded(true);
     }
     catch (e) { setErr(msg(e)); }
   }, []);
@@ -69,13 +74,13 @@ export default function OnboardingBuilder() {
 
       {!loaded
         ? <div className="card-lux rounded-3xl p-6 text-[13px] text-muted-foreground">Loading your settings…</div>
-        : tab === "roles" ? <RolesTab roles={roles} nda={nda} reload={load} /> : <FieldsTab form={form} reload={load} />}
+        : tab === "roles" ? <RolesTab roles={roles} nda={nda} ndaDefault={ndaDefault} ndaIsCustom={ndaIsCustom} sensCl={sensCl} reload={load} /> : <FieldsTab form={form} reload={load} />}
     </div>
   );
 }
 
 /* ─────────── Roles & terms ─────────── */
-function RolesTab({ roles, nda, reload }: { roles: Role[]; nda: string; reload: () => void }) {
+function RolesTab({ roles, nda, ndaDefault, ndaIsCustom, sensCl, reload }: { roles: Role[]; nda: string; ndaDefault: string; ndaIsCustom: boolean; sensCl: { h?: string; t: string } | null; reload: () => void }) {
   const [newRole, setNewRole] = useState("");
   const [busy, setBusy] = useState(false);
   const [showNda, setShowNda] = useState(false);
@@ -85,18 +90,65 @@ function RolesTab({ roles, nda, reload }: { roles: Role[]; nda: string; reload: 
   }
   return (
     <div className="grid gap-4">
-      <div className={card}>
-        <div className="flex items-center justify-between gap-3">
-          <div><h3 className="font-serif text-[16px] font-[600]">Standard NDA</h3><p className="text-[12.5px] text-muted-foreground mt-0.5">Same for every role — signed by all hires alongside their role terms.</p></div>
-          <button onClick={() => setShowNda((v) => !v)} className={GHOST + " text-[12px] px-3.5 py-1.5 shrink-0"}>{showNda ? "Hide" : "View NDA"}</button>
-        </div>
-        {showNda && <pre className="mt-4 neu-inset rounded-2xl p-4 text-[12px] leading-relaxed whitespace-pre-wrap font-sans text-foreground/80 max-h-[320px] overflow-y-auto">{nda}</pre>}
-      </div>
+      <NdaCard nda={nda} ndaDefault={ndaDefault} ndaIsCustom={ndaIsCustom} sensCl={sensCl} open={showNda} setOpen={setShowNda} reload={reload} />
       {roles.map((r) => <RoleCard key={r.track} role={r} reload={reload} />)}
       <form onSubmit={add} className={card + " flex items-center gap-2 flex-wrap"}>
         <input value={newRole} onChange={(e) => setNewRole(e.target.value)} placeholder="Add a new role (e.g. Design)" className={input + " sm:max-w-sm"} />
         <button type="submit" disabled={busy} className={GOLD + " px-5 py-2.5 text-[13px]"}>Add role</button>
       </form>
+    </div>
+  );
+}
+
+function NdaCard({ nda, ndaDefault, ndaIsCustom, sensCl, open, setOpen, reload }:
+  { nda: string; ndaDefault: string; ndaIsCustom: boolean; sensCl: { h?: string; t: string } | null; open: boolean; setOpen: (v: boolean) => void; reload: () => void }) {
+  const [text, setText] = useState(nda);
+  const [busy, setBusy] = useState(false); const [defBusy, setDefBusy] = useState(false);
+  const [saved, setSaved] = useState(false); const [defOk, setDefOk] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => { setText(nda); }, [nda]);
+  async function run(action: string, after: () => void) {
+    setErr("");
+    try { await api(action, { text }); after(); reload(); } catch (e) { setErr(msg(e)); }
+  }
+  const save = async () => { setBusy(true); await run("nda", () => { setSaved(true); setTimeout(() => setSaved(false), 1500); }); setBusy(false); };
+  const setDefault = async () => { setDefBusy(true); await run("nda-default", () => { setDefOk(true); setTimeout(() => setDefOk(false), 2000); }); setDefBusy(false); };
+
+  return (
+    <div className={card}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="font-serif text-[16px] font-[600]">Standard NDA</h3>
+          <p className="text-[12.5px] text-muted-foreground mt-0.5">Same for every role — signed by all hires alongside their role terms.</p>
+        </div>
+        <button onClick={() => setOpen(!open)} className={GHOST + " text-[12px] px-3.5 py-1.5 shrink-0"}>{open ? "Hide" : "Edit NDA"}</button>
+      </div>
+      {open && (
+        <div className="mt-4">
+          <div className="flex items-center justify-between gap-x-4 flex-wrap">
+            <label className={label}>NDA text <span className="text-faint font-normal">(edit freely; [brackets] auto-fill per hire — reset restores {ndaIsCustom ? "your saved default" : "the standard template"})</span></label>
+            <div className="flex items-center gap-3 mb-1.5">
+              <button type="button" onClick={setDefault} disabled={defBusy || !text.trim()} className="text-[11.5px] font-semibold text-gold hover:underline disabled:opacity-40 disabled:no-underline">
+                {defBusy ? "Saving…" : defOk ? "Saved as default ✓" : "Set current NDA as default"}
+              </button>
+              {ndaDefault && <button type="button" onClick={() => setText(ndaDefault)} className="text-[11.5px] font-semibold text-muted-foreground hover:underline">Reset to default</button>}
+            </div>
+          </div>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={14} className={input + " resize-y font-sans text-[12.5px] leading-relaxed"} />
+          {sensCl && (
+            <div className="mt-3 neu-inset rounded-2xl p-4">
+              <div className="text-[12px] font-[600] mb-1">Added automatically: {sensCl.h}</div>
+              <p className="text-[11.5px] text-muted-foreground leading-relaxed">{sensCl.t}</p>
+              <p className="text-[11px] text-faint mt-2">Appended to this NDA only for roles ticked &ldquo;Handles sensitive data&rdquo;. You don&rsquo;t need to add it here.</p>
+            </div>
+          )}
+          <div className="flex items-center gap-3 flex-wrap mt-4">
+            <button onClick={save} disabled={busy} className={GOLD + " px-5 py-2.5 text-[13px] disabled:opacity-60"}>{busy ? "Saving…" : "Save NDA"}</button>
+            {saved && <span className="text-[12.5px] text-[#1e7a44]">Saved ✓</span>}
+            {err && <span className="text-[12.5px] text-[#b3341f]">{err}</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
