@@ -101,6 +101,7 @@ function RoleCard({ role, reload }: { role: Role; reload: () => void }) {
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState(role.track);
   const [renameErr, setRenameErr] = useState("");
+  const [saveErr, setSaveErr] = useState("");
   const set = (k: keyof Role, v: any) => setR((x) => ({ ...x, [k]: v }));
   async function doRename() {
     const to = newName.trim();
@@ -109,8 +110,11 @@ function RoleCard({ role, reload }: { role: Role; reload: () => void }) {
     try { await api("role-rename", { from: role.track, to }); reload(); } catch (e: any) { setRenameErr(e?.message || "Could not rename"); }
   }
   async function save() {
-    setBusy(true);
-    try { await api("role", { role: r }); setSaved(true); setTimeout(() => setSaved(false), 1500); reload(); } finally { setBusy(false); }
+    setBusy(true); setSaveErr("");
+    // A failed save used to throw silently — the owner saw neither "Saved ✓" nor a reason.
+    try { await api("role", { role: r }); setSaved(true); setTimeout(() => setSaved(false), 1500); reload(); }
+    catch (e) { setSaveErr(msg(e)); }
+    finally { setBusy(false); }
   }
   async function remove() {
     if (!confirm(`Remove the “${r.track}” role? Existing employees keep their role; it just won't be offered on new onboarding.`)) return;
@@ -185,9 +189,10 @@ function RoleCard({ role, reload }: { role: Role; reload: () => void }) {
         <textarea value={r.terms || ""} onChange={(e) => set("terms", e.target.value)} rows={12} className={input + " resize-y font-sans text-[12.5px] leading-relaxed"} />
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button onClick={save} disabled={busy} className={GOLD + " px-5 py-2.5 text-[13px] disabled:opacity-60"}>{busy ? "Saving…" : "Save role"}</button>
         {saved && <span className="text-[12.5px] text-[#1e7a44]">Saved ✓</span>}
+        {saveErr && <span className="text-[12.5px] text-[#b3341f]">{saveErr}</span>}
       </div>
     </div>
   );

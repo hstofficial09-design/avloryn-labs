@@ -7,6 +7,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const deny = () => NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
+// Generous sanity limits — the DB columns are TEXT (no limit of their own). These exist only
+// to stop a runaway paste, never to trim a genuine document: a full agreement runs ~3-9k chars.
+const TERMS_MAX = 40000;
+const SCOPE_MAX = 5000;
+
 export async function GET() {
   const s = await getSession();
   if (!s || s.role !== "owner") return deny();
@@ -28,14 +33,22 @@ export async function POST(req: Request) {
       const r = d.role || {};
       const track = String(r.track || "").trim();
       if (!track) return NextResponse.json({ error: "Role name required" }, { status: 400 });
+      // These are legal documents — REFUSE an over-long save rather than silently cutting it.
+      // (The old 8000 cap truncated a role's terms mid-word, and the hire then signed that.)
+      const scope = r.scope ? String(r.scope).trim() : null;
+      const terms = r.terms ? String(r.terms).trim() : null;
+      if (terms && terms.length > TERMS_MAX)
+        return NextResponse.json({ error: `Terms are too long (${terms.length.toLocaleString()} characters). The limit is ${TERMS_MAX.toLocaleString()} — please shorten them before saving.` }, { status: 400 });
+      if (scope && scope.length > SCOPE_MAX)
+        return NextResponse.json({ error: `Responsibilities are too long (${scope.length.toLocaleString()} characters). The limit is ${SCOPE_MAX.toLocaleString()}.` }, { status: 400 });
       await upsertRole({
         track,
         commission_enabled: r.commission_enabled !== false,
         paid: !!r.paid,
         salary: r.paid && r.salary ? Math.max(0, Math.round(Number(r.salary))) : null,
         salary_period: r.paid ? (r.salary_period === "yearly" ? "yearly" : "monthly") : null,
-        scope: r.scope ? String(r.scope).trim().slice(0, 2000) : null,
-        terms: r.terms ? String(r.terms).trim().slice(0, 8000) : null,
+        scope,
+        terms,
         sensitive: !!r.sensitive,
         default_emp_type: r.default_emp_type === "employee" ? "employee" : "intern",
       });
