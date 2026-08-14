@@ -73,6 +73,23 @@ async function ensureSchema(c: PoolClient) {
   await c.query(`CREATE TABLE IF NOT EXISTS company_profile (
     id INT PRIMARY KEY DEFAULT 1, full_name TEXT, email TEXT, mobile TEXT, dob TEXT, address TEXT, updated_at TIMESTAMPTZ)`);
   await c.query(`ALTER TABLE company_profile ADD COLUMN IF NOT EXISTS start_date TEXT`);
+  // One-time normalisation. Early records stored dates as display text ("16 Aug 2005") while
+  // later ones stored ISO, so the same column held two formats and each person's record read
+  // differently. Convert the stragglers so every record is the same shape. Done in SQL on
+  // purpose — to_date has no timezone to get wrong, unlike new Date().toISOString(), which is
+  // what shifted dates a day earlier in the first place. Only touches values that are not
+  // already ISO, so every later boot is a no-op. The pattern matches ONLY the
+  // 3-letter form the app itself produces ("16 Aug 2005"); to_date rejects a full month
+  // name under 'Mon' and would abort the statement.
+  for (const col of ["dob", "start_date"]) {
+    try {
+      await c.query(
+        `UPDATE employees SET ${col} = to_char(to_date(${col}, 'DD Mon YYYY'), 'YYYY-MM-DD')
+         WHERE ${col} IS NOT NULL AND ${col} <> ''
+           AND ${col} !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+           AND ${col} ~ '^[0-9]{1,2} [A-Za-z]{3} [0-9]{4}$'`);
+    } catch { /* a stray unparseable value must never stop the app booting */ }
+  }
   schemaReady = true;
 }
 
