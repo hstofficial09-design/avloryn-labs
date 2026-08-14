@@ -31,7 +31,11 @@ export async function POST(req: Request) {
       // Employees may only edit their own contact details. Name + start date (joining date)
       // are official records set by the admin via the Team panel — never self-editable
       // (COALESCE keeps the stored values when we omit them here).
-      await updateEmployeeProfile(s.email, { mobile: d.mobile, dob: d.dob, address: d.address });
+      await updateEmployeeProfile(s.email, {
+        mobile: d.mobile, dob: d.dob, address: d.address,
+        id_type: d.id_type, id_number: d.id_number,
+        is_student: d.is_student, college: d.college, student_id: d.student_id,
+      });
     }
     return NextResponse.json({ ok: true });
   } catch (e: any) {

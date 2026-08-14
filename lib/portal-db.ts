@@ -446,15 +446,29 @@ export function trackHasCommission(track: string | null | undefined, map: Record
 export async function getEmployeeProfile(email: string) {
   return withClient(async (c) => {
     const r = await c.query(
-      `SELECT id,name,email,mobile,dob,address,start_date,duration,emp_type,track FROM employees WHERE LOWER(email)=LOWER($1) LIMIT 1`, [email]);
+      `SELECT id,name,email,mobile,dob,address,start_date,duration,emp_type,track,
+              id_type,id_number,is_student,college,student_id,custom_answers
+       FROM employees WHERE LOWER(email)=LOWER($1) LIMIT 1`, [email]);
     return r.rows[0] || null;
   });
 }
-export async function updateEmployeeProfile(email: string, f: { name?: string; mobile?: string; dob?: string; address?: string; start_date?: string }) {
+export async function updateEmployeeProfile(email: string, f: {
+  name?: string; mobile?: string; dob?: string; address?: string; start_date?: string;
+  id_type?: string; id_number?: string; is_student?: string; college?: string; student_id?: string;
+}) {
   const v = (x?: string) => (x && x.trim() ? x.trim() : null);
+  // COALESCE everywhere: a field the caller omits keeps whatever onboarding stored.
+  // Student details are cleared deliberately when the person answers "No", so those pass
+  // through an empty string rather than being skipped.
+  const clr = (x?: string) => (x === undefined ? null : x.trim() || "");
   return withClient((c) => c.query(
-    `UPDATE employees SET name=COALESCE($2,name), mobile=COALESCE($3,mobile), dob=COALESCE($4,dob), address=COALESCE($5,address), start_date=COALESCE($6,start_date) WHERE LOWER(email)=LOWER($1)`,
-    [email, v(f.name), v(f.mobile), v(f.dob), v(f.address), v(f.start_date)]));
+    `UPDATE employees SET name=COALESCE($2,name), mobile=COALESCE($3,mobile), dob=COALESCE($4,dob),
+       address=COALESCE($5,address), start_date=COALESCE($6,start_date),
+       id_type=COALESCE($7,id_type), id_number=COALESCE($8,id_number),
+       is_student=COALESCE($9,is_student), college=COALESCE($10,college), student_id=COALESCE($11,student_id)
+     WHERE LOWER(email)=LOWER($1)`,
+    [email, v(f.name), v(f.mobile), v(f.dob), v(f.address), v(f.start_date),
+     v(f.id_type), v(f.id_number), v(f.is_student), clr(f.college), clr(f.student_id)]));
 }
 export async function getCompanyProfile() {
   return withClient(async (c) => {

@@ -28,6 +28,12 @@ export default function ProfileForm({ profile, isOwner }: { profile: any; isOwne
   const [dob, setDob] = useState(toISO(profile.dob));
   const [startDate, setStartDate] = useState(toISO(profile.start_date));
   const [address, setAddress] = useState(profile.address || "");
+  // The rest of what onboarding collected — shown here so the record stays correctable.
+  const [idType, setIdType] = useState(profile.id_type || "");
+  const [idNumber, setIdNumber] = useState(profile.id_number || "");
+  const [isStudent, setIsStudent] = useState<string>(profile.is_student || "");
+  const [college, setCollege] = useState(profile.college || "");
+  const [studentId, setStudentId] = useState(profile.student_id || "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
   const [mustComplete, setMustComplete] = useState(false);
@@ -42,7 +48,10 @@ export default function ProfileForm({ profile, isOwner }: { profile: any; isOwne
     if (mustComplete && !dob) { setMsg({ ok: false, t: "Please add your date of birth to continue." }); return; }
     setBusy(true);
     try {
-      const r = await fetch("/api/portal/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, email, mobile, dob, address, start_date: startDate }) });
+      const r = await fetch("/api/portal/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, email, mobile, dob, address, start_date: startDate,
+          id_type: idType, id_number: idNumber, is_student: isStudent,
+          // Cleared on purpose when the answer is No, so stale college details don't linger.
+          college: isStudent === "Yes" ? college : "", student_id: isStudent === "Yes" ? studentId : "" }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Could not save");
       setMsg({ ok: true, t: "Saved ✓" });
@@ -89,6 +98,42 @@ export default function ProfileForm({ profile, isOwner }: { profile: any; isOwne
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={input + (isOwner ? "" : " opacity-70")} readOnly={!isOwner} />
           </div>
           <div className="sm:col-span-2"><label className={label}>Address</label><textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={2} className={input + " resize-none"} /></div>
+          {!isOwner && (
+            <>
+              <div className="sm:col-span-2 mt-1"><div className="section-label">Your details</div></div>
+              <div>
+                <label className={label}>Role {<span className="text-faint font-normal">(set by admin — fixed)</span>}</label>
+                <input value={role} readOnly className={input + " opacity-70"} />
+              </div>
+              <div>
+                <label className={label}>Duration <span className="text-faint font-normal">(set by admin — fixed)</span></label>
+                <input value={profile.duration || "—"} readOnly className={input + " opacity-70"} />
+              </div>
+              <div>
+                <label className={label}>Photo ID type</label>
+                <select value={idType} onChange={(e) => setIdType(e.target.value)} className={input}>
+                  <option value="">Select…</option>
+                  {["PAN card", "College / Student ID", "Driving Licence", "Voter ID", "Passport"].map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div><label className={label}>ID number</label><input value={idNumber} onChange={(e) => setIdNumber(e.target.value)} className={input} /></div>
+              <div>
+                <label className={label}>Are you a current student?</label>
+                <select value={isStudent} onChange={(e) => setIsStudent(e.target.value)} className={input}>
+                  <option value="">Select…</option><option value="Yes">Yes</option><option value="No">No</option>
+                </select>
+              </div>
+              {isStudent === "Yes" && (
+                <>
+                  <div><label className={label}>College / University</label><input value={college} onChange={(e) => setCollege(e.target.value)} className={input} /></div>
+                  <div><label className={label}>Student ID</label><input value={studentId} onChange={(e) => setStudentId(e.target.value)} className={input} /></div>
+                </>
+              )}
+              <p className="sm:col-span-2 text-[11.5px] text-faint">
+                Your photo and ID document stay in the onboarding email — they are not stored here.
+              </p>
+            </>
+          )}
           <div className="sm:col-span-2 flex items-center gap-3">
             <button type="submit" disabled={busy} className={GOLD + " px-5 py-2.5 text-[13px] disabled:opacity-60"}>{busy ? "Saving…" : "Save profile"}</button>
             {msg && <span className={"text-[12.5px] " + (msg.ok ? "text-[#1e7a44]" : "text-[#b3341f]")}>{msg.t}</span>}
