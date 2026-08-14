@@ -7,6 +7,7 @@ import { google } from "googleapis";
 import { randomUUID } from "crypto";
 import { getGoogle, saveGoogle } from "./db";
 import type { Interval } from "./availability";
+import { SITE_URL } from "@/lib/seo";
 
 const SCOPES = [
   "openid",
@@ -20,8 +21,14 @@ export function googleConfigured(): boolean {
 }
 
 function redirectUri(origin: string) {
-  // Canonical apex in production so www./preview domains don't break the OAuth redirect match.
-  const base = /localhost|127\.0\.0\.1/.test(origin) ? origin.replace(/\/$/, "") : "https://avloryn.com";
+  // MUST be the public URL. Railway runs the app on an internal localhost:PORT, so the origin
+  // taken from req.url is "https://localhost:8080" in production — the old "does it look like
+  // localhost?" test then treated the live server as a dev machine and sent Google an internal
+  // address, so every connect attempt died with redirect_uri_mismatch. Only a real dev build
+  // may use the request's own origin.
+  const isDev = process.env.NODE_ENV !== "production"
+    && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(origin);
+  const base = isDev ? origin.replace(/\/$/, "") : SITE_URL;
   return `${base}/api/meet/google/callback`;
 }
 

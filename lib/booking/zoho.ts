@@ -8,6 +8,7 @@
  * Redirect URI: {origin}/api/meet/zoho/callback
  */
 import { getZoho, saveZoho, listMembers } from "./db";
+import { SITE_URL } from "@/lib/seo";
 
 const SCOPE = "ZohoCalendar.event.ALL,ZohoCalendar.calendar.READ";
 
@@ -19,7 +20,12 @@ const accountsBase = () => `https://accounts.zoho.${region()}/oauth/v2`;
 const calBase = () => `https://calendar.zoho.${region()}/api/v1`;
 // Always use the canonical apex in production (Zoho/Google configs are for avloryn.com),
 // so www./preview domains don't cause a redirect-URI mismatch. Localhost stays as-is for dev.
-const canonicalBase = (origin: string) => (/localhost|127\.0\.0\.1/.test(origin) ? origin.replace(/\/$/, "") : "https://avloryn.com");
+// Same trap as the Google redirect: Railway's internal origin is localhost:PORT, so anything
+// that isn't a genuine dev build must use the public URL or Zoho rejects the redirect too.
+const canonicalBase = (origin: string) =>
+  (process.env.NODE_ENV !== "production" && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(origin)
+    ? origin.replace(/\/$/, "")
+    : SITE_URL);
 const redirectUri = (origin: string) => `${canonicalBase(origin)}/api/meet/zoho/callback`;
 
 /** ISO → Zoho datetime "yyyyMMddTHHmmssZ" (UTC). Zoho's range + event APIs want the literal Z. */
