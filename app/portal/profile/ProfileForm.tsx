@@ -8,11 +8,16 @@ const GOLD = "btn-gold rounded-full font-[560]";
 
 // A stored date can be ISO ("2026-08-11") OR already formatted ("08 Aug 2026").
 // toISO → YYYY-MM-DD for <input type="date"> (empty if unparseable), robust to either form.
+// ⚠ Must read the LOCAL calendar date. This runs in the browser, so "31 Oct 2007" parses as
+// local midnight and toISOString() re-expresses it in UTC — which in IST is the 30th. Saving
+// then persisted that, quietly moving people's date of birth a day earlier each time.
+const ymd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const toISO = (s?: string | null) => {
   if (!s) return "";
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return String(s).slice(0, 10);
   const d = new Date(String(s));
-  return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  return isNaN(d.getTime()) ? "" : ymd(d);
 };
 
 export default function ProfileForm({ profile, isOwner }: { profile: any; isOwner: boolean }) {

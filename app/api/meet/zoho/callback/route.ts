@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { connectZohoMember } from "@/lib/booking/zoho";
+import { SITE_URL } from "@/lib/seo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const done = (status: string, email?: string) =>
-    NextResponse.redirect(`${url.origin}/meet/connected?status=${status}${email ? `&email=${encodeURIComponent(email)}` : ""}&provider=zoho`);
+    NextResponse.redirect(`${SITE_URL}/meet/connected?status=${status}${email ? `&email=${encodeURIComponent(email)}` : ""}&provider=zoho`);
 
   if (url.searchParams.get("error")) return done("denied");
   const code = url.searchParams.get("code");

@@ -310,7 +310,7 @@ function DetailModal({ e, onClose, onDelete, onSetLogin, busy, codeCell }:
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3 text-[13px]">
             <Row k="Email" v={e.email} /><Row k="Mobile" v={e.mobile} />
-            <Row k="Date of birth" v={e.dob} /><Row k="Login" v={e.has_password ? "Active ✓" : "Not set"} />
+            <Row k="Date of birth" v={dt(e.dob)} /><Row k="Login" v={e.has_password ? "Active ✓" : "Not set"} />
             <Row k="Address" v={e.address} full />
             <Row k="ID type" v={e.id_type} /><Row k="ID number" v={e.id_number} />
             <Row k="Current student" v={e.is_student} /><Row k="College" v={e.college} />

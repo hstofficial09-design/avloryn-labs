@@ -36,7 +36,10 @@ const isoDate = (s?: string | null): string | null => {
   if (!s) return null;
   if (/^\d{4}-\d{2}-\d{2}/.test(String(s))) return String(s).slice(0, 10);
   const d = new Date(String(s));
-  return isNaN(d.getTime()) ? String(s) : d.toISOString().slice(0, 10);
+  // Local calendar date, never toISOString(): that re-expresses local midnight in UTC and
+  // shifts the day backwards anywhere east of Greenwich.
+  return isNaN(d.getTime()) ? String(s)
+    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 const A4: [number, number] = [595.28, 841.89];
 const MARGIN = 54;
@@ -461,7 +464,7 @@ export async function POST(req: Request) {
           mobile: d.mobile,
           emp_type: regType === "Employee" ? "employee" : "intern",
           track: roleLabel(d.role) || "",
-          dob,
+          dob: isoDate(dob) ?? undefined,   // store one consistent format, like start_date
           address: d.address,
           id_type: d.idType,
           id_number: d.idNumber,
