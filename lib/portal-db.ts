@@ -7,6 +7,7 @@
  * Server-only. Never import from a client component.
  */
 import { Pool, type PoolClient } from "pg";
+import { normaliseFields, defaultFields, type Field } from "@/lib/careers-fields";
 import { randomUUID } from "crypto";
 
 let pool: Pool | null = null;
@@ -69,6 +70,29 @@ async function ensureSchema(c: PoolClient) {
   // onboarding form field config + editable legal text (single JSON rows)
   await c.query(`CREATE TABLE IF NOT EXISTS form_config (id INT PRIMARY KEY DEFAULT 1, config JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ)`);
   await c.query(`CREATE TABLE IF NOT EXISTS legal_config (id INT PRIMARY KEY DEFAULT 1, config JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ)`);
+  // Careers: the openings the owner publishes. Applications are NOT stored anywhere — they
+  // are emailed straight to the careers inbox with the CV attached (owner's decision).
+  await c.query(`CREATE TABLE IF NOT EXISTS job_openings (
+    id           TEXT PRIMARY KEY,
+    slug         TEXT UNIQUE NOT NULL,
+    title        TEXT NOT NULL,
+    department   TEXT,
+    emp_type     TEXT NOT NULL DEFAULT 'Internship',
+    work_mode    TEXT NOT NULL DEFAULT 'Remote',
+    location     TEXT,
+    experience   TEXT,
+    compensation TEXT,
+    openings     INT  NOT NULL DEFAULT 1,
+    summary      TEXT,
+    description  TEXT,
+    apply_by     TEXT,
+    status       TEXT NOT NULL DEFAULT 'draft',
+    form_fields  JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now())`);
+  await c.query(`CREATE INDEX IF NOT EXISTS job_openings_status ON job_openings(status)`);
+  await c.query(`ALTER TABLE job_openings ADD COLUMN IF NOT EXISTS form_fields JSONB NOT NULL DEFAULT '[]'::jsonb`);
+
   // owner's own personal profile (single row)
   await c.query(`CREATE TABLE IF NOT EXISTS company_profile (
     id INT PRIMARY KEY DEFAULT 1, full_name TEXT, email TEXT, mobile TEXT, dob TEXT, address TEXT, updated_at TIMESTAMPTZ)`);
@@ -90,6 +114,25 @@ async function ensureSchema(c: PoolClient) {
            AND ${col} ~ '^[0-9]{1,2} [A-Za-z]{3} [0-9]{4}$'`);
     } catch { /* a stray unparseable value must never stop the app booting */ }
   }
+  // ── BD 2-tier partner network (SHARED with LivoDraft; defensive idempotent creates so the
+  //    portal never breaks if it queries before LivoDraft has migrated the shared DB) ──
+  await add("role");           // partner role label (CA / influencer / agency / campus ambassador…)
+  await add("parent_bd_id");   // the BD intern this partner sits under ('' = top-level / a BD itself)
+  await c.query(`CREATE TABLE IF NOT EXISTS partner_codes (
+    code TEXT PRIMARY KEY, employee_id TEXT NOT NULL,
+    discount_pct REAL DEFAULT 25, commission_pct REAL DEFAULT 10, override_pct REAL DEFAULT 2,
+    active INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`);
+  await c.query(`CREATE TABLE IF NOT EXISTS partner_roles (role TEXT PRIMARY KEY, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`);
+  for (const rl of ["Chartered Accountant", "Influencer", "Thesis Writing Agency", "Campus Ambassador"]) {
+    try { await c.query(`INSERT INTO partner_roles (role) VALUES ($1) ON CONFLICT DO NOTHING`, [rl]); } catch { /* */ }
+  }
+  await c.query(`ALTER TABLE employee_commissions ADD COLUMN IF NOT EXISTS tier TEXT DEFAULT 'direct'`);
+  // Network Partner/CA payout profile (bank + UPI) — so commission can be auto-paid; the partner fills these
+  // in their own portal profile, or the owner sets them in the LivoDraft admin.
+  await add("payout_account_name"); await add("payout_account_no"); await add("payout_ifsc");
+  await add("payout_upi"); await add("payout_pan");
+  // Network-partner approval: BD-added partners start pending until the owner approves.
+  await add("partner_approved", "INTEGER DEFAULT 1");
   schemaReady = true;
 }
 
@@ -142,23 +185,32 @@ export async function getEmployeeByEmail(email: string) {
   });
 }
 
-/** All LivoDraft promo codes linked to an employee, grouped by employee_id.
- *  Defensive: a missing promo_codes table must not break the dashboard. */
+/** Every code linked to an employee, grouped by employee_id — BOTH the old promo-style
+ *  employee codes AND the new referral-style partner/affiliate codes. Defensive: a missing
+ *  table must never break the dashboard. */
 async function employeeCodesMap(c: PoolClient): Promise<Record<string, EmployeeCode[]>> {
+  const map: Record<string, EmployeeCode[]> = {};
   try {
     const r = await c.query(
       `SELECT employee_id, code, commission_pct, active, uses FROM promo_codes
        WHERE employee_id IS NOT NULL AND employee_id <> ''`);
-    const map: Record<string, EmployeeCode[]> = {};
     for (const row of r.rows) {
       (map[row.employee_id] ||= []).push({
         code: row.code, commission_pct: +row.commission_pct, active: +row.active, uses: +(row.uses || 0),
       });
     }
-    return map;
-  } catch {
-    return {};
-  }
+  } catch { /* promo_codes may not exist in a fresh DB */ }
+  try {
+    const p = await c.query(
+      `SELECT employee_id, code, commission_pct, active FROM partner_codes
+       WHERE employee_id IS NOT NULL AND employee_id <> ''`);
+    for (const row of p.rows) {
+      (map[row.employee_id] ||= []).push({
+        code: row.code, commission_pct: +row.commission_pct, active: +row.active, uses: 0,
+      });
+    }
+  } catch { /* partner_codes not migrated yet */ }
+  return map;
 }
 
 const PROFILE_COLS = "e.dob,e.address,e.id_type,e.id_number,e.is_student,e.college,e.student_id,e.start_date,e.duration,e.custom_answers";
@@ -222,6 +274,246 @@ export async function employeeOwnData(email: string) {
   const orders = await listCommissionOrders(emp.id);
   return { employee: safeEmp as Employee, summary, orders };
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  BD 2-TIER PARTNER NETWORK  (CA · influencer · agency · campus ambassador …)
+//  Codes live in LivoDraft's shared DB. A BD intern recruits partners who each get a
+//  referral-style affiliate code; the BD earns an override on their whole network.
+// ══════════════════════════════════════════════════════════════════════════════
+export type NetworkPartner = {
+  id: string; name: string; email: string | null; mobile: string | null;
+  role: string | null; parent_bd_id: string | null; active: number;
+  code: string; codes: string[];
+  orders: number; sales: number; partner_commission: number;
+  bd_commission: number; bd_pending: number;
+};
+
+const r2 = (n: number) => Math.round(Number(n || 0) * 100) / 100;
+
+/** True company GMV — each sale counted ONCE. A 2-tier sale writes two commission rows (partner
+ *  'direct' + BD 'override') with the same order_amount, so we sum only the non-override rows. */
+export async function companyGmv(): Promise<number> {
+  return withClient(async (c) => {
+    try {
+      const r = await c.query(
+        `SELECT COALESCE(SUM(order_amount_inr),0) g FROM employee_commissions
+         WHERE tier IS DISTINCT FROM 'override'`);
+      return r2(+r.rows[0].g);
+    } catch { return 0; }
+  });
+}
+
+export async function listPartnerRolesPortal(): Promise<string[]> {
+  return withClient(async (c) => {
+    try { return (await c.query(`SELECT role FROM partner_roles ORDER BY role`)).rows.map((x) => x.role); }
+    catch { return []; }
+  });
+}
+
+/** Is this employee a BD intern (i.e. gets the network-builder UI)? True when they already
+ *  have downstream partners, or their role reads as a BD role. */
+export async function partnerBdMeta(email: string): Promise<{ id: string; isBd: boolean } | null> {
+  return withClient(async (c) => {
+    const e = await c.query(
+      `SELECT id, role, emp_type, parent_bd_id FROM employees WHERE LOWER(email)=LOWER($1) LIMIT 1`, [email]);
+    if (!e.rows[0]) return null;
+    const row = e.rows[0];
+    const id = row.id;
+    const topLevelPartner = row.emp_type === "partner" && !String(row.parent_bd_id || "").trim();
+    // A BD (network-builder) is: an explicit BD role/type, OR any top-level partner partner (so they
+    // can recruit their first partner without a chicken-and-egg), OR anyone who already has partners.
+    let isBd = /\bbd\b|business\s*development/i.test(String(row.role || "")) || row.emp_type === "bd" || topLevelPartner;
+    if (!isBd) {
+      try { isBd = (await c.query(`SELECT 1 FROM employees WHERE parent_bd_id=$1 LIMIT 1`, [id])).rows.length > 0; }
+      catch { /* partner cols not migrated yet */ }
+    }
+    return { id, isBd };
+  });
+}
+
+/** Unclaimed employees a BD may attach as a partner: active, no referral code yet, and not
+ *  already under another BD. (The WRITE still goes through LivoDraft's engine.) */
+export async function listAttachableEmployees(bdId: string): Promise<{ id: string; name: string; emp_type: string }[]> {
+  return withClient(async (c) => {
+    try {
+      const r = await c.query(
+        `SELECT e.id, e.name, e.emp_type FROM employees e
+         WHERE e.active=1 AND COALESCE(e.deleted_at::text,'')=''
+           AND e.id <> $1
+           AND e.id NOT IN (SELECT employee_id FROM partner_codes)
+           AND (COALESCE(e.parent_bd_id,'')='' OR e.parent_bd_id=$1)
+         ORDER BY e.created_at DESC`, [bdId]);
+      return r.rows;
+    } catch { return []; }
+  });
+}
+
+// ── Network-partner APPROVAL (owner approves a BD-added partner → login + activate code) ──
+export type PendingPartner = { id: string; name: string; email: string | null; mobile: string | null; role: string | null; bd_name: string; code: string; created_at: string };
+
+export async function listPendingPartners(): Promise<PendingPartner[]> {
+  return withClient(async (c) => {
+    try {
+      const r = await c.query(
+        `SELECT e.id, e.name, e.email, e.mobile, e.role, e.created_at,
+                COALESCE(bd.name,'') AS bd_name,
+                COALESCE((SELECT code FROM partner_codes WHERE employee_id=e.id ORDER BY created_at LIMIT 1),'') AS code
+         FROM employees e LEFT JOIN employees bd ON bd.id = e.parent_bd_id
+         WHERE e.emp_type='partner' AND COALESCE(e.partner_approved,1)=0
+           AND COALESCE(e.deleted_at::text,'')=''
+         ORDER BY e.created_at DESC`);
+      return r.rows;
+    } catch { return []; }
+  });
+}
+
+/** Fetch a pending partner's basics (to email them). has_password tells the caller whether they
+ *  ALREADY have a portal login (an existing employee) — so approval never resets it. */
+export async function getPendingPartner(id: string): Promise<{ id: string; name: string; email: string | null; has_password: boolean } | null> {
+  return withClient(async (c) => {
+    const r = await c.query(
+      `SELECT id, name, email, (password_hash IS NOT NULL AND password_hash<>'') AS has_password
+       FROM employees WHERE id=$1 AND emp_type='partner' AND COALESCE(partner_approved,1)=0 LIMIT 1`, [id]);
+    return r.rows[0] || null;
+  });
+}
+
+/** Approve a network partner + ACTIVATE their code(s). passwordHash is set ONLY when provided
+ *  (new person); an existing employee keeps their current login. One transaction — never
+ *  half-approved. */
+export async function approvePartnerWithLogin(id: string, passwordHash?: string | null) {
+  return withClient(async (c) => {
+    await c.query("BEGIN");
+    try {
+      if (passwordHash) {
+        await c.query(`UPDATE employees SET password_hash=$1, partner_approved=1 WHERE id=$2`, [passwordHash, id]);
+      } else {
+        await c.query(`UPDATE employees SET partner_approved=1 WHERE id=$1`, [id]);
+      }
+      await c.query(`UPDATE partner_codes SET active=1 WHERE employee_id=$1`, [id]);
+      await c.query("COMMIT");
+    } catch (e) { await c.query("ROLLBACK"); throw e; }
+  });
+}
+
+// ── HIERARCHY: the buyers (users) under a network partner — spend + commission + status ──
+export type PartnerUser = { name: string; email: string; docs: number; spent: number; commission: number; pending: number; paid: number };
+
+/** Buyers under the given partner employee-ids (a partner passes their own id; a BD passes all
+ *  their partners' ids). Emails are MASKED for privacy. */
+export async function partnerUsers(empIds: string[]): Promise<PartnerUser[]> {
+  if (!empIds || empIds.length === 0) return [];
+  return withClient(async (c) => {
+    try {
+      const r = await c.query(
+        `SELECT u.full_name, u.email,
+                COUNT(DISTINCT ec.job_id) AS docs,
+                COALESCE(SUM(ec.order_amount_inr),0) AS spent,
+                COALESCE(SUM(ec.commission_inr),0) AS commission,
+                COALESCE(SUM(CASE WHEN ec.status='pending' THEN ec.commission_inr ELSE 0 END),0) AS pending,
+                COALESCE(SUM(CASE WHEN ec.status='paid'    THEN ec.commission_inr ELSE 0 END),0) AS paid
+         FROM employee_commissions ec
+         JOIN generation_jobs gj ON gj.id = ec.job_id
+         JOIN users u ON u.id = gj.user_id
+         WHERE ec.employee_id = ANY($1) AND ec.tier='direct'
+         GROUP BY u.id, u.full_name, u.email
+         ORDER BY spent DESC`, [empIds]);
+      return r.rows.map((x) => ({
+        name: (x.full_name || "").split(" ")[0] || "Student",
+        email: maskEmail(x.email || ""),
+        docs: +x.docs, spent: r2(+x.spent), commission: r2(+x.commission),
+        pending: r2(+x.pending), paid: r2(+x.paid),
+      }));
+    } catch { return []; }
+  });
+}
+
+function maskEmail(e: string): string {
+  const [u, d] = String(e || "").split("@");
+  if (!d) return "—";
+  const shown = u.length <= 2 ? u[0] || "" : u.slice(0, 2);
+  return `${shown}${"*".repeat(Math.max(1, u.length - shown.length))}@${d}`;
+}
+
+/** Is this logged-in employee a network partner, who's their BD, and their active referral code
+ *  (for the shareable link + QR). (For their own dashboard.) */
+export async function partnerSelf(email: string): Promise<{ id: string; isPartner: boolean; bd_name: string; ref_code: string } | null> {
+  return withClient(async (c) => {
+    const r = await c.query(
+      `SELECT e.id, e.emp_type, COALESCE(bd.name,'') AS bd_name,
+              EXISTS(SELECT 1 FROM partner_codes p WHERE p.employee_id=e.id) AS has_code,
+              COALESCE((SELECT code FROM partner_codes p WHERE p.employee_id=e.id AND p.active=1 ORDER BY p.created_at LIMIT 1),'') AS ref_code
+       FROM employees e LEFT JOIN employees bd ON bd.id=e.parent_bd_id
+       WHERE LOWER(e.email)=LOWER($1) LIMIT 1`, [email]);
+    if (!r.rows[0]) return null;
+    const row = r.rows[0];
+    return { id: row.id, isPartner: row.emp_type === "partner" || row.has_code, bd_name: row.bd_name, ref_code: row.ref_code };
+  });
+}
+
+async function networkOf(c: PoolClient, bdId: string): Promise<NetworkPartner[]> {
+  let partners: any[] = [];
+  try {
+    partners = (await c.query(
+      `SELECT id,name,email,mobile,role,parent_bd_id,active FROM employees
+       WHERE parent_bd_id=$1 ORDER BY created_at DESC`, [bdId])).rows;
+  } catch { return []; }
+  const out: NetworkPartner[] = [];
+  for (const s of partners) {
+    let codes: string[] = [];
+    try { codes = (await c.query(`SELECT code FROM partner_codes WHERE employee_id=$1`, [s.id])).rows.map((x) => x.code); } catch { /* */ }
+    const d = (await c.query(
+      `SELECT COUNT(*)::int n, COALESCE(SUM(order_amount_inr),0) sales, COALESCE(SUM(commission_inr),0) earned
+       FROM employee_commissions WHERE employee_id=$1 AND tier='direct'`, [s.id])).rows[0];
+    const ov = (await c.query(
+      `SELECT COALESCE(SUM(commission_inr),0) bd_earned,
+              COALESCE(SUM(CASE WHEN status='pending' THEN commission_inr ELSE 0 END),0) bd_pending
+       FROM employee_commissions WHERE employee_id=$1 AND tier='override'
+         AND code IN (SELECT code FROM partner_codes WHERE employee_id=$2)`, [bdId, s.id])).rows[0];
+    out.push({
+      id: s.id, name: s.name, email: s.email, mobile: s.mobile, role: s.role,
+      parent_bd_id: s.parent_bd_id, active: +s.active,
+      code: codes[0] || "", codes,
+      orders: +d.n, sales: r2(d.sales), partner_commission: r2(d.earned),
+      bd_commission: r2(ov.bd_earned), bd_pending: r2(ov.bd_pending),
+    });
+  }
+  return out;
+}
+
+export async function listPartnerNetwork(bdId: string): Promise<NetworkPartner[]> {
+  return withClient((c) => networkOf(c, bdId));
+}
+
+/** Owner observer: every BD intern (any employee with ≥1 downstream partner) + their network. */
+export async function listPartnerBds(): Promise<
+  { id: string; name: string; network: NetworkPartner[]; bd_earned: number; bd_pending: number }[]
+> {
+  return withClient(async (c) => {
+    let ids: any[] = [];
+    try {
+      ids = (await c.query(
+        `SELECT DISTINCT parent_bd_id FROM employees
+         WHERE parent_bd_id IS NOT NULL AND parent_bd_id<>''`)).rows;
+    } catch { return []; }
+    const out = [];
+    for (const row of ids) {
+      const bd = (await c.query(`SELECT id,name FROM employees WHERE id=$1`, [row.parent_bd_id])).rows[0];
+      if (!bd) continue;
+      const network = await networkOf(c, bd.id);
+      out.push({
+        id: bd.id, name: bd.name, network,
+        bd_earned: r2(network.reduce((a, s) => a + s.bd_commission, 0)),
+        bd_pending: r2(network.reduce((a, s) => a + s.bd_pending, 0)),
+      });
+    }
+    return out;
+  });
+}
+
+// NOTE: partner CODES are minted by LivoDraft's single engine (Python). The portal never
+// generates a code itself — the BD self-serve route forwards to LivoDraft's partner API. This
+// keeps one source of truth for code format, uniqueness and the locked rates/scopes.
 
 /** Onboarding form → shared registry. Dedup by email: create if new, else update the
  *  profile fields (never touch password/commission on an existing row). */
@@ -464,7 +756,12 @@ export async function getEmployeeProfile(email: string) {
   return withClient(async (c) => {
     const r = await c.query(
       `SELECT id,name,email,mobile,dob,address,start_date,duration,emp_type,track,
-              id_type,id_number,is_student,college,student_id,custom_answers
+              id_type,id_number,is_student,college,student_id,custom_answers,
+              COALESCE(payout_account_name,'') payout_account_name,
+              COALESCE(payout_account_no,'')   payout_account_no,
+              COALESCE(payout_ifsc,'')         payout_ifsc,
+              COALESCE(payout_upi,'')          payout_upi,
+              COALESCE(payout_pan,'')          payout_pan
        FROM employees WHERE LOWER(email)=LOWER($1) LIMIT 1`, [email]);
     return r.rows[0] || null;
   });
@@ -472,6 +769,7 @@ export async function getEmployeeProfile(email: string) {
 export async function updateEmployeeProfile(email: string, f: {
   name?: string; mobile?: string; dob?: string; address?: string; start_date?: string;
   id_type?: string; id_number?: string; is_student?: string; college?: string; student_id?: string;
+  payout_account_name?: string; payout_account_no?: string; payout_ifsc?: string; payout_upi?: string; payout_pan?: string;
 }) {
   const v = (x?: string) => (x && x.trim() ? x.trim() : null);
   // COALESCE everywhere: a field the caller omits keeps whatever onboarding stored.
@@ -482,10 +780,13 @@ export async function updateEmployeeProfile(email: string, f: {
     `UPDATE employees SET name=COALESCE($2,name), mobile=COALESCE($3,mobile), dob=COALESCE($4,dob),
        address=COALESCE($5,address), start_date=COALESCE($6,start_date),
        id_type=COALESCE($7,id_type), id_number=COALESCE($8,id_number),
-       is_student=COALESCE($9,is_student), college=COALESCE($10,college), student_id=COALESCE($11,student_id)
+       is_student=COALESCE($9,is_student), college=COALESCE($10,college), student_id=COALESCE($11,student_id),
+       payout_account_name=COALESCE($12,payout_account_name), payout_account_no=COALESCE($13,payout_account_no),
+       payout_ifsc=COALESCE($14,payout_ifsc), payout_upi=COALESCE($15,payout_upi), payout_pan=COALESCE($16,payout_pan)
      WHERE LOWER(email)=LOWER($1)`,
     [email, v(f.name), v(f.mobile), v(f.dob), v(f.address), v(f.start_date),
-     v(f.id_type), v(f.id_number), v(f.is_student), clr(f.college), clr(f.student_id)]));
+     v(f.id_type), v(f.id_number), v(f.is_student), clr(f.college), clr(f.student_id),
+     v(f.payout_account_name), v(f.payout_account_no), v(f.payout_ifsc), v(f.payout_upi), v(f.payout_pan)]));
 }
 export async function getCompanyProfile() {
   return withClient(async (c) => {
@@ -500,4 +801,125 @@ export async function saveCompanyProfile(f: { full_name?: string; email?: string
      VALUES (1,$1,$2,$3,$4,$5,$6,now())
      ON CONFLICT (id) DO UPDATE SET full_name=$1,email=$2,mobile=$3,dob=$4,address=$5,start_date=COALESCE($6, company_profile.start_date),updated_at=now()`,
     [v(f.full_name), v(f.email), v(f.mobile), v(f.dob), v(f.address), v(f.start_date)]));
+}
+
+// ── Careers / job openings ───────────────────────────────────────────────────
+export type Opening = {
+  id: string; slug: string; title: string; department: string | null;
+  emp_type: string; work_mode: string; location: string | null;
+  experience: string | null; compensation: string | null; openings: number;
+  summary: string | null; description: string | null; apply_by: string | null;
+  status: "draft" | "open" | "closed"; created_at?: string; updated_at?: string;
+  /** The application form the owner designed for THIS role (see lib/careers-fields). */
+  form_fields: Field[];
+};
+
+/** URL-safe slug; callers must still handle the unique-key clash. */
+export function slugifyTitle(s: string): string {
+  return String(s).toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "role";
+}
+
+/** pg returns timestamptz as a Date, not a string — hand callers ISO text so a page that
+ *  does created_at.slice(0,10) (for JobPosting's datePosted) can't blow up with a 500. */
+function asOpening(row: any): Opening {
+  const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v ? String(v) : undefined);
+  return {
+    ...row, openings: Number(row.openings) || 1,
+    // Anything on the row could predate a field type or have been edited by hand.
+    form_fields: normaliseFields(row.form_fields),
+    created_at: iso(row.created_at), updated_at: iso(row.updated_at),
+  };
+}
+
+/** Today in IST — the closing date the owner typed is an Indian calendar date. */
+function todayIST(): string {
+  return new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+/** A role whose closing date has passed closes itself, so the owner never has to remember.
+ *  Runs opportunistically on read (same approach as the employee purge) — no cron needed. */
+async function autoCloseExpired(c: PoolClient) {
+  try {
+    await c.query(
+      `UPDATE job_openings SET status='closed', updated_at=now()
+       WHERE status='open' AND apply_by IS NOT NULL AND apply_by <> '' AND apply_by < $1`,
+      [todayIST()]);
+  } catch { /* never block reading the careers page */ }
+}
+
+export async function listOpenings(opts: { publicOnly?: boolean } = {}): Promise<Opening[]> {
+  return withClient(async (c) => {
+    await autoCloseExpired(c);
+    const r = await c.query(
+      `SELECT * FROM job_openings ${opts.publicOnly ? "WHERE status='open'" : ""}
+       ORDER BY (status='open') DESC, created_at DESC`);
+    return r.rows.map(asOpening);
+  });
+}
+
+export async function getOpeningBySlug(slug: string, publicOnly = false): Promise<Opening | null> {
+  return withClient(async (c) => {
+    await autoCloseExpired(c);
+    const r = await c.query(
+      `SELECT * FROM job_openings WHERE slug=$1 ${publicOnly ? "AND status='open'" : ""} LIMIT 1`, [slug]);
+    return r.rows[0] ? asOpening(r.rows[0]) : null;
+  });
+}
+
+/** Copy a role — JD, settings and its application form — as a fresh draft. */
+export async function duplicateOpening(id: string): Promise<{ id: string; slug: string }> {
+  const src = await withClient(async (c) => {
+    const r = await c.query(`SELECT * FROM job_openings WHERE id=$1 LIMIT 1`, [id]);
+    return r.rows[0] ? asOpening(r.rows[0]) : null;
+  });
+  if (!src) throw new Error("That opening no longer exists");
+  const { id: _id, slug: _slug, created_at, updated_at, ...rest } = src;
+  return upsertOpening({ ...rest, title: `${src.title} (copy)`, status: "draft" });
+}
+
+export async function upsertOpening(f: Partial<Opening> & { title: string }): Promise<{ id: string; slug: string }> {
+  return withClient(async (c) => {
+    const num = (n: unknown, d = 1) => { const v = Math.round(Number(n)); return Number.isFinite(v) && v > 0 ? v : d; };
+    const t = (x: unknown) => { const v = String(x ?? "").trim(); return v || null; };
+    if (f.id) {
+      const r = await c.query(
+        `UPDATE job_openings SET title=$2, department=$3, emp_type=$4, work_mode=$5, location=$6,
+           experience=$7, compensation=$8, openings=$9, summary=$10, description=$11, apply_by=$12,
+           status=$13, form_fields=$14, updated_at=now()
+         WHERE id=$1 RETURNING slug`,
+        [f.id, f.title.trim(), t(f.department), t(f.emp_type) || "Internship", t(f.work_mode) || "Remote",
+         t(f.location), t(f.experience), t(f.compensation), num(f.openings), t(f.summary), t(f.description),
+         t(f.apply_by), f.status || "draft", JSON.stringify(normaliseFields(f.form_fields))]);
+      if (!r.rows[0]) throw new Error("That opening no longer exists");
+      return { id: f.id, slug: r.rows[0].slug };
+    }
+    // New: keep trying suffixes so two roles with the same name can both exist.
+    const base = slugifyTitle(f.title);
+    for (let i = 0; i < 25; i++) {
+      const slug = i ? `${base}-${i + 1}` : base;
+      const id = randomUUID();
+      try {
+        await c.query(
+          `INSERT INTO job_openings (id,slug,title,department,emp_type,work_mode,location,experience,
+             compensation,openings,summary,description,apply_by,status,form_fields)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+          [id, slug, f.title.trim(), t(f.department), t(f.emp_type) || "Internship", t(f.work_mode) || "Remote",
+           t(f.location), t(f.experience), t(f.compensation), num(f.openings), t(f.summary), t(f.description),
+           t(f.apply_by), f.status || "draft",
+           JSON.stringify(f.form_fields ? normaliseFields(f.form_fields) : defaultFields())]);
+        return { id, slug };
+      } catch (e: any) {
+        if (!/duplicate key|unique/i.test(String(e?.message))) throw e;
+      }
+    }
+    throw new Error("Could not create a unique link for that title");
+  });
+}
+
+export async function setOpeningStatus(id: string, status: "draft" | "open" | "closed") {
+  return withClient((c) => c.query(`UPDATE job_openings SET status=$2, updated_at=now() WHERE id=$1`, [id, status]));
+}
+export async function deleteOpening(id: string) {
+  return withClient((c) => c.query(`DELETE FROM job_openings WHERE id=$1`, [id]));
 }

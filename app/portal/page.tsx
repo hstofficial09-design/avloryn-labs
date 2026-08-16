@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/portal-auth";
-import { getEmployeeProfile, commissionTracksMap, trackHasCommission } from "@/lib/portal-db";
+import { getEmployeeProfile, commissionTracksMap, trackHasCommission, partnerBdMeta } from "@/lib/portal-db";
 import PortalHub from "./PortalHub";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export default async function PortalPage() {
     );
   }
 
-  let name = s.name || "there", isCommissionRole = false, role = "Employee", needsProfile = false;
+  let name = s.name || "there", isCommissionRole = false, role = "Employee", needsProfile = false, isBd = false;
   try {
     const prof: any = await getEmployeeProfile(s.email);
     if (prof && !prof.dob) { needsProfile = true; }
@@ -28,6 +28,8 @@ export default async function PortalPage() {
       isCommissionRole = trackHasCommission(prof?.track, map);
       name = prof?.name || name;
       role = prof?.emp_type === "intern" ? `Intern${prof?.track ? " · " + prof.track : ""}` : "Employee";
+      const meta = await partnerBdMeta(s.email).catch(() => null);
+      isBd = !!meta?.isBd;
     }
   } catch { /* fall back to defaults */ }
   // Missing key info (DOB) → complete profile first (redirect OUTSIDE try/catch).
@@ -35,7 +37,7 @@ export default async function PortalPage() {
 
   return (
     <main className="portal-light min-h-screen">
-      <PortalHub role={role} name={name} isOwner={false} isCommissionRole={isCommissionRole} />
+      <PortalHub role={role} name={name} isOwner={false} isCommissionRole={isCommissionRole} isBd={isBd} />
     </main>
   );
 }

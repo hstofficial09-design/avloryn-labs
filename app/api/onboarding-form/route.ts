@@ -57,7 +57,7 @@ function isRateLimited(ip: string): boolean {
   return recent.length > 6;
 }
 
-type Fonts = { reg: PDFFont; bold: PDFFont };
+type Fonts = { reg: PDFFont; bold: PDFFont; ital: PDFFont; boldItal: PDFFont };
 
 function b64ToBytes(dataUrlOrB64: string): Uint8Array {
   const b64 = dataUrlOrB64.includes(",")
@@ -92,6 +92,31 @@ export function pdfSafe(s: string): string {
     // anything else is dropped — better a missing character than a lost submission
   }
   return out;
+}
+
+/**
+ * The portal editors write a small marker language (## heading, - bullet, 1. numbered,
+ * **bold**, *italic*, [text](link)). These documents are the legal record, so the PDF has to
+ * RENDER those markers — printing a literal "**" in a signed agreement would be worse than
+ * not offering the button at all.
+ */
+type Run = { t: string; b?: boolean; i?: boolean };
+
+function richRuns(src: string): Run[] {
+  // A PDF can't hold a clickable link here, so show the address alongside the words.
+  const s = pdfSafe(src).replace(/\[([^\]\n]{1,120})\]\(([^)\s]{1,300})\)/g, (_m, t, u) => `${t} (${u})`);
+  const out: Run[] = [];
+  const re = /(\*\*[^*\n]+\*\*|(?<!\*)\*[^*\n]+\*(?!\*))/g;
+  let last = 0, m: RegExpExecArray | null;
+  while ((m = re.exec(s))) {
+    if (m.index > last) out.push({ t: s.slice(last, m.index) });
+    const tok = m[0];
+    if (tok.startsWith("**")) out.push({ t: tok.slice(2, -2), b: true });
+    else out.push({ t: tok.slice(1, -1), i: true });
+    last = re.lastIndex;
+  }
+  if (last < s.length) out.push({ t: s.slice(last) });
+  return out.length ? out : [{ t: s }];
 }
 
 function wrap(rawText: string, font: PDFFont, size: number, maxW: number): string[] {
@@ -163,13 +188,51 @@ class Doc {
   }
   para(text: string, opts: { size?: number; font?: PDFFont; color?: ReturnType<typeof rgb>; gap?: number } = {}) {
     const size = opts.size ?? 10.5;
-    const font = opts.font ?? this.fonts.reg;
+    const strong = (opts.font ?? this.fonts.reg) === this.fonts.bold;
     const lh = size + 4;
-    const maxW = A4[0] - MARGIN * 2;
-    for (const line of wrap(text, font, size, maxW)) {
-      this.ensure(lh);
-      this.page.drawText(line, { x: MARGIN, y: this.y, size, font, color: opts.color ?? INK });
-      this.y -= lh;
+    const color = opts.color ?? INK;
+    const pick = (r: Run) =>
+      (r.b || strong) ? (r.i ? this.fonts.boldItal : this.fonts.bold) : r.i ? this.fonts.ital : this.fonts.reg;
+
+    for (const rawLine of pdfSafe(text).split("\n")) {
+      // A heading or list marker belongs to the line, not to the words.
+      let line = rawLine, indent = 0, lineStrong = strong;
+      const head = /^#{1,3}\s+/.exec(line);
+      if (head) { line = line.slice(head[0].length); lineStrong = true; }
+      const bullet = /^[-•*]\s+/.exec(line);
+      if (bullet) { line = "• " + line.slice(bullet[0].length); indent = 10; }
+      const num = /^(\d+[.)])\s+/.exec(line);
+      if (num) { line = `${num[1]} ` + line.slice(num[0].length); indent = 10; }
+
+      const maxW = A4[0] - MARGIN * 2 - indent;
+      // Lay words out one at a time so a bold phrase can wrap mid-sentence.
+      const words: { w: string; f: PDFFont }[] = [];
+      for (const r of richRuns(line)) {
+        const f = lineStrong && !r.b ? (r.i ? this.fonts.boldItal : this.fonts.bold) : pick(r);
+        for (const w of r.t.split(/\s+/)) if (w) words.push({ w, f });
+      }
+      if (!words.length) { this.y -= lh; continue; }
+
+      let row: { w: string; f: PDFFont }[] = [];
+      const rowWidth = (arr: typeof row) =>
+        arr.reduce((n, p, i) => n + p.f.widthOfTextAtSize(p.w, size) + (i ? p.f.widthOfTextAtSize(" ", size) : 0), 0);
+      const flush = () => {
+        if (!row.length) return;
+        this.ensure(lh);
+        let x = MARGIN + indent;
+        row.forEach((p, i) => {
+          if (i) x += p.f.widthOfTextAtSize(" ", size);
+          this.page.drawText(p.w, { x, y: this.y, size, font: p.f, color });
+          x += p.f.widthOfTextAtSize(p.w, size);
+        });
+        this.y -= lh;
+        row = [];
+      };
+      for (const word of words) {
+        if (row.length && rowWidth([...row, word]) > maxW) flush();
+        row.push(word);
+      }
+      flush();
     }
     this.y -= opts.gap ?? 6;
   }
@@ -320,12 +383,14 @@ export async function POST(req: Request) {
       const pdf = await PDFDocument.create();
       const reg = await pdf.embedFont(StandardFonts.Helvetica);
       const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+      const ital = await pdf.embedFont(StandardFonts.HelveticaOblique);
+      const boldItal = await pdf.embedFont(StandardFonts.HelveticaBoldOblique);
       let logo: PDFImage | undefined;
       try {
         const bytes = await fs.readFile(path.join(process.cwd(), "public", "avloryn-mark.png"));
         logo = await pdf.embedPng(new Uint8Array(bytes));
       } catch {}
-      return { pdf, fonts: { reg, bold }, logo };
+      return { pdf, fonts: { reg, bold, ital, boldItal }, logo };
     };
 
     const files = (body.files ?? {}) as Record<string, { kind: string; b64: string }>;

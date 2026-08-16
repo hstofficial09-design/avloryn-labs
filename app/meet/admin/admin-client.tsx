@@ -1,8 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { LogoMark } from "@/components/ui/logo";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { JobDescriptionPreview } from "@/components/careers/jd";
 
-type Member = { id: string; name: string; email: string; timezone: string; active: boolean; is_organizer: boolean; googleConnected: boolean; googleNeedsReconnect?: boolean; googleEmail: string | null; zohoConnected: boolean; zohoNeedsReconnect?: boolean; zohoEmail: string | null; connectLink: string; zohoConnectLink: string };
+type Member = { id: string; name: string; email: string; timezone: string; active: boolean; is_organizer: boolean; googleConnected: boolean; googleNeedsReconnect?: boolean; googleEmail: string | null; zohoConnected: boolean; zohoNeedsReconnect?: boolean; zohoEmail: string | null; connectLink: string | null; zohoConnectLink: string | null };
 type Question = { id?: string; label: string; required: boolean; type?: string; options?: string[] };
 type MType = { id: string; name: string; slug: string; duration_min: number; buffer_before_min: number; buffer_after_min: number; min_notice_min: number; slot_granularity_min: number; mode: "any" | "all"; member_ids: string[]; description: string; active: boolean; max_advance_days?: number; followup_enabled?: boolean; questions?: Question[]; price_inr?: number; requires_approval?: boolean; durations?: number[]; reminders?: number[] };
 type Coupon = { code: string; kind: "percent" | "flat"; value: number; active: boolean; max_uses: number; uses: number };
@@ -142,6 +144,9 @@ function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { memb
               {(() => {
                 const rv = reveal.has(m.id);
                 const anyConnected = m.googleConnected || (zohoReady && m.zohoConnected);
+                // The server only issues a connect link for you or (as owner) for anyone —
+                // no link means it isn't yours to hand out.
+                if (!m.connectLink) return null;
                 return (
                   <div className="mt-3 space-y-1.5">
                     {rv && (
@@ -343,7 +348,14 @@ function TypesTab({ types, members, reload, copy, copied, origin }: { types: MTy
               {form.member_ids.map((id) => <option key={id} value={id}>{nameOf(id)}</option>)}
             </select>
           </div>
-          <div className="sm:col-span-2"><label className={label}>Description <span className="text-faint font-normal">(optional)</span></label><textarea value={form.description} onChange={(x) => set("description", x.target.value)} rows={2} className={input + " resize-none"} /></div>
+          <div className="sm:col-span-2">
+            <label className={label}>Description <span className="text-faint font-normal">(optional — shown to whoever opens the booking link)</span></label>
+            <RichTextEditor
+              value={form.description} onChange={(v) => set("description", v)} rows={4}
+              preview={(src) => <JobDescriptionPreview source={src} />}
+              hint={<>Type it or use the buttons: ## Heading · - bullet · 1. numbered · **bold** · *italic* · [text](link).</>}
+            />
+          </div>
 
           {/* custom booking-form fields */}
           <div className="sm:col-span-2">

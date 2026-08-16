@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canSchedule } from "@/lib/booking/admin";
+import { schedulingScope } from "@/lib/booking/admin";
 import { listMembers, membersWithGoogle, membersWithZoho } from "@/lib/booking/db";
 import { memberEvents } from "@/lib/booking/google";
 import { getZohoBusy } from "@/lib/booking/zoho";
@@ -17,17 +17,34 @@ const CACHE_TTL = 45_000;
 // Each connected member's REAL calendar events (Google + Zoho) as busy intervals,
 // so the Team Calendar shows meetings created directly in Gmail/Zoho too.
 export async function GET(req: Request) {
-  if (!(await canSchedule())) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+  const scope = await schedulingScope();
+  if (!scope.ok) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
   const sp = new URL(req.url).searchParams;
   const from = sp.get("from"), to = sp.get("to");
   if (!from || !to) return NextResponse.json({ error: "from/to required" }, { status: 400 });
 
+  // Everyone may see WHEN a colleague is occupied — that is the point of a shared calendar —
+  // but not WHAT the entry is: these blocks come from people's real Google/Zoho calendars and
+  // include their private appointments. So titles are kept only for your own row (the owner
+  // sees all). ⚠ The cache is keyed by date range alone, so it must hold the unredacted data
+  // and redaction must happen per response — otherwise one person is served another's view.
+  const redact = (p: Payload): Payload => {
+    if (scope.owner) return p;
+    return { busy: (p.busy as any[]).map((row) =>
+      row.memberId === scope.memberId ? row
+        : { ...row, intervals: (row.intervals as any[]).map(({ title, ...rest }) => rest) }) };
+  };
+
   const cacheKey = `${from}|${to}`;
   if (!sp.get("fresh")) {
     const hit = _cache.get(cacheKey);
-    if (hit && Date.now() - hit.t < CACHE_TTL) return NextResponse.json(hit.data);
+    if (hit && Date.now() - hit.t < CACHE_TTL) return NextResponse.json(redact(hit.data));
   }
 
+  // Everyone sees the whole team's busy blocks — that is the point of a shared calendar, and
+  // it is how you can tell a colleague is occupied. These are opaque time blocks: no join
+  // link and no actions ride on them. The meeting itself (link, reschedule, cancel) comes from
+  // /bookings, which IS scoped to the people attending it.
   const members = await listMembers(true);
   const ids = members.map((m) => m.id);
   const [g, z] = await Promise.all([membersWithGoogle(ids), membersWithZoho(ids)]);
@@ -65,5 +82,5 @@ export async function GET(req: Request) {
   _cache.set(cacheKey, { t: Date.now(), data: payload });
   // Keep the cache from growing unbounded across many week ranges.
   if (_cache.size > 40) { const oldest = [..._cache.entries()].sort((a, b) => a[1].t - b[1].t)[0]; if (oldest) _cache.delete(oldest[0]); }
-  return NextResponse.json(payload);
+  return NextResponse.json(redact(payload));
 }

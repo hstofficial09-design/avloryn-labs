@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canSchedule } from "@/lib/booking/admin";
+import { canSchedule, schedulingScope } from "@/lib/booking/admin";
 import { listMembers, addMember, updateMember, deleteMember, membersWithGoogle, getGoogle, membersWithZoho, getZoho, setAvailability } from "@/lib/booking/db";
 import { signMemberToken } from "@/lib/booking/link";
 import { googleConfigured, verifyMemberGoogle } from "@/lib/booking/google";
@@ -15,7 +15,8 @@ const deny = () => NextResponse.json({ error: "Not authorized" }, { status: 401 
 const DEFAULT_HOURS = [1, 2, 3, 4, 5].map((weekday) => ({ weekday, start: "10:00", end: "19:00" }));
 
 export async function GET() {
-  if (!(await canSchedule())) return deny();
+  const scope = await schedulingScope();
+  if (!scope.ok) return deny();
   const members = await listMembers();
   const ids = members.map((m) => m.id);
   const [gConnected, zConnected] = await Promise.all([membersWithGoogle(ids), membersWithZoho(ids)]);
@@ -25,7 +26,11 @@ export async function GET() {
         gConnected.has(m.id) ? getGoogle(m.id) : Promise.resolve(null),
         zConnected.has(m.id) ? getZoho(m.id) : Promise.resolve(null),
       ]);
-      const token = signMemberToken(m.id);
+      // A connect link is a signed token that binds a Google/Zoho account to THIS member.
+      // Handing every colleague everyone's link would let one person attach their own
+      // calendar in someone else's place, so only the owner and the member get it.
+      const mine = scope.owner || m.id === scope.memberId;
+      const token = mine ? signMemberToken(m.id) : "";
       // Verify rather than assume: a stored token can be revoked without us knowing.
       // Verify rather than assume: a stored token can be revoked without us knowing. One check
       // each — getAccessToken()/zohoAccess() reuse a still-valid token and only hit the network
@@ -44,8 +49,8 @@ export async function GET() {
         zohoNeedsReconnect: !!z && !zohoWorks,
         zohoEmail: z?.zoho_email || null,
         // Signed links the owner shares so the member connects their own calendar(s).
-        connectLink: `/api/meet/google/connect?t=${token}`,
-        zohoConnectLink: `/api/meet/zoho/connect?t=${token}`,
+        connectLink: mine ? `/api/meet/google/connect?t=${token}` : null,
+        zohoConnectLink: mine ? `/api/meet/zoho/connect?t=${token}` : null,
       };
     })
   );

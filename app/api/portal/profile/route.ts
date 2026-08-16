@@ -35,6 +35,9 @@ export async function POST(req: Request) {
         mobile: d.mobile, dob: d.dob, address: d.address,
         id_type: d.id_type, id_number: d.id_number,
         is_student: d.is_student, college: d.college, student_id: d.student_id,
+        // Payout details (for commission auto-payout) — the partner fills their own.
+        payout_account_name: d.payout_account_name, payout_account_no: d.payout_account_no,
+        payout_ifsc: d.payout_ifsc, payout_upi: d.payout_upi, payout_pan: d.payout_pan,
       });
     }
     return NextResponse.json({ ok: true });

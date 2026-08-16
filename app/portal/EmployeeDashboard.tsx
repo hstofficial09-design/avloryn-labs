@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogoMark } from "@/components/ui/logo";
 import { PasswordInput } from "@/components/ui/password-input";
+import FamilyChart, { type TreeNode } from "./FamilyChart";
 
 type Code = { code: string; commission_pct: number; active: number; uses: number };
 type Data = {
@@ -15,9 +16,14 @@ const inr = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
 const GOLD = "btn-gold rounded-full font-[560]";
 
-export default function EmployeeDashboard({ name, data, error, commissionRole }: { name: string; data: Data | null; error: string | null; commissionRole?: boolean }) {
+type PartnerUser = { name: string; email: string; docs: number; spent: number; commission: number; pending: number; paid: number };
+export default function EmployeeDashboard({ name, data, error, commissionRole, isPartner, bdName, users, refCode, refLink, livoBase }: { name: string; data: Data | null; error: string | null; commissionRole?: boolean; isPartner?: boolean; bdName?: string; users?: PartnerUser[]; refCode?: string; refLink?: string; livoBase?: string }) {
   const router = useRouter();
   async function logout() { await fetch("/api/portal/logout", { method: "POST" }); router.push("/portal/login"); }
+  const [copied, setCopied] = useState(false);
+  async function copyLink() { try { await navigator.clipboard.writeText(refLink || ""); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* */ } }
+  const waMsg = refLink ? `Get your thesis done on LivoDraft — 25% off your first document with my link: ${refLink}` : "";
+  const waHref = `https://wa.me/?text=${encodeURIComponent(waMsg)}`;
 
   const s = data?.summary;
   const emp = data?.employee;
@@ -111,8 +117,24 @@ export default function EmployeeDashboard({ name, data, error, commissionRole }:
                   : <div className="text-[13px] text-faint mt-1">Owner will share it soon</div>}
               </div>
               <div><div className="section-label">Your commission</div><div className="font-bold text-gold mt-1">{commissionPct}% of net sale</div></div>
-              <div><div className="section-label">Role</div><div className="font-[560] mt-1">{emp.emp_type === "intern" ? `Intern${emp.track ? " · " + emp.track : ""}` : "Employee"}</div></div>
+              <div><div className="section-label">{isPartner ? "Role" : "Role"}</div><div className="font-[560] mt-1">{isPartner ? "Network Partner" : (emp.emp_type === "intern" ? `Intern${emp.track ? " · " + emp.track : ""}` : "Employee")}</div></div>
+              {isPartner && bdName && <div><div className="section-label">Your BD</div><div className="font-[560] mt-1">{bdName}</div></div>}
             </div>
+
+            {refLink && (
+              <div className="card-lux rounded-2xl p-5 mb-5 flex flex-col sm:flex-row gap-5 items-start">
+                <img src={`${livoBase || "https://livodraft.com"}/qr?d=${encodeURIComponent(refLink)}`} alt="Your referral QR" width={128} height={128} className="rounded-xl ring-1 ring-border bg-white shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-serif text-[16px] font-[600] mb-1">Share &amp; earn</div>
+                  <p className="text-[12.5px] text-muted-foreground mb-3">Share your link or QR. Anyone who signs up through it becomes yours — they get 25% off their first document and you earn commission on every document, for life.</p>
+                  <div className="flex items-center gap-2 mb-3">
+                    <input readOnly value={refLink} className="flex-1 min-w-0 text-[12.5px] neu-inset rounded-lg px-3 py-2 font-mono text-foreground" onFocus={(e) => e.currentTarget.select()} />
+                    <button onClick={copyLink} className={GHOST + " text-[12px] px-3 py-2 shrink-0"}>{copied ? "Copied ✓" : "Copy"}</button>
+                  </div>
+                  <a href={waHref} target="_blank" rel="noopener noreferrer" className={GOLD + " text-[12.5px] px-4 py-2 inline-block"}>Share on WhatsApp</a>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
               <Stat k="Commission earned" v={inr(s?.earned || 0)} tone="#A9852F" />
@@ -146,6 +168,50 @@ export default function EmployeeDashboard({ name, data, error, commissionRole }:
               </div>
             </div>
             <p className="text-center text-[12px] text-faint mt-4">New Avloryn products will also show up here, tagged by product name. Payouts reach your bank once the owner pays.</p>
+
+            {isPartner && (
+              <section className="mt-8">
+                <h2 className="font-serif text-[20px] font-[600] tracking-[-0.01em] mb-1">Your users</h2>
+                <p className="text-[13px] text-muted-foreground mb-3">Students who came through your code — what they spent and your commission. Emails are masked for privacy.</p>
+                <div className="card-lux rounded-2xl overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[13px] min-w-[600px]">
+                      <thead><tr className="section-label bg-subtle/60">
+                        <Th>Student</Th><Th>Email</Th><Th r>Docs</Th><Th r>Spent</Th><Th r>Your commission</Th><Th r>Pending</Th><Th r>Paid</Th>
+                      </tr></thead>
+                      <tbody>
+                        {(users || []).length === 0 && <tr><td colSpan={7} className="text-center text-faint py-6">No users yet — share your code to start earning.</td></tr>}
+                        {(users || []).map((u, i) => (
+                          <tr key={i} className="border-t border-border">
+                            <td className="px-4 py-3 font-[560]">{u.name}</td>
+                            <td className="px-4 py-3 font-mono text-[12px] text-muted-foreground">{u.email}</td>
+                            <td className="px-4 py-3 text-right font-mono">{u.docs}</td>
+                            <td className="px-4 py-3 text-right font-mono">{inr(u.spent)}</td>
+                            <td className="px-4 py-3 text-right font-mono">{inr(u.commission)}</td>
+                            <td className="px-4 py-3 text-right font-mono text-[#946412]">{inr(u.pending)}</td>
+                            <td className="px-4 py-3 text-right font-mono text-[#1e7a44]">{inr(u.paid)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {isPartner && (() => {
+              const youNode: TreeNode = { name: emp.name || "You", label: "Network Partner", you: true,
+                children: (users || []).map((u) => ({ name: u.name, label: "student", note: inr(u.spent) })) };
+              const root: TreeNode = { name: "Avloryn Labs", label: "Company",
+                children: [bdName ? { name: bdName, label: "BD", children: [youNode] } : youNode] };
+              return (
+                <section className="mt-8">
+                  <h2 className="font-serif text-[20px] font-[600] tracking-[-0.01em] mb-1">Your family</h2>
+                  <p className="text-[13px] text-muted-foreground mb-3">Where you sit — your BD above you, and the students under you.</p>
+                  <FamilyChart root={root} />
+                </section>
+              );
+            })()}
           </>
         )}
       </div>

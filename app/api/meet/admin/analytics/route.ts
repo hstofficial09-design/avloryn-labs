@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { DateTime } from "luxon";
-import { canSchedule } from "@/lib/booking/admin";
+import { schedulingScope, scopeAllows } from "@/lib/booking/admin";
 import { listBookings, listMeetingTypes } from "@/lib/booking/db";
 
 export const runtime = "nodejs";
@@ -9,8 +9,11 @@ export const dynamic = "force-dynamic";
 const TZ = "Asia/Kolkata";
 
 export async function GET() {
-  if (!(await canSchedule())) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  const [bookings, types] = await Promise.all([listBookings({}), listMeetingTypes()]);
+  const scope = await schedulingScope();
+  if (!scope.ok) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+  const [allBookings, types] = await Promise.all([listBookings({}), listMeetingTypes()]);
+  // Same rule as the meeting list: your numbers are your own meetings.
+  const bookings = allBookings.filter((b) => scopeAllows(scope, b.member_ids));
   const typeName = new Map(types.map((t) => [t.id, t.name]));
 
   const now = DateTime.now().setZone(TZ);

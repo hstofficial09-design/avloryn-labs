@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { LogoMark } from "@/components/ui/logo";
+import { JobDescriptionPreview } from "@/components/careers/jd";
 
 type MT = { name: string; slug: string; description: string; duration_min: number; mode: "any" | "all" };
 type Member = { id: string; name: string };
@@ -224,7 +225,11 @@ export default function BookingFlow({ mt, members }: { mt: MT; members: Member[]
             <span className="neu-chip rounded-full px-2.5 py-1 text-[12px]">{mt.duration_min} min</span>
             <span className="neu-chip rounded-full px-2.5 py-1 text-[12px]">{mt.mode === "all" ? "Group" : "1-on-1"}</span>
           </div>
-          {mt.description && <p className="text-[13px] text-muted-foreground leading-relaxed mb-4">{mt.description}</p>}
+          {mt.description && (
+            <div className="mb-4 text-[13px] leading-relaxed [&_.legal-prose]:text-[13px]">
+              <JobDescriptionPreview source={mt.description} />
+            </div>
+          )}
 
           {durations.length > 1 && (
             <div className="mb-3">

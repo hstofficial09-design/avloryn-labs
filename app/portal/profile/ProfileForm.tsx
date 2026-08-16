@@ -34,6 +34,12 @@ export default function ProfileForm({ profile, isOwner }: { profile: any; isOwne
   const [isStudent, setIsStudent] = useState<string>(profile.is_student || "");
   const [college, setCollege] = useState(profile.college || "");
   const [studentId, setStudentId] = useState(profile.student_id || "");
+  // Payout details (for commission auto-payout)
+  const [pUpi, setPUpi] = useState(profile.payout_upi || "");
+  const [pAccName, setPAccName] = useState(profile.payout_account_name || "");
+  const [pAccNo, setPAccNo] = useState(profile.payout_account_no || "");
+  const [pIfsc, setPIfsc] = useState(profile.payout_ifsc || "");
+  const [pPan, setPPan] = useState(profile.payout_pan || "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
   const [mustComplete, setMustComplete] = useState(false);
@@ -51,7 +57,9 @@ export default function ProfileForm({ profile, isOwner }: { profile: any; isOwne
       const r = await fetch("/api/portal/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, email, mobile, dob, address, start_date: startDate,
           id_type: idType, id_number: idNumber, is_student: isStudent,
           // Cleared on purpose when the answer is No, so stale college details don't linger.
-          college: isStudent === "Yes" ? college : "", student_id: isStudent === "Yes" ? studentId : "" }) });
+          college: isStudent === "Yes" ? college : "", student_id: isStudent === "Yes" ? studentId : "",
+          payout_upi: pUpi, payout_account_name: pAccName, payout_account_no: pAccNo,
+          payout_ifsc: pIfsc, payout_pan: pPan }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Could not save");
       setMsg({ ok: true, t: "Saved ✓" });
@@ -132,6 +140,15 @@ export default function ProfileForm({ profile, isOwner }: { profile: any; isOwne
               <p className="sm:col-span-2 text-[11.5px] text-faint">
                 Your photo and ID document stay in the onboarding email — they are not stored here.
               </p>
+
+              <div className="sm:col-span-2 mt-1"><div className="section-label">Payout details</div>
+                <p className="text-[11.5px] text-muted-foreground mt-1">Where your commission is paid. Add a UPI id <b>or</b> a bank account — this enables instant auto-payout.</p>
+              </div>
+              <div className="sm:col-span-2"><label className={label}>UPI id</label><input value={pUpi} onChange={(e) => setPUpi(e.target.value)} placeholder="name@okhdfc" className={input} /></div>
+              <div><label className={label}>Bank account holder</label><input value={pAccName} onChange={(e) => setPAccName(e.target.value)} className={input} /></div>
+              <div><label className={label}>Account number</label><input value={pAccNo} onChange={(e) => setPAccNo(e.target.value)} className={input} /></div>
+              <div><label className={label}>IFSC</label><input value={pIfsc} onChange={(e) => setPIfsc(e.target.value.toUpperCase())} className={input} /></div>
+              <div><label className={label}>PAN (optional)</label><input value={pPan} onChange={(e) => setPPan(e.target.value.toUpperCase())} className={input} /></div>
             </>
           )}
           <div className="sm:col-span-2 flex items-center gap-3">

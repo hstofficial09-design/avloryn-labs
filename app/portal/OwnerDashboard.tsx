@@ -43,8 +43,8 @@ function parseAnswers(raw?: string | null): { q: string; a: string }[] {
   } catch { return []; }
 }
 
-export default function OwnerDashboard({ employees, orders, deleted, names, trackMap, error }:
-  { employees: Emp[]; orders: Order[]; deleted: Deleted[]; names: Record<string, string>; trackMap: Record<string, boolean>; error: string | null }) {
+export default function OwnerDashboard({ employees, orders, deleted, names, trackMap, gmv, error }:
+  { employees: Emp[]; orders: Order[]; deleted: Deleted[]; names: Record<string, string>; trackMap: Record<string, boolean>; gmv?: number; error: string | null }) {
   const router = useRouter();
   const isComm = (track: string | null) => (track ? trackMap[track] !== false : true);
   const commEmps = employees.filter((e) => isComm(e.track));
@@ -56,7 +56,10 @@ export default function OwnerDashboard({ employees, orders, deleted, names, trac
   const [msg, setMsg] = useState("");
   const [form, setForm] = useState({ name: "", email: "", mobile: "", emp_type: "intern", track: "", commission_pct: "10", password: "" });
 
-  const sales = employees.reduce((a, e) => a + e.sales, 0);
+  // True company GMV (each sale once). Computed server-side (companyGmv) because a 2-tier sale
+  // books two commission rows — network partner 10% + BD 2% override — so summing per-employee sales would
+  // double-count. Fall back to the raw sum only if gmv wasn't provided.
+  const sales = typeof gmv === "number" ? gmv : employees.reduce((a, e) => a + e.sales, 0);
   const owed = employees.reduce((a, e) => a + e.pending, 0);
   const paidTot = employees.reduce((a, e) => a + e.paid, 0);
 

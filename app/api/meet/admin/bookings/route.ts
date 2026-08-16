@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { canSchedule } from "@/lib/booking/admin";
+import { canSchedule, schedulingScope, scopeAllows } from "@/lib/booking/admin";
 import {
   listBookings, listMeetingTypes, listMembers, getBookingById, getMeetingTypeById,
   markBookingCancelled, setBookingAttendance, confirmBooking,
@@ -18,14 +18,17 @@ const deny = () => NextResponse.json({ error: "Not authorized" }, { status: 401 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function GET(req: Request) {
-  if (!(await canSchedule())) return deny();
+  const scope = await schedulingScope();
+  if (!scope.ok) return deny();
   const sp = new URL(req.url).searchParams;
   const status = sp.get("status") || undefined;
-  const [bookings, types, members] = await Promise.all([
+  const [all, types, members] = await Promise.all([
     listBookings({ status, from: sp.get("from") || undefined, to: sp.get("to") || undefined }),
     listMeetingTypes(),
     listMembers(),
   ]);
+  // Anyone but the owner sees only the meetings they are actually attending — past ones too.
+  const bookings = all.filter((b) => scopeAllows(scope, b.member_ids));
   const typeName = new Map(types.map((t) => [t.id, t.name]));
   const memberName = new Map(members.map((m) => [m.id, m.name]));
   const rows = bookings.map((b) => ({
@@ -38,12 +41,15 @@ export async function GET(req: Request) {
 
 // Admin actions: cancel a booking, or mark attendance (attended / no-show).
 export async function PATCH(req: Request) {
-  if (!(await canSchedule())) return deny();
+  const scope = await schedulingScope();
+  if (!scope.ok) return deny();
   const d = await req.json().catch(() => ({}));
   const id = String(d.id || "");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   const b = await getBookingById(id);
   if (!b) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+  // Cancel / approve / attendance all belong to the people in the meeting.
+  if (!scopeAllows(scope, b.member_ids)) return deny();
 
   if (d.action === "cancel") {
     if (b.google_event_id) {

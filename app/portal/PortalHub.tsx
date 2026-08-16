@@ -7,7 +7,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
 const GOLD = "btn-gold rounded-full font-[560]";
 
-export default function PortalHub({ role, name, isOwner, isCommissionRole }: { role: string; name: string; isOwner: boolean; isCommissionRole: boolean }) {
+export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd }: { role: string; name: string; isOwner: boolean; isCommissionRole: boolean; isBd?: boolean }) {
   const router = useRouter();
   const [showPw, setShowPw] = useState(false);
   const [cur, setCur] = useState(""); const [nw, setNw] = useState(""); const [nw2, setNw2] = useState("");
@@ -33,7 +33,10 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole }: { r
   const cards: Card[] = [];
   cards.push({ title: "Scheduling", desc: "Create meetings, share booking links, manage your calendar & Meet.", href: "/meet/admin", icon: <CalIcon />, feature: true });
   if (isOwner || isCommissionRole) cards.push({ title: isOwner ? "Team & Commissions" : "My Earnings", desc: isOwner ? "Employees, referral codes, commissions and payouts." : "Your referral code, sales and payouts.", href: "/portal/commissions", icon: <CoinIcon /> });
+  if (isOwner || isBd) cards.push({ title: isOwner ? "Partner Network" : "My Network", desc: isOwner ? "BD interns, the network partners they recruit, and the 2% override across every network." : "Add network partners (CAs, influencers, agencies) and earn a 2% override on your whole network.", href: "/portal/network", icon: <NetworkIcon /> });
   if (isOwner) cards.push({ title: "Onboarding Form", desc: "Roles, pay, form fields and each role's terms for new hires.", href: "/portal/onboarding", icon: <FormIcon /> });
+  if (isOwner) cards.push({ title: "Careers", desc: "Post openings on the website and take applications by email.", href: "/portal/careers", icon: <BriefcaseIcon /> });
+  if (isOwner) cards.push({ title: "LivoDraft", desc: "Open the full LivoDraft admin — codes, users, billing, refunds, payouts, AI & more.", href: "/portal/go/livodraft", external: true, icon: <ProductIcon /> });
   cards.push({ title: "My Profile", desc: "Your personal details — name, contact, date of birth, address.", href: "/portal/profile", icon: <UserIcon /> });
   cards.push({ title: "Company site", desc: "View the public Avloryn Labs website.", href: "/", icon: <GlobeIcon /> });
   cards.push({ title: "Password", desc: "Change your account password securely.", onClick: () => setShowPw((v) => !v), icon: <LockIcon /> });
@@ -104,4 +107,7 @@ function GlobeIcon() { return <svg width="20" height="20" viewBox="0 0 24 24" fi
 function LockIcon() { return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5" /><path d="M8 10.5V7.5a4 4 0 018 0v3" /></svg>; }
 function MailIcon() { return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M4 6.5l8 6 8-6" /></svg>; }
 function UserIcon() { return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="12" cy="8" r="3.6" /><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6" /></svg>; }
+function BriefcaseIcon() { return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><rect x="3" y="7.5" width="18" height="13" rx="2.5" /><path d="M9 7.5V6a2 2 0 012-2h2a2 2 0 012 2v1.5M3 12.5h18" /></svg>; }
 function FormIcon() { return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><rect x="4" y="3" width="16" height="18" rx="2.5" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>; }
+function NetworkIcon() { return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="2.4" /><circle cx="5" cy="19" r="2.4" /><circle cx="19" cy="19" r="2.4" /><path d="M12 7.4v3.2M11 12.2 6.6 16.8M13 12.2l4.4 4.6" /></svg>; }
+function ProductIcon() { return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5 21 7v10l-9 4.5L3 17V7z" /><path d="M3 7l9 4.5L21 7M12 11.5V21" /></svg>; }

@@ -6,12 +6,14 @@ const FOOTER_LINKS = [
   { label: "LivoDraft", href: "/livodraft" },
   { label: "Vision", href: "/#vision" },
   { label: "Journal", href: "/blog" },
+  { label: "Careers", href: "/careers" },
   { label: "Contact", href: "/#contact" },
 ];
 
 const LEGAL_LINKS = [
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },
+  { label: "Careers", href: "/careers" },
   { label: "Partner Portal", href: "/portal" },
 ];
 

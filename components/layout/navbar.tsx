@@ -61,6 +61,9 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2">
+          <a href="/careers" className="hidden lg:inline-flex rounded-full px-3.5 py-2 text-[0.9rem] text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground">
+            Careers
+          </a>
           <a href="/portal" className="hidden lg:inline-flex rounded-full px-3.5 py-2 text-[0.9rem] text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground">
             Partner Portal
           </a>
@@ -121,6 +124,9 @@ export function Navbar() {
                   {link.label}
                 </motion.a>
               ))}
+              <a href="/careers" onClick={() => setOpen(false)} className="rounded-2xl px-4 py-3 text-[1.05rem] text-foreground transition-colors hover:bg-muted">
+                Careers
+              </a>
               <a href="/portal" onClick={() => setOpen(false)} className="rounded-2xl px-4 py-3 text-[1.05rem] text-foreground transition-colors hover:bg-muted">
                 Partner Portal
               </a>

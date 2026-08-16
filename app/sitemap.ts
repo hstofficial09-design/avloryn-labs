@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { sanityFetch } from "@/sanity/lib/fetch";
 import { SLUGS_QUERY } from "@/sanity/lib/queries";
+import { listOpenings } from "@/lib/portal-db";
 
 const SITE_URL = "https://avloryn.com";
 
@@ -30,11 +31,29 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ? new Date(Math.max(...slugs.map((s) => postDate(s).getTime())))
     : STATIC_UPDATED;
 
+  // Each open role gets its own entry — a job page Google never crawls can never reach Google Jobs.
+  let openRoles: { slug: string; updated_at?: string; created_at?: string }[] = [];
+  try { openRoles = await listOpenings({ publicOnly: true }); } catch { /* sitemap must still build */ }
+  const roleDate = (r: { updated_at?: string; created_at?: string }) =>
+    new Date(r.updated_at || r.created_at || STATIC_UPDATED);
+  const roles: MetadataRoute.Sitemap = openRoles.map((r) => ({
+    url: `${SITE_URL}/careers/${r.slug}`,
+    lastModified: roleDate(r),
+    changeFrequency: "weekly",
+    priority: 0.8,
+  }));
+  const newestRole = openRoles.length
+    ? new Date(Math.max(...openRoles.map((r) => roleDate(r).getTime())))
+    : STATIC_UPDATED;
+
   return [
     { url: `${SITE_URL}/`, lastModified: STATIC_UPDATED, changeFrequency: "monthly", priority: 1 },
     { url: `${SITE_URL}/livodraft`, lastModified: STATIC_UPDATED, changeFrequency: "monthly", priority: 0.9 },
     { url: `${SITE_URL}/blog`, lastModified: newestPost, changeFrequency: "weekly", priority: 0.8 },
     ...posts,
+    { url: `${SITE_URL}/careers`, lastModified: newestRole, changeFrequency: "weekly", priority: 0.7 },
+    { url: `${SITE_URL}/careers/general`, lastModified: STATIC_UPDATED, changeFrequency: "monthly", priority: 0.4 },
+    ...roles,
     { url: `${SITE_URL}/privacy`, lastModified: STATIC_UPDATED, changeFrequency: "yearly", priority: 0.3 },
     { url: `${SITE_URL}/terms`, lastModified: STATIC_UPDATED, changeFrequency: "yearly", priority: 0.3 },
   ];

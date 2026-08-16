@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { LogoMark } from "@/components/ui/logo";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { JobDescriptionPreview } from "@/components/careers/jd";
 
 type Role = { track: string; commission_enabled: boolean; paid: boolean; salary: number | null; salary_period: string | null; scope: string | null; terms: string | null; sensitive: boolean; default_emp_type: string; defaultTerms?: string; defaultIsCustom?: boolean };
 type FieldCfg = { visible: boolean; required: boolean };
@@ -134,7 +136,11 @@ function NdaCard({ nda, ndaDefault, ndaIsCustom, sensCl, open, setOpen, reload }
               {ndaDefault && <button type="button" onClick={() => setText(ndaDefault)} className="text-[11.5px] font-semibold text-muted-foreground hover:underline">Reset to default</button>}
             </div>
           </div>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={14} className={input + " resize-y font-sans text-[12.5px] leading-relaxed"} />
+          <RichTextEditor
+            value={text} onChange={setText} rows={14}
+            preview={(src) => <JobDescriptionPreview source={src} />}
+            hint={<>Select text and use the buttons, or type it: ## Heading · - bullet · 1. numbered · **bold** · *italic* · [text](link). A blank line starts a new clause. The signed PDF renders all of this.</>}
+          />
           {sensCl && (
             <div className="mt-3 neu-inset rounded-2xl p-4">
               <div className="text-[12px] font-[600] mb-1">Added automatically: {sensCl.h}</div>
@@ -261,7 +267,11 @@ function RoleCard({ role, reload }: { role: Role; reload: () => void }) {
             {role.defaultTerms && <button type="button" onClick={() => set("terms", role.defaultTerms!)} className="text-[11.5px] font-semibold text-muted-foreground hover:underline">Reset to default</button>}
           </div>
         </div>
-        <textarea value={r.terms || ""} onChange={(e) => set("terms", e.target.value)} rows={12} className={input + " resize-y font-sans text-[12.5px] leading-relaxed"} />
+        <RichTextEditor
+          value={r.terms || ""} onChange={(v) => set("terms", v)} rows={12}
+          preview={(src) => <JobDescriptionPreview source={src} />}
+          hint={<>Select text and use the buttons, or type it: ## Heading · - bullet · 1. numbered · **bold** · *italic* · [text](link). A blank line starts a new clause. The signed PDF renders all of this.</>}
+        />
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
