@@ -117,9 +117,18 @@ export async function verifyMemberZoho(memberId: string): Promise<boolean> {
 
 export async function createZohoForMembers(opts: {
   memberIds: string[]; summary: string; description: string; startISO: string; endISO: string; meetLink: string | null;
+  /**
+   * Members who already have this meeting on their GOOGLE calendar. They are skipped here.
+   *
+   * Zoho mirroring exists for people who don't use Google (or whose Google grant has died) — not
+   * as a second copy for people who have both. Writing to both is why the same meeting appeared
+   * twice for anyone with Google and Zoho connected.
+   */
+  alreadyOnGoogle?: string[];
 }): Promise<ZohoEvent[]> {
   if (!zohoConfigured()) return [];
   const out: ZohoEvent[] = [];
+  const onGoogle = new Set(opts.alreadyOnGoogle || []);
   const eventdata = {
     title: opts.summary,
     description: (opts.meetLink ? `Join Google Meet: ${opts.meetLink}\n\n` : "") + opts.description,
@@ -127,6 +136,7 @@ export async function createZohoForMembers(opts: {
     dateandtime: { timezone: "UTC", start: zdt(opts.startISO), end: zdt(opts.endISO) },
   };
   for (const memberId of opts.memberIds) {
+    if (onGoogle.has(memberId)) continue;
     try {
       const z = await zohoAccess(memberId);
       if (!z) continue;
@@ -180,6 +190,38 @@ async function findEventUid(token: string, calUid: string, startISO: string, end
   return undefined;
 }
 
+/**
+ * Read each mirrored Zoho event's CURRENT time.
+ *
+ * Zoho is the working calendar for most of the team, so a meeting dragged to a new time will
+ * usually be dragged THERE. Without reading Zoho back, that change would be invisible to us.
+ */
+export async function readZohoTimes(
+  events: ZohoEvent[],
+): Promise<{ memberId: string; startISO: string | null; endISO: string | null }[]> {
+  if (!zohoConfigured()) return [];
+  const out: { memberId: string; startISO: string | null; endISO: string | null }[] = [];
+  for (const e of events) {
+    try {
+      const z = await zohoAccess(e.memberId);
+      if (!z) continue;
+      const r = await fetch(`${calBase()}/calendars/${e.calUid}/events/${e.eventUid}`,
+        { headers: { Authorization: `Zoho-oauthtoken ${z.token}` } });
+      const j = await r.json();
+      const ev = j?.events?.[0];
+      if (!ev || ev.message) continue;
+      out.push({
+        memberId: e.memberId,
+        startISO: zohoDtToISO(ev?.dateandtime?.start),
+        endISO: zohoDtToISO(ev?.dateandtime?.end),
+      });
+    } catch (err) {
+      console.error(`[zoho] could not read event for member ${e.memberId}:`, err);
+    }
+  }
+  return out;
+}
+
 async function eventEtag(token: string, calUid: string, eventUid: string): Promise<string | null> {
   try {
     const r = await fetch(`${calBase()}/calendars/${calUid}/events/${eventUid}`, { headers: { Authorization: `Zoho-oauthtoken ${token}` } });
@@ -188,6 +230,16 @@ async function eventEtag(token: string, calUid: string, eventUid: string): Promi
   } catch { return null; }
 }
 
+/**
+ * Zoho wants the event's current etag on any change, and it wants it INSIDE `eventdata` — not as
+ * its own query parameter and not as an If-Match header. Asked directly, Zoho answers:
+ *   ?etag=…            → 400 EXTRA_PARAM_FOUND
+ *   If-Match header    → 400 ETAG_MISSING
+ *   nothing            → 400 ETAG_MISSING
+ *   eventdata:{etag}   → 200
+ * Getting this wrong is why cancelled and rescheduled meetings stayed on Zoho calendars: every
+ * delete/move came back 400 and the event was simply never touched.
+ */
 export async function deleteZohoEvents(events: ZohoEvent[]): Promise<void> {
   if (!zohoConfigured()) return;
   for (const e of events) {
@@ -195,24 +247,27 @@ export async function deleteZohoEvents(events: ZohoEvent[]): Promise<void> {
       const z = await zohoAccess(e.memberId);
       if (!z) continue;
       const etag = await eventEtag(z.token, e.calUid, e.eventUid);
-      const url = `${calBase()}/calendars/${e.calUid}/events/${e.eventUid}${etag ? `?etag=${encodeURIComponent(etag)}` : ""}`;
+      if (!etag) { console.error(`[zoho] no etag for event ${e.eventUid} — cannot delete it`); continue; }
+      const url = `${calBase()}/calendars/${e.calUid}/events/${e.eventUid}?eventdata=${encodeURIComponent(JSON.stringify({ etag }))}`;
       const r = await fetch(url, { method: "DELETE", headers: { Authorization: `Zoho-oauthtoken ${z.token}` } });
-      if (!r.ok) console.error(`[zoho] delete failed for member ${e.memberId}: HTTP ${r.status}`);
+      // The body says WHY; a bare status number sent us hunting last time.
+      if (!r.ok) console.error(`[zoho] delete failed for member ${e.memberId}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
     } catch (err) { console.error(`[zoho] delete threw for member ${e.memberId}:`, err); }
   }
 }
 
 export async function moveZohoEvents(events: ZohoEvent[], startISO: string, endISO: string): Promise<void> {
   if (!zohoConfigured()) return;
-  const eventdata = { dateandtime: { timezone: "UTC", start: zdt(startISO), end: zdt(endISO) } };
+  const when = { dateandtime: { timezone: "UTC", start: zdt(startISO), end: zdt(endISO) } };
   for (const e of events) {
     try {
       const z = await zohoAccess(e.memberId);
       if (!z) continue;
       const etag = await eventEtag(z.token, e.calUid, e.eventUid);
-      const url = `${calBase()}/calendars/${e.calUid}/events/${e.eventUid}?eventdata=${encodeURIComponent(JSON.stringify(eventdata))}${etag ? `&etag=${encodeURIComponent(etag)}` : ""}`;
+      if (!etag) { console.error(`[zoho] no etag for event ${e.eventUid} — cannot move it`); continue; }
+      const url = `${calBase()}/calendars/${e.calUid}/events/${e.eventUid}?eventdata=${encodeURIComponent(JSON.stringify({ ...when, etag }))}`;
       const r = await fetch(url, { method: "PUT", headers: { Authorization: `Zoho-oauthtoken ${z.token}` } });
-      if (!r.ok) console.error(`[zoho] reschedule failed for member ${e.memberId}: HTTP ${r.status}`);
+      if (!r.ok) console.error(`[zoho] reschedule failed for member ${e.memberId}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
     } catch (err) { console.error(`[zoho] reschedule threw for member ${e.memberId}:`, err); }
   }
 }

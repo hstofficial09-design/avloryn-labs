@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { Resend } from "resend";
 import { canSchedule } from "@/lib/booking/admin";
-import { listMembers, createBooking } from "@/lib/booking/db";
+import { listMembers, createBooking, titleAnswer, membersWithZoho } from "@/lib/booking/db";
 import { createMeetingForMembers } from "@/lib/booking/google";
 import { createZohoForMembers } from "@/lib/booking/zoho";
 import { buildICS } from "@/lib/booking/ics";
@@ -26,7 +26,11 @@ export async function POST(req: Request) {
 
   const all = await listMembers();
   const valid = new Set(all.map((m) => m.id));
-  let memberIds: string[] = (Array.isArray(d.memberIds) ? d.memberIds.map(String) : []).filter((id: string) => valid.has(id));
+  // De-duplicate: the same id twice means that person's calendar is written twice — once as host
+  // and once as "another member" — and they see the meeting twice.
+  let memberIds: string[] = Array.from(
+    new Set((Array.isArray(d.memberIds) ? d.memberIds.map(String) : []).filter((id: string) => valid.has(id))),
+  );
   if (!memberIds.length) return NextResponse.json({ error: "Pick at least one member" }, { status: 400 });
   const organizerId = d.organizerId && memberIds.includes(String(d.organizerId)) ? String(d.organizerId) : null;
   if (organizerId) memberIds = [organizerId, ...memberIds.filter((id) => id !== organizerId)];
@@ -43,18 +47,43 @@ export async function POST(req: Request) {
   const guest = clientEmail && EMAIL_RE.test(clientEmail) ? clientEmail : "";
   const baseDesc = `${title}${clientName ? ` with ${clientName}` : ""}.${notes ? `\n\nNotes: ${notes}` : ""}`;
 
+  // Zoho is the working calendar for whoever has it connected; Google is what produces the Meet
+  // link and invites the guest. So each member gets exactly ONE copy, on the calendar they use.
+  const zohoIds = await membersWithZoho(memberIds);
+  // Host the Meet on someone who does NOT use Zoho where possible — their Google event is then
+  // their own single copy instead of a second copy of a Zoho one.
+  const hostOrder = [...memberIds.filter((id) => !zohoIds.has(id)), ...memberIds.filter((id) => zohoIds.has(id))];
+  const googleCopyMemberIds = memberIds.filter((id) => !zohoIds.has(id));
+
   let meetLink: string | null = null, eventsJson: string | null = null, zohoJson: string | null = null;
+  let onGoogle: string[] = [];
   try {
-    const { meetLink: ml, events } = await createMeetingForMembers({ memberIds, clientEmail: guest, summary: title, description: baseDesc, startISO, endISO });
+    const { meetLink: ml, events } = await createMeetingForMembers({ memberIds: hostOrder, googleCopyMemberIds, clientEmail: guest, summary: title, description: baseDesc, startISO, endISO });
     meetLink = ml; if (events.length) eventsJson = JSON.stringify(events);
-  } catch { /* keep going */ }
-  try { const z = await createZohoForMembers({ memberIds, summary: title, description: baseDesc, startISO, endISO, meetLink }); if (z.length) zohoJson = JSON.stringify(z); } catch { /* ignore */ }
+    onGoogle = events.map((e) => e.memberId);
+  } catch (e) {
+    // A calendar failure must not lose the meeting — but it must not be silent either, or the
+    // meeting exists with nothing on anyone's calendar and nobody can tell why.
+    console.error("[meet/create] Google calendar failed:", e);
+  }
+  try {
+    const z = await createZohoForMembers({ memberIds, summary: title, description: baseDesc, startISO, endISO, meetLink, alreadyOnGoogle: onGoogle });
+    if (z.length) zohoJson = JSON.stringify(z);
+  } catch (e) { console.error("[meet/create] Zoho calendar failed:", e); }
 
   const cancelToken = randomBytes(18).toString("hex");
   const booking = await createBooking({
     meeting_type_id: null, member_ids: memberIds,
     client_name: clientName || "Guest", client_email: guest || "", client_notes: notes, client_timezone: null,
-    start_utc: startISO, end_utc: endISO, google_event_id: eventsJson, meet_link: meetLink, cancel_token: cancelToken,
+    start_utc: startISO, end_utc: endISO, google_event_id: eventsJson, meet_link: meetLink,
+    // Without this the Zoho ids are thrown away and cancel/reschedule can never find those
+    // events again — the meeting stays on Zoho calendars forever. The public booking route
+    // always saved them; this path silently did not.
+    zoho_event_id: zohoJson,
+    // Keeps the typed title with the booking so cancellations, reschedules, reminders and the
+    // admin list can all name the meeting instead of calling it "Meeting".
+    answers: titleAnswer(title),
+    cancel_token: cancelToken,
   });
 
   // Email the guest AND every attending member a branded invite (Meet button + .ics).

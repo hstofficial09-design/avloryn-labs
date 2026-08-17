@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { getBookingByCancelToken, markBookingCancelled, getMeetingTypeById, listMembers } from "@/lib/booking/db";
+import { getBookingByCancelToken, markBookingCancelled, getMeetingTypeById, listMembers, storedTitle } from "@/lib/booking/db";
 import { deleteMeetingEvent, deleteMeetingEvents, type MemberEvent } from "@/lib/booking/google";
 import { deleteZohoEvents, type ZohoEvent } from "@/lib/booking/zoho";
 import { buildICS, icsSequence } from "@/lib/booking/ics";
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
       const byId = new Map(members.map((m) => [m.id, m]));
       const memberNames = b.member_ids.map((id) => byId.get(id)?.name).filter(Boolean).join(", ");
       const from = process.env.CONTACT_FROM_EMAIL || "Avloryn Labs <onboarding@resend.dev>";
-      const title = mt?.name || "Meeting";
+      const title = mt?.name || storedTitle(b) || "Meeting";
       const clientWhen = new Date(b.start_utc).toLocaleString("en-IN", { timeZone: b.client_timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" });
       const rz = new Resend(key);
       // A cancellation .ics (same UID, METHOD:CANCEL, higher SEQUENCE) removes the meeting from

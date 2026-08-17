@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { getBookingByCancelToken, getMeetingTypeById, updateBookingTime, listMembers } from "@/lib/booking/db";
+import { getBookingByCancelToken, getMeetingTypeById, updateBookingTime, listMembers, storedTitle } from "@/lib/booking/db";
 import { moveMeetingEvents, type MemberEvent } from "@/lib/booking/google";
 import { moveZohoEvents, type ZohoEvent } from "@/lib/booking/zoho";
 import { buildICS, icsSequence } from "@/lib/booking/ics";
@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   const durationMin = Math.round((Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 60000);
   return NextResponse.json({
     slug: mt?.slug || null,
-    name: mt?.name || "Meeting",
+    name: mt?.name || storedTitle(b) || "Meeting",
     currentStartISO: b.start_utc,
     durationMin,
     memberIds: b.member_ids,
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
       const memberEmails = b.member_ids.map((id) => byId.get(id)?.email).filter(Boolean) as string[];
       const memberNames = b.member_ids.map((id) => byId.get(id)?.name).filter(Boolean).join(", ");
       const from = process.env.CONTACT_FROM_EMAIL || "Avloryn Labs <onboarding@resend.dev>";
-      const title = mt?.name || "Meeting";
+      const title = mt?.name || storedTitle(b) || "Meeting";
       const clientWhen = new Date(startMs).toLocaleString("en-IN", { timeZone: b.client_timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" });
       const cancelUrl = `${SITE_URL}/meet/cancel?t=${b.cancel_token}`;
       const rescheduleUrl = `${SITE_URL}/meet/reschedule?t=${b.cancel_token}`;

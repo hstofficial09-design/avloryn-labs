@@ -236,7 +236,15 @@ export async function createMeetingForMembers(opts: {
   description: string;
   startISO: string;
   endISO: string;
-}): Promise<{ meetLink: string | null; events: MemberEvent[] }> {
+  /**
+   * Who should get their OWN Google copy, beyond the host. Defaults to everyone.
+   *
+   * People who live in Zoho get their copy there instead, so writing it to Google as well is the
+   * same meeting twice. The host is the exception: their Google event is what creates the Meet
+   * link and invites the guest, so it always exists.
+   */
+  googleCopyMemberIds?: string[];
+}): Promise<{ meetLink: string | null; events: MemberEvent[]; hostId: string | null }> {
   const events: MemberEvent[] = [];
   const start = { dateTime: opts.startISO, timeZone: "UTC" };
   const end = { dateTime: opts.endISO, timeZone: "UTC" };
@@ -280,12 +288,14 @@ export async function createMeetingForMembers(opts: {
       console.error(`[meet] host calendar failed for member ${id}; trying the next member:`, e);
     }
   }
-  if (!hostId) return { meetLink: null, events: [] };
+  if (!hostId) return { meetLink: null, events: [], hostId: null };
 
-  // Every other member: write the same meeting to their own calendar (auto-add, no dup invite).
+  // Every other member who uses Google: write the same meeting to their own calendar (auto-add,
+  // no dup invite). Anyone whose calendar is Zoho is skipped here and mirrored there instead.
   const desc = (meetLink ? `Join Google Meet: ${meetLink}\n\n` : "") + opts.description;
+  const copyTo = opts.googleCopyMemberIds ?? opts.memberIds;
   for (const id of opts.memberIds) {
-    if (id === hostId) continue;
+    if (id === hostId || !copyTo.includes(id)) continue;
     try {
       const m = await memberClient(id);
       if (!m) continue;
@@ -300,7 +310,40 @@ export async function createMeetingForMembers(opts: {
       /* one member's calendar failing must not block the booking */
     }
   }
-  return { meetLink, events };
+  return { meetLink, events, hostId };
+}
+
+export type EventTime = { memberId: string; startISO: string | null; endISO: string | null; cancelled: boolean };
+
+/**
+ * Read each per-member event's CURRENT time straight from Google.
+ *
+ * Every member holds their own copy of the meeting, so a copy that someone dragged in their own
+ * calendar no longer matches the others or our record. This is how we notice.
+ */
+export async function readMeetingTimes(events: MemberEvent[]): Promise<EventTime[]> {
+  const out: EventTime[] = [];
+  for (const ev of events) {
+    try {
+      const m = await memberClient(ev.memberId);
+      if (!m) continue;
+      const cal = google.calendar({ version: "v3", auth: m.client });
+      const res = await cal.events.get({ calendarId: m.calendarId, eventId: ev.eventId });
+      const s = res.data.start?.dateTime || (res.data.start?.date ? `${res.data.start.date}T00:00:00Z` : null);
+      const e = res.data.end?.dateTime || (res.data.end?.date ? `${res.data.end.date}T00:00:00Z` : null);
+      out.push({
+        memberId: ev.memberId,
+        startISO: s ? new Date(s).toISOString() : null,
+        endISO: e ? new Date(e).toISOString() : null,
+        cancelled: res.data.status === "cancelled",
+      });
+    } catch (e) {
+      // A deleted event 404s here. Report nothing rather than guess — we must never infer a
+      // reschedule from a read that simply failed.
+      console.error(`[meet] could not read event for member ${ev.memberId}:`, e);
+    }
+  }
+  return out;
 }
 
 /** Move each per-member event to a new time (host first → notifies the client). Keeps the

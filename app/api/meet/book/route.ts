@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { Resend } from "resend";
-import { getMeetingTypeBySlug, listMembers, createBooking, upcomingCountByMember, incrementCouponUse, type IntakeAnswer } from "@/lib/booking/db";
+import { getMeetingTypeBySlug, listMembers, createBooking, upcomingCountByMember, incrementCouponUse, membersWithZoho, type IntakeAnswer } from "@/lib/booking/db";
 import { memberBusy, createMeetingForMembers } from "@/lib/booking/google";
 import { createZohoForMembers, getZohoBusy } from "@/lib/booking/zoho";
 import { quote, verifySignature } from "@/lib/booking/pay";
@@ -60,6 +60,8 @@ export async function POST(req: Request) {
     const pick = pool.slice().sort((a, b) => (counts[a] || 0) - (counts[b] || 0))[0];
     memberIds = pick ? [pick] : [];
   }
+  // Same id twice would write that person's calendar twice (host + "other member").
+  memberIds = Array.from(new Set(memberIds));
   if (!memberIds.length) return NextResponse.json({ error: "Please choose who you'd like to meet" }, { status: 400 });
   // Prefer the chosen organizer as host (Meet creator) when they're attending.
   if (mt.organizer_id && memberIds.includes(mt.organizer_id)) {
@@ -129,25 +131,35 @@ export async function POST(req: Request) {
 
   // Write the meeting to EVERY attending member's own calendar (guaranteed auto-add) and
   // invite the client. The Meet link comes from the host (first connected) member's event.
+  // One copy per person, on the calendar they actually use: Zoho where connected, Google
+  // otherwise. Google still hosts the Meet link and the guest invite.
+  const zohoIds = await membersWithZoho(memberIds);
+  const hostOrder = [...memberIds.filter((id) => !zohoIds.has(id)), ...memberIds.filter((id) => zohoIds.has(id))];
+  const googleCopyMemberIds = memberIds.filter((id) => !zohoIds.has(id));
+
   let meetLink: string | null = null;
   let eventsJson: string | null = null;
+  let onGoogle: string[] = [];
   try {
     const { meetLink: ml, events } = await createMeetingForMembers({
-      memberIds, clientEmail: email,
+      memberIds: hostOrder, googleCopyMemberIds, clientEmail: email,
       summary: `${mt.name} — ${name}`, description: baseDesc, startISO, endISO,
     });
     meetLink = ml;
     if (events.length) eventsJson = JSON.stringify(events);
-  } catch {
+    onGoogle = events.map((e) => e.memberId);
+  } catch (e) {
     /* calendar write failed — still save the booking so the request isn't lost */
+    console.error("[meet/book] Google calendar failed:", e);
   }
 
-  // Also mirror onto any member's Zoho Calendar (optional; no-op if none connected).
+  // Mirror onto Zoho only for members Google did NOT cover — anyone with both connected would
+  // otherwise get the same meeting twice.
   let zohoJson: string | null = null;
   try {
-    const zevents = await createZohoForMembers({ memberIds, summary: `${mt.name} — ${name}`, description: baseDesc, startISO, endISO, meetLink });
+    const zevents = await createZohoForMembers({ memberIds, summary: `${mt.name} — ${name}`, description: baseDesc, startISO, endISO, meetLink, alreadyOnGoogle: onGoogle });
     if (zevents.length) zohoJson = JSON.stringify(zevents);
-  } catch { /* zoho best-effort */ }
+  } catch (e) { console.error("[meet/book] Zoho calendar failed:", e); }
 
   const cancelToken = randomBytes(18).toString("hex");
   const booking = await createBooking({

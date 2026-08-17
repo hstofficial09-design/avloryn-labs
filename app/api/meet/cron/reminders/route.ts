@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import {
   bookingsNeedingAnyReminder, bookingsNeedingFollowup, markReminderSent, markFollowedUp,
-  listMeetingTypes, listMembers,
+  listMeetingTypes, listMembers, storedTitle,
 } from "@/lib/booking/db";
 import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
+import { syncCalendarChanges } from "@/lib/booking/sync";
 import { SITE_URL } from "@/lib/seo";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -32,13 +33,24 @@ async function run() {
 
   let reminders = 0, followups = 0;
 
+  // ── First: pick up anything moved directly in Google Calendar, so the rest of this run (and
+  //    every reminder it sends) works from the real time rather than a stale one. ──
+  let synced = { checked: 0, moved: 0 };
+  try {
+    synced = await syncCalendarChanges();
+  } catch (e) { console.error("[cron] calendar sync failed:", e); }
+
   // ── Reminders: at each offset the meeting type configured (default 2h), to the client
   //    AND every attending member. Fires the most imminent still-fresh one per run. ──
   for (const b of await bookingsNeedingAnyReminder(1600)) {
     try {
       const t = typeById.get(b.meeting_type_id || "");
+      const mTitle = t?.name || storedTitle(b) || "your meeting";
       const offsets = ((t?.reminders && t.reminders.length ? t.reminders : [120]) as number[]).filter((n) => Number.isFinite(n) && n > 0);
       const sent: number[] = Array.isArray(b.reminders_sent) ? b.reminders_sent : [];
+      // Where per-offset tracking isn't available, a single reminded_at is all we have — treat it
+      // as "already reminded" so the same reminder cannot go out again on every run.
+      if (!Array.isArray(b.reminders_sent) && b.reminded_at) continue;
       const mins = (Date.parse(b.start_utc) - Date.now()) / 60000;
       const crossed = offsets.filter((o) => !sent.includes(o) && mins <= o);
       if (!crossed.length) continue;
@@ -46,6 +58,9 @@ async function run() {
       // (a long-missed offset is marked without spamming a stale reminder).
       const fresh = crossed.filter((o) => mins > o - CRON_WINDOW);
       const toEmail = fresh.length ? Math.min(...fresh) : null;
+      // Record it BEFORE sending. If we can't record it we must not send at all: an unrecorded
+      // reminder goes out again on the next run, and the next, every 15 minutes.
+      if (!(await markReminderSent(b.id, Array.from(new Set([...sent, ...crossed]))))) continue;
       if (toEmail != null && resend) {
         const withWho = b.member_ids.map((id) => memberName.get(id)).filter(Boolean).join(", ");
         const clientWhen = new Date(b.start_utc).toLocaleString("en-IN", { timeZone: b.client_timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" });
@@ -53,24 +68,23 @@ async function run() {
         const label = toEmail >= 1440 ? `${Math.round(toEmail / 1440)} day${toEmail >= 2880 ? "s" : ""}` : toEmail >= 60 ? `${Math.round(toEmail / 60)} hour${toEmail >= 120 ? "s" : ""}` : `${toEmail} min`;
         if (b.client_email && EMAIL_RE.test(b.client_email)) {
           await resend.emails.send({
-            from, to: b.client_email, subject: `Reminder: ${t?.name || "your meeting"} in ${label}`,
-            html: meetingInviteHTML({ heading: `Reminder · in ${label}`, title: t?.name || "Your meeting", whenText: clientWhen, withNames: withWho || "Avloryn Labs", greetingName: (b.client_name || "").split(" ")[0] || undefined, meetLink: b.meet_link, rescheduleUrl, cancelUrl }),
-            text: `Reminder: ${t?.name || "your meeting"} in ${label}.\nWhen: ${clientWhen}\n${b.meet_link ? `Join: ${b.meet_link}\n` : ""}Reschedule: ${rescheduleUrl}\nCancel: ${cancelUrl}`,
+            from, to: b.client_email, subject: `Reminder: ${mTitle} in ${label}`,
+            html: meetingInviteHTML({ heading: `Reminder · in ${label}`, title: mTitle, whenText: clientWhen, withNames: withWho || "Avloryn Labs", greetingName: (b.client_name || "").split(" ")[0] || undefined, meetLink: b.meet_link, rescheduleUrl, cancelUrl }),
+            text: `Reminder: ${mTitle} in ${label}.\nWhen: ${clientWhen}\n${b.meet_link ? `Join: ${b.meet_link}\n` : ""}Reschedule: ${rescheduleUrl}\nCancel: ${cancelUrl}`,
           });
         }
         for (const id of b.member_ids) {
           const em = memberEmail.get(id);
           if (!em || !EMAIL_RE.test(em)) continue;
           await resend.emails.send({
-            from, to: em, subject: `Reminder: ${t?.name || "meeting"} with ${b.client_name} in ${label}`,
-            html: meetingInviteHTML({ heading: `Reminder · in ${label}`, title: t?.name || "Meeting", whenText: whenIST(b.start_utc), withNames: b.client_name || "—", greetingName: (memberName.get(id) || "").split(" ")[0] || undefined, meetLink: b.meet_link, rescheduleUrl, cancelUrl }),
-            text: `Reminder: ${t?.name || "meeting"} with ${b.client_name} in ${label}. ${b.meet_link ? "Join: " + b.meet_link : ""}`,
+            from, to: em, subject: `Reminder: ${mTitle} with ${b.client_name} in ${label}`,
+            html: meetingInviteHTML({ heading: `Reminder · in ${label}`, title: mTitle, whenText: whenIST(b.start_utc), withNames: b.client_name || "—", greetingName: (memberName.get(id) || "").split(" ")[0] || undefined, meetLink: b.meet_link, rescheduleUrl, cancelUrl }),
+            text: `Reminder: ${mTitle} with ${b.client_name} in ${label}. ${b.meet_link ? "Join: " + b.meet_link : ""}`,
           });
         }
         reminders++;
       }
-      await markReminderSent(b.id, Array.from(new Set([...sent, ...crossed])));
-    } catch { /* skip this one */ }
+    } catch (e) { console.error("[reminders] booking skipped:", e); }
   }
 
   // ── Post-meeting follow-up (only if the meeting type opted in) ──
@@ -91,7 +105,7 @@ async function run() {
     } catch { /* skip */ }
   }
 
-  return { reminders, followups };
+  return { reminders, followups, checked: synced.checked, resynced: synced.moved };
 }
 
 export async function POST(req: Request) {

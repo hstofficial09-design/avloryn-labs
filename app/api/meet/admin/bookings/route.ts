@@ -3,7 +3,7 @@ import { Resend } from "resend";
 import { canSchedule, schedulingScope, scopeAllows } from "@/lib/booking/admin";
 import {
   listBookings, listMeetingTypes, listMembers, getBookingById, getMeetingTypeById,
-  markBookingCancelled, setBookingAttendance, confirmBooking,
+  markBookingCancelled, setBookingAttendance, confirmBooking, storedTitle, visibleAnswers,
 } from "@/lib/booking/db";
 import { deleteMeetingEvents, createMeetingForMembers, type MemberEvent } from "@/lib/booking/google";
 import { deleteZohoEvents, createZohoForMembers, type ZohoEvent } from "@/lib/booking/zoho";
@@ -33,7 +33,9 @@ export async function GET(req: Request) {
   const memberName = new Map(members.map((m) => [m.id, m.name]));
   const rows = bookings.map((b) => ({
     ...b,
-    meetingTypeName: typeName.get(b.meeting_type_id || "") || "—",
+    meetingTypeName: typeName.get(b.meeting_type_id || "") || storedTitle(b) || "—",
+    // The reserved title row is surfaced as the name above; it is not an intake answer.
+    answers: visibleAnswers(b),
     memberNames: b.member_ids.map((id) => memberName.get(id) || "—"),
   }));
   return NextResponse.json({ bookings: rows });

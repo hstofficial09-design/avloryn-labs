@@ -16,6 +16,21 @@ export type GoogleTokens = {
 };
 export type IntakeQuestion = { id: string; label: string; required: boolean; type?: string; options?: string[] };
 export type IntakeAnswer = { q: string; a: string };
+
+/**
+ * A meeting created by hand has no meeting type, so there is nowhere in the table to keep the
+ * title that was typed — and every cancellation, reschedule, reminder and admin row then called
+ * it "Meeting" or "—". Until `bookings` has a real title column, the title rides along in the
+ * answers list under this reserved key. It is stripped before answers are shown anywhere.
+ */
+export const TITLE_KEY = "__title";
+export const titleAnswer = (title: string): IntakeAnswer[] => [{ q: TITLE_KEY, a: title }];
+/** The stored title of a hand-made meeting, if there is one. */
+export const storedTitle = (b: { answers?: IntakeAnswer[] | null }): string =>
+  (b.answers || []).find((a) => a.q === TITLE_KEY)?.a || "";
+/** Intake answers with the reserved title row removed — what a human should actually see. */
+export const visibleAnswers = (b: { answers?: IntakeAnswer[] | null }): IntakeAnswer[] =>
+  (b.answers || []).filter((a) => a.q !== TITLE_KEY);
 export type MeetingType = {
   id: string; name: string; slug: string; duration_min: number;
   buffer_before_min: number; buffer_after_min: number; min_notice_min: number;
@@ -206,6 +221,24 @@ export async function updateBookingTime(id: string, startISO: string, endISO: st
   const { error } = await s.from("bookings").update({ start_utc: startISO, end_utc: endISO }).eq("id", id);
   if (error) throw new Error(error.message);
 }
+/** Confirmed meetings still to come — what the calendar→app sync has to keep an eye on. */
+export async function listUpcomingConfirmed(): Promise<Booking[]> {
+  const s = db(); if (!s) return [];
+  const { data } = await s.from("bookings").select("*")
+    .eq("status", "confirmed")
+    .gte("start_utc", new Date().toISOString())
+    .order("start_utc")
+    .limit(200);
+  return (data as Booking[]) || [];
+}
+
+/** A meeting that moved needs its reminder to fire again for the NEW time. */
+export async function clearReminderMark(id: string) {
+  const s = db(); if (!s) return;
+  const { error } = await s.from("bookings").update({ reminders_sent: [], reminded_at: null }).eq("id", id);
+  if (error) await s.from("bookings").update({ reminded_at: null }).eq("id", id);
+}
+
 export async function listBookings(opts: { from?: string; to?: string; status?: string } = {}): Promise<Booking[]> {
   const s = db(); if (!s) return [];
   let q = s.from("bookings").select("*").order("start_utc", { ascending: false }).limit(500);
@@ -269,9 +302,28 @@ export async function bookingsNeedingAnyReminder(maxLeadMin: number): Promise<Bo
     .gte("start_utc", now.toISOString()).lte("start_utc", until).limit(300);
   return (data as Booking[]) || [];
 }
-export async function markReminderSent(id: string, offsets: number[]) {
-  const s = db(); if (!s) return;
-  await s.from("bookings").update({ reminders_sent: offsets, reminded_at: new Date().toISOString() }).eq("id", id);
+/**
+ * Record that a booking's reminder(s) went out. Returns false if we could NOT record it — the
+ * caller must then not send, because an unrecorded reminder is re-sent on every cron run (that is
+ * a reminder email every 15 minutes until the meeting starts).
+ *
+ * `reminders_sent` (per-offset) is not present on every deployment; where it is missing we fall
+ * back to the plain `reminded_at` timestamp, which gives one reminder per booking instead of one
+ * per offset. Degraded, but never a loop.
+ */
+export async function markReminderSent(id: string, offsets: number[]): Promise<boolean> {
+  const s = db(); if (!s) return false;
+  const { error } = await s.from("bookings")
+    .update({ reminders_sent: offsets, reminded_at: new Date().toISOString() }).eq("id", id);
+  if (!error) return true;
+  const { error: e2 } = await s.from("bookings")
+    .update({ reminded_at: new Date().toISOString() }).eq("id", id);
+  if (!e2) {
+    console.warn(`[reminders] no reminders_sent column (${error.message}) — falling back to one reminder per booking`);
+    return true;
+  }
+  console.error(`[reminders] could not mark booking ${id} as reminded, so nothing was sent: ${e2.message}`);
+  return false;
 }
 export async function markFollowedUp(id: string) {
   const s = db(); if (!s) return;
