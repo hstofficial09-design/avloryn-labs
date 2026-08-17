@@ -333,24 +333,30 @@ export async function listPartnerRolesPortal(): Promise<string[]> {
   });
 }
 
-/** Is this employee a BD intern (i.e. gets the network-builder UI)? True when they already
- *  have downstream partners, or their role reads as a BD role. */
-export async function partnerBdMeta(email: string): Promise<{ id: string; isBd: boolean } | null> {
+/**
+ * Can this person build a network (i.e. gets the network-builder UI)?
+ *
+ * Anyone on the team can. Whoever brings in a network partner earns the override on that
+ * partner's sales; anyone who never brings one in simply has an empty network and is no worse
+ * off. It used to be BD-only, which meant an intern who found a campus ambassador had to hand
+ * them to a BD — and the BD then earned on someone they never signed up.
+ *
+ * The two people who can't: someone deactivated, and a partner whose own code hasn't been
+ * approved yet (they shouldn't be recruiting before they are live themselves).
+ */
+export async function partnerBdMeta(
+  email: string,
+): Promise<{ id: string; isBd: boolean; role: string } | null> {
   return withClient(async (c) => {
     const e = await c.query(
-      `SELECT id, role, emp_type, parent_bd_id FROM employees WHERE LOWER(email)=LOWER($1) LIMIT 1`, [email]);
+      `SELECT id, role, emp_type, active, partner_approved FROM employees WHERE LOWER(email)=LOWER($1) LIMIT 1`,
+      [email]);
     if (!e.rows[0]) return null;
     const row = e.rows[0];
-    const id = row.id;
-    const topLevelPartner = row.emp_type === "partner" && !String(row.parent_bd_id || "").trim();
-    // A BD (network-builder) is: an explicit BD role/type, OR any top-level partner partner (so they
-    // can recruit their first partner without a chicken-and-egg), OR anyone who already has partners.
-    let isBd = /\bbd\b|business\s*development/i.test(String(row.role || "")) || row.emp_type === "bd" || topLevelPartner;
-    if (!isBd) {
-      try { isBd = (await c.query(`SELECT 1 FROM employees WHERE parent_bd_id=$1 LIMIT 1`, [id])).rows.length > 0; }
-      catch { /* partner cols not migrated yet */ }
-    }
-    return { id, isBd };
+    const live = row.active === 1 || row.active === true || row.active === null;
+    // partner_approved only gates people who ARE partners; staff don't have one to wait for.
+    const awaitingApproval = row.emp_type === "partner" && row.partner_approved === 0;
+    return { id: row.id, isBd: live && !awaitingApproval, role: String(row.role || "") };
   });
 }
 
@@ -531,6 +537,22 @@ export async function listPartnerBds(): Promise<
       });
     }
     return out;
+  });
+}
+
+/**
+ * Everyone the owner can put a partner under. Any active employee qualifies — a partner who
+ * walks in directly can be handed to whoever deserves them as a reward, and that person then
+ * earns the override on their sales.
+ */
+export async function listAssignableParents(): Promise<{ id: string; name: string; role: string }[]> {
+  return withClient(async (c) => {
+    try {
+      return (await c.query(
+        `SELECT id, name, COALESCE(role,'') AS role FROM employees
+          WHERE (active IS NULL OR active=1) AND (deleted_at IS NULL)
+          ORDER BY name`)).rows;
+    } catch { return []; }
   });
 }
 

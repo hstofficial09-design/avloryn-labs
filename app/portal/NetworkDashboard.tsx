@@ -16,9 +16,13 @@ const inr = (n: number) => "₹" + Math.round(n || 0).toLocaleString("en-IN");
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
 const GOLD = "btn-gold rounded-full font-[560]";
 
+export type AssignableParent = { id: string; name: string; role: string };
+
 export default function NetworkDashboard(props: {
   mode: "owner" | "bd";
   name: string;
+  myRole?: string;
+  parents?: AssignableParent[];
   isBd?: boolean;
   network?: NetworkPartner[];
   bds?: PartnerBd[];
@@ -29,7 +33,7 @@ export default function NetworkDashboard(props: {
   error?: string | null;
 }) {
   const router = useRouter();
-  const { mode, name, isBd, network = [], bds = [], roles = [], attachable = [], pending = [], users = [], error } = props;
+  const { mode, name, myRole, parents = [], isBd, network = [], bds = [], roles = [], attachable = [], pending = [], users = [], error } = props;
   const [busy, setBusy] = useState(false);
   async function logout() { await fetch("/api/portal/logout", { method: "POST" }); router.push("/portal/login"); }
 
@@ -142,7 +146,8 @@ export default function NetworkDashboard(props: {
           <div className="rounded-xl border border-[#eeddb0] bg-[#fdf5e3] text-[#946412] text-[13px] px-4 py-3">⚠ {error}</div>
         ) : mode === "bd" && !isBd ? (
           <div className="card-lux rounded-2xl px-5 py-6 text-[13.5px] text-muted-foreground">
-            You don&rsquo;t have a partner network yet. Once you&rsquo;re set up as a BD, you&rsquo;ll be able to add network partners and track your override here.
+            This page opens up once your account is active and approved. Then anyone you bring in
+            as a network partner shows up here, along with the 2% you earn on their sales.
           </div>
         ) : mode === "bd" ? (
           <>
@@ -252,13 +257,15 @@ export default function NetworkDashboard(props: {
               <h2 className="font-serif text-[20px] font-[600] tracking-[-0.01em] mb-1">Your family</h2>
               <p className="text-[13px] text-muted-foreground mb-3">Your network at a glance — you, and the partners under you.</p>
               <FamilyChart root={{ name: "Avloryn Labs", label: "Company", children: [
-                { name, label: "BD", you: true, children: network.map((p) => ({ name: p.name, label: p.role || "partner", note: inr(p.sales) })) },
+                { name, label: myRole || "Team", you: true, children: network.map((p) => ({ name: p.name, label: p.role || "partner", note: inr(p.sales) })) },
               ] }} />
             </section>
           </>
         ) : (
           // OWNER OBSERVER
           <>
+            <OwnerAddPartner roles={roleList} parents={parents} onDone={() => router.refresh()} />
+
             <RoleManager roles={roleList} setRoles={setRoleList} canDelete />
 
             {pending.length > 0 && (
@@ -361,6 +368,81 @@ function Th({ children, r }: { children: React.ReactNode; r?: boolean }) {
 
 /** Partner types, managed from the admin view. BDs get the same add box inside their
  *  add-partner form; removing a type is the owner's call and is refused while it is in use. */
+/**
+ * Owner-only: sign a partner up yourself.
+ *
+ * Two cases, one form. A partner who came to you directly sits under nobody — they earn their
+ * usual 10% and no override is paid to anyone, because nobody introduced them. If you'd rather
+ * reward someone, put them under any employee and that person earns the 2% override on them.
+ * Either way the partner goes live immediately (you added them, so there is nothing to approve)
+ * and gets their login by email.
+ */
+function OwnerAddPartner({ roles, parents, onDone }: { roles: string[]; parents: AssignableParent[]; onDone: () => void }) {
+  const input = "w-full text-[13px] neu-inset text-foreground placeholder:text-faint rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-gold/25";
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [role, setRole] = useState(roles[0] || "");
+  const [parent, setParent] = useState("");        // "" = direct, nobody above them
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<{ ok: boolean; t: string } | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setRes(null);
+    if (!name.trim()) return setRes({ ok: false, t: "Enter their name." });
+    if (!email.trim() || !email.includes("@")) return setRes({ ok: false, t: "A valid email is required — they log in with it." });
+    setBusy(true);
+    try {
+      const r = await fetch("/api/portal/partner/create", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), email: email.trim(), mobile: mobile.trim(), role, bdId: parent }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) return setRes({ ok: false, t: d.error || "Could not add them." });
+      const who = parent ? parents.find((p) => p.id === parent)?.name : "";
+      setRes({ ok: true, t: `Code ${d.code} is live${who ? ` · under ${who} (they earn the 2%)` : " · direct, no override paid"}.`
+        + (d.emailed ? " Login emailed." : " ⚠ Login email not sent.") + (d.warning ? ` ${d.warning}` : "") });
+      setName(""); setEmail(""); setMobile("");
+      onDone();
+    } catch { setRes({ ok: false, t: "Network error — try again." }); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <form onSubmit={submit} className="card-lux rounded-2xl p-5 mb-6">
+      <div className="font-serif text-[15px] font-[600] mb-1">Add a partner yourself</div>
+      <p className="text-[12.5px] text-muted-foreground mb-3">
+        For someone who came to you directly. They earn the usual 10% and buyers get 25% off their
+        first document — but with nobody above them, no 2% override is paid out. Want to reward an
+        employee for the introduction? Put the partner under them instead.
+      </p>
+      <div className="grid sm:grid-cols-2 gap-2.5">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" className={input} />
+        <select value={role} onChange={(e) => setRole(e.target.value)} className={input + " appearance-none"}>
+          {roles.length === 0 && <option value="">Partner type</option>}
+          {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (required — they log in with it)" className={input} />
+        <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile (optional)" className={input} />
+      </div>
+      <div className="mt-2.5">
+        <label className="section-label block mb-1">Put them under</label>
+        <select value={parent} onChange={(e) => setParent(e.target.value)} className={input + " appearance-none"}>
+          <option value="">Nobody — direct to Avloryn (no override paid)</option>
+          {parents.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}{p.role ? ` · ${p.role}` : ""} — they earn 2%</option>
+          ))}
+        </select>
+      </div>
+      {res && <div className={"text-[12.5px] mt-2.5 " + (res.ok ? "text-[#1e7a44] font-[560]" : "text-[#b3341f]")}>{res.ok ? "✓ " : ""}{res.t}</div>}
+      <button type="submit" disabled={busy} className={GOLD + " text-[12.5px] px-4 py-2 mt-3 disabled:opacity-60"}>
+        {busy ? "Adding…" : "Add partner"}
+      </button>
+    </form>
+  );
+}
+
 function RoleManager({ roles, setRoles, canDelete }: { roles: string[]; setRoles: (r: string[]) => void; canDelete?: boolean }) {
   const input = "w-full text-[13px] neu-inset text-foreground placeholder:text-faint rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-gold/25";
   const [name, setName] = useState("");
