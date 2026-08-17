@@ -9,9 +9,15 @@ export const dynamic = "force-dynamic";
  *  LivoDraft's /admin/enter verifies, so livodraft.com/admin can stay hidden (404) to everyone
  *  else. The secret (ADMIN_SSO_SECRET, or PARTNER_API_KEY) must match LivoDraft's. */
 export async function GET(req: Request) {
+  // Behind Railway's proxy req.url resolves to the internal localhost:8080 bind, so a redirect
+  // built from it sends the browser to localhost. Reconstruct the public origin from the
+  // forwarded host headers instead.
+  const proto = req.headers.get("x-forwarded-proto") || "https";
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || new URL(req.url).host;
+  const origin = `${proto}://${host}`;
   const s = await getSession();
   if (!s || s.role !== "owner") {
-    return NextResponse.redirect(new URL("/portal/login", req.url));
+    return NextResponse.redirect(`${origin}/portal/login`);
   }
   const base = (process.env.LIVODRAFT_API_URL || "https://livodraft.com").replace(/\/+$/, "");
   const secret = process.env.ADMIN_SSO_SECRET || process.env.PARTNER_API_KEY || "";
