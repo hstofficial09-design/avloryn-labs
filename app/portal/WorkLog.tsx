@@ -1,0 +1,507 @@
+"use client";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+/**
+ * The work log, in both the shapes it is needed:
+ *
+ *   mode="employee" — your own notepad. Write a task, give it a deadline, tick it done when you
+ *                     finish, and take the whole log away as a PDF whenever you like.
+ *   mode="owner"    — one person at a time: assign work, tick what has actually been delivered,
+ *                     score the week against the week's real numbers, and issue the report.
+ *
+ * Deliberately one component: the two sides must show the same rows the same way, or a review
+ * conversation turns into an argument about whose screen is right.
+ */
+
+type Task = {
+  id: string; seq: number; title: string; detail: string | null;
+  source: "owner" | "self";
+  assigned_at: string; due_at: string | null; done_at: string | null; delivered_at: string | null;
+};
+type Criterion = { id: string; label: string };
+type Review = {
+  id: string; week_start: string; scores: Record<string, number>;
+  metrics: { name: string; target?: string; actual?: string; score?: number }[];
+  note: string | null;
+};
+type Stats = {
+  total: number; delivered: number; onTime: number; late: number; overdue: number; pending: number;
+  onTimePct: number | null; deliveredPct: number | null; assignedByOwner: number; selfSet: number;
+};
+type Tenure = { weeks: number; average: number | null; perCriterion: Record<string, number>; stats: Stats; band: string };
+type Member = { id: string; name: string; role?: string | null; emp_type?: string | null; active?: number | boolean };
+
+const INPUT = "w-full text-[13px] neu-inset text-foreground placeholder:text-faint rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-gold/25";
+const GOLD = "btn-gold rounded-full font-[560]";
+const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
+
+const fmt = (iso: string | null, withTime = true) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric",
+    ...(withTime ? { hour: "2-digit", minute: "2-digit", hour12: true } : {}),
+  }).replace(",", "");
+};
+
+/** Same rule as the server, so the badge on screen and the badge in the PDF never disagree. */
+function status(t: Task): { label: string; tone: string } {
+  if (t.delivered_at) {
+    if (!t.due_at) return { label: "Delivered", tone: "#1e7a44" };
+    return Date.parse(t.delivered_at) <= Date.parse(t.due_at)
+      ? { label: "On time", tone: "#1e7a44" }
+      : { label: "Late", tone: "#b3341f" };
+  }
+  if (t.due_at && Date.now() > Date.parse(t.due_at)) return { label: "Overdue", tone: "#b3341f" };
+  return { label: "Pending", tone: "#7a736a" };
+}
+
+/** A <input type="datetime-local"> value is local time; the server wants an instant. */
+const toISO = (local: string) => (local ? new Date(local).toISOString() : null);
+const toLocal = (iso: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+export default function WorkLog({ mode }: { mode: "employee" | "owner" }) {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [tenure, setTenure] = useState<Tenure | null>(null);
+  const [criteria, setCriteria] = useState<Criterion[]>([]);
+  const [team, setTeam] = useState<Member[]>([]);
+  const [who, setWho] = useState("");              // owner mode: whose log is open
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  // Bumped on every successful write so the review panel re-reads the week it is showing.
+  const [version, setVersion] = useState(0);
+
+  // new task
+  const [title, setTitle] = useState("");
+  const [detail, setDetail] = useState("");
+  const [due, setDue] = useState("");
+
+  const load = useCallback(async (employeeId?: string) => {
+    setErr("");
+    try {
+      const qs = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "";
+      const r = await fetch(`/api/portal/tasks${qs}`, { cache: "no-store" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Could not load the work log");
+      setCriteria(d.criteria || []);
+      if (d.team) setTeam((d.team as Member[]).filter((m) => m.active !== 0));
+      if (employeeId || !d.owner) {
+        setTasks(d.tasks || []); setReviews(d.reviews || []);
+        setStats(d.stats || null); setTenure(d.tenure || null);
+      } else {
+        setTasks([]); setReviews([]); setStats(null); setTenure(null);
+      }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not load the work log"); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (mode === "owner" && who) load(who); }, [who, mode, load]);
+
+  /** Flip the row on screen at once; the reload right after is what confirms it. */
+  const optimistic = (id: string, field: "delivered_at" | "done_at", on: boolean) =>
+    setTasks((ts) => ts.map((t) => t.id === id ? { ...t, [field]: on ? new Date().toISOString() : null } : t));
+
+  const post = async (body: any) => {
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch("/api/portal/tasks", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Could not save");
+      await load(mode === "owner" ? who : undefined);
+      setVersion((v) => v + 1);
+      return true;
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not save"); return false; }
+    finally { setBusy(false); }
+  };
+
+  async function addTask(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return setErr("Write the task first");
+    if (mode === "owner" && !who) return setErr("Pick who this task is for");
+    const ok = await post({ action: "add", employeeId: who || undefined, title, detail, dueAt: toISO(due) });
+    if (ok) { setTitle(""); setDetail(""); setDue(""); }
+  }
+
+  const person = team.find((m) => m.id === who);
+  const pdfHref = (kind: "log" | "report") =>
+    `/api/portal/worklog-pdf?kind=${kind}${mode === "owner" && who ? `&employeeId=${encodeURIComponent(who)}` : ""}`;
+
+  // The page above supplies the title and the explanation; repeating them here read as a
+  // duplicate heading.
+  return (
+    <section className="mt-6">
+      {mode === "owner" && (
+        <div className="card-lux rounded-2xl p-4 mb-4 flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[220px]">
+            <label className="section-label block mb-1">Whose log</label>
+            <select value={who} onChange={(e) => setWho(e.target.value)} className={INPUT + " appearance-none"}>
+              <option value="">— pick a person —</option>
+              {team.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}{m.role ? ` · ${m.role}` : ""}</option>
+              ))}
+            </select>
+          </div>
+          {who && (
+            <div className="flex gap-2 flex-wrap">
+              <a href={pdfHref("log")} className={GHOST + " text-[12.5px] px-4 py-2.5 inline-block"}>↓ Work log</a>
+              <a href={pdfHref("report")} className={GOLD + " text-[12.5px] px-4 py-2.5 inline-block"}>↓ Performance report</a>
+            </div>
+          )}
+        </div>
+      )}
+
+      {err && <div className="rounded-xl border border-[#f0cfc7] bg-[#fdf1ee] text-[#8d2b18] text-[12.5px] px-4 py-2.5 mb-3">{err}</div>}
+
+      {(mode === "employee" || who) && (
+        <>
+          {stats && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              <Stat k="Tasks" v={String(stats.total)} />
+              <Stat k="Delivered" v={stats.deliveredPct != null ? `${stats.delivered} · ${stats.deliveredPct}%` : String(stats.delivered)} />
+              <Stat k="On time" v={stats.onTimePct != null ? `${stats.onTimePct}%` : "—"} tone={stats.onTimePct != null && stats.onTimePct >= 80 ? "#1e7a44" : stats.onTimePct != null && stats.onTimePct < 50 ? "#b3341f" : undefined} />
+              <Stat k={stats.overdue ? "Overdue" : "Still open"} v={String(stats.overdue || stats.pending)} tone={stats.overdue ? "#b3341f" : undefined} />
+            </div>
+          )}
+
+          {/* ── the notepad ── */}
+          <form onSubmit={addTask} className="card-lux rounded-2xl p-5 mb-4">
+            <div className="font-serif text-[15px] font-[600] mb-3">
+              {mode === "owner" ? `Give ${person?.name?.split(" ")[0] || "them"} a task` : "Add a task"}
+            </div>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What is the task?" className={INPUT} />
+            <textarea value={detail} onChange={(e) => setDetail(e.target.value)} rows={2}
+              placeholder="Any detail (optional)" className={INPUT + " mt-2.5 resize-y"} />
+            <div className="flex flex-wrap items-end gap-3 mt-2.5">
+              <div className="flex-1 min-w-[200px]">
+                <label className="section-label block mb-1">Deadline (optional)</label>
+                <input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} className={INPUT} />
+              </div>
+              <button type="submit" disabled={busy} className={GOLD + " px-5 py-2.5 text-[12.5px] disabled:opacity-50"}>
+                {busy ? "Saving…" : "Add to log"}
+              </button>
+            </div>
+            <p className="text-[11.5px] text-faint mt-2">
+              A deadline is what lets the system tell you later whether it was delivered on time. Without one, the task is just recorded.
+            </p>
+          </form>
+
+          {/* ── the log ── */}
+          <div className="card-lux rounded-2xl overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+              <b className="font-serif text-[15px] font-[600]">The log</b>
+              {mode === "employee" && (
+                <a href={pdfHref("log")} className={GHOST + " text-[12px] px-3.5 py-2 inline-block"}>↓ Download as PDF</a>
+              )}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px] min-w-[760px]">
+                <thead><tr className="section-label bg-subtle/60">
+                  <Th>#</Th><Th>Task</Th><Th>Given</Th><Th>Deadline</Th><Th>Delivered</Th><Th>Status</Th><Th r>{mode === "owner" ? "Delivered?" : "Done?"}</Th>
+                </tr></thead>
+                <tbody>
+                  {tasks.length === 0 && (
+                    <tr><td colSpan={7} className="text-center text-faint py-8">
+                      Nothing here yet — add the first task above.
+                    </td></tr>
+                  )}
+                  {tasks.map((t) => {
+                    const st = status(t);
+                    return (
+                      <tr key={t.id} className="border-t border-border align-top">
+                        <td className="px-4 py-3 font-mono text-muted-foreground">{t.seq}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-[560]">{t.title}</div>
+                          {t.detail && <div className="text-[12px] text-muted-foreground mt-0.5 whitespace-pre-wrap">{t.detail}</div>}
+                          <div className="text-[11px] text-faint mt-0.5">{t.source === "owner" ? "assigned" : "self-set"}</div>
+                        </td>
+                        <td className="px-4 py-3 text-[12px] text-muted-foreground">{fmt(t.assigned_at)}</td>
+                        <td className="px-4 py-3 text-[12px] text-muted-foreground">{fmt(t.due_at)}</td>
+                        <td className="px-4 py-3 text-[12px] text-muted-foreground">{fmt(t.delivered_at)}</td>
+                        <td className="px-4 py-3"><span className="font-[600] text-[12px]" style={{ color: st.tone }}>{st.label}</span></td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          {mode === "owner" ? (
+                            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                              <input type="checkbox" checked={!!t.delivered_at} disabled={busy}
+                                onChange={(e) => { optimistic(t.id, "delivered_at", e.target.checked); post({ action: "delivered", id: t.id, delivered: e.target.checked }); }} />
+                              <span className="text-[12px] text-muted-foreground">{t.done_at ? "they marked done" : ""}</span>
+                            </label>
+                          ) : t.delivered_at ? (
+                            // Once it's accepted there is nothing left to tick — an empty,
+                            // disabled box next to the word "accepted" just read as a mistake.
+                            <span className="text-[12px] font-[600] text-[#1e7a44]">✓ Accepted</span>
+                          ) : (
+                            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                              <input type="checkbox" checked={!!t.done_at} disabled={busy}
+                                onChange={(e) => { optimistic(t.id, "done_at", e.target.checked); post({ action: "done", id: t.id, done: e.target.checked }); }} />
+                              <span className="text-[12px] text-muted-foreground">done</span>
+                            </label>
+                          )}
+                          {(mode === "owner" || (t.source === "self" && !t.delivered_at)) && (
+                            <button type="button" title="Remove this task" disabled={busy}
+                              onClick={() => { if (confirm(`Remove task #${t.seq}?`)) post({ action: "delete", id: t.id }); }}
+                              className="ml-2 text-[#b3341f] text-[15px] leading-none disabled:opacity-40">×</button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {mode === "employee" && (
+            <p className="text-[11.5px] text-faint mt-2">
+              “Done” is you saying you’ve finished. The founder ticks “delivered” when it’s accepted — that’s what decides on time or late.
+            </p>
+          )}
+
+          {mode === "owner" && who && (
+            <ReviewPanel employeeId={who} criteria={criteria} refreshKey={version} onSaved={() => load(who)} />
+          )}
+
+          {/* ── tenure score ── */}
+          {tenure && tenure.weeks > 0 && (
+            <div className="card-lux rounded-2xl p-5 mt-4">
+              <div className="font-serif text-[15px] font-[600] mb-1">
+                {mode === "owner" ? "Whole-tenure score" : "Your overall score"}
+              </div>
+              <p className="text-[12.5px] text-muted-foreground mb-3">
+                Every weekly review averaged, each week counting equally.
+              </p>
+              <div className="flex items-baseline gap-3 flex-wrap mb-3">
+                <span className="text-[30px] font-extrabold font-mono tracking-tight text-gold">
+                  {tenure.average != null ? tenure.average.toFixed(1) : "—"}<span className="text-[16px] text-muted-foreground"> / 5</span>
+                </span>
+                <span className="text-[14px] font-[600]">{tenure.band}</span>
+                <span className="text-[12px] text-faint">across {tenure.weeks} week{tenure.weeks === 1 ? "" : "s"}</span>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                {criteria.map((c) => tenure.perCriterion[c.id] != null && (
+                  <div key={c.id} className="flex items-center justify-between text-[12.5px] border-b border-border py-1">
+                    <span className="text-muted-foreground">{c.label}</span>
+                    <b className="font-mono">{tenure.perCriterion[c.id].toFixed(1)}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── past reviews (both sides see them; only the owner writes them) ── */}
+          {reviews.length > 0 && (
+            <div className="card-lux rounded-2xl overflow-hidden mt-4">
+              <div className="px-5 py-3.5 border-b border-border"><b className="font-serif text-[15px] font-[600]">Weekly reviews</b></div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px] min-w-[620px]">
+                  <thead><tr className="section-label bg-subtle/60">
+                    <Th>Week of</Th>{criteria.map((c) => <Th key={c.id} r>{c.label.split(" ")[0]}</Th>)}<Th r>Avg</Th><Th>Note</Th>
+                  </tr></thead>
+                  <tbody>
+                    {reviews.map((r) => {
+                      const vals = criteria.map((c) => r.scores[c.id]).filter((n) => typeof n === "number");
+                      const avg = vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
+                      return (
+                        <tr key={r.id} className="border-t border-border align-top">
+                          <td className="px-4 py-3 whitespace-nowrap">{fmt(`${r.week_start}T00:00:00+05:30`, false)}</td>
+                          {criteria.map((c) => <td key={c.id} className="px-4 py-3 text-right font-mono">{r.scores[c.id] ?? "—"}</td>)}
+                          <td className="px-4 py-3 text-right font-mono font-bold">{avg != null ? avg.toFixed(1) : "—"}</td>
+                          <td className="px-4 py-3 text-[12px] text-muted-foreground">
+                            {r.note}
+                            {r.metrics?.length > 0 && (
+                              <ul className="mt-1">
+                                {r.metrics.map((m, i) => (
+                                  <li key={i}>· {m.name}{m.target ? ` — target ${m.target}` : ""}{m.actual ? `, actual ${m.actual}` : ""}{m.score ? ` (${m.score}/5)` : ""}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {mode === "owner" && !who && (
+        <div className="card-lux rounded-2xl px-5 py-8 text-center text-[13px] text-muted-foreground">
+          Pick a person above to see their tasks, score their week, and issue their report.
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The weekly review.
+ *
+ * The week's real task numbers are loaded and shown ABOVE the scoring, on purpose: a review
+ * written from memory drifts, and "3 of 5 delivered, 1 late" is the thing worth talking about.
+ */
+function ReviewPanel({ employeeId, criteria, refreshKey, onSaved }: { employeeId: string; criteria: Criterion[]; refreshKey: number; onSaved: () => void }) {
+  const [week, setWeek] = useState("");
+  const [data, setData] = useState<any>(null);
+  const [scores, setScores] = useState<Record<string, number>>({});
+  const [metrics, setMetrics] = useState<{ name: string; target: string; actual: string; score: string }[]>([]);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
+
+  const loadWeek = useCallback(async (w?: string) => {
+    const r = await fetch(`/api/portal/reviews?employeeId=${encodeURIComponent(employeeId)}${w ? `&week=${w}` : ""}`, { cache: "no-store" });
+    const d = await r.json();
+    if (!r.ok) return;
+    setData(d); setWeek(d.week);
+    setScores(d.existing?.scores || {});
+    setNote(d.existing?.note || "");
+    setMetrics((d.existing?.metrics || []).map((m: any) => ({
+      name: m.name || "", target: m.target || "", actual: m.actual || "", score: m.score ? String(m.score) : "",
+    })));
+  }, [employeeId]);
+
+  useEffect(() => { loadWeek(); }, [loadWeek]);
+  // A task added or ticked off changes this week's figures — re-read them for the week on screen,
+  // or the score is set against numbers that were true a minute ago.
+  const shown = week;
+  useEffect(() => { if (refreshKey && shown) loadWeek(shown); }, [refreshKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const shift = (weeks: number) => {
+    const d = new Date(`${week}T00:00:00+05:30`);
+    d.setDate(d.getDate() + weeks * 7);
+    loadWeek(d.toISOString().slice(0, 10));
+  };
+
+  async function save() {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch("/api/portal/reviews", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId, week, scores, note,
+          metrics: metrics.filter((m) => m.name.trim()).map((m) => ({
+            name: m.name, target: m.target, actual: m.actual, score: m.score ? Number(m.score) : undefined,
+          })),
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Could not save");
+      setMsg({ ok: true, t: "Review saved." });
+      onSaved(); loadWeek(week);
+    } catch (e) { setMsg({ ok: false, t: e instanceof Error ? e.message : "Could not save" }); }
+    finally { setBusy(false); }
+  }
+
+  const ws = data?.weekStats;
+  const scored = criteria.filter((c) => scores[c.id]).length;
+  const avg = scored ? Math.round((criteria.reduce((a, c) => a + (scores[c.id] || 0), 0) / scored) * 10) / 10 : null;
+
+  return (
+    <div className="card-lux rounded-2xl p-5 mt-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+        <div className="font-serif text-[15px] font-[600]">Weekly review</div>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => shift(-1)} className={GHOST + " text-[12px] px-3 py-1.5"}>← Previous</button>
+          <span className="text-[12.5px] font-[560] font-mono">{week ? fmt(`${week}T00:00:00+05:30`, false) : "—"}</span>
+          <button type="button" onClick={() => shift(1)} className={GHOST + " text-[12px] px-3 py-1.5"}>Next →</button>
+        </div>
+      </div>
+      <p className="text-[12.5px] text-muted-foreground mb-3">Week beginning Monday. Re-opening a week edits that review rather than adding another.</p>
+
+      {ws && (
+        <div className="rounded-xl bg-subtle/60 px-4 py-3 mb-4 text-[12.5px]">
+          <b className="section-label">That week, in fact</b>
+          <div className="mt-1.5 text-muted-foreground">
+            {ws.total === 0 ? "No tasks were recorded in this week." : (
+              <>
+                <b className="text-foreground">{ws.total}</b> task{ws.total === 1 ? "" : "s"} recorded ·{" "}
+                <b className="text-foreground">{ws.delivered}</b> delivered
+                {ws.onTimePct != null && <> · <b style={{ color: ws.onTimePct >= 80 ? "#1e7a44" : ws.onTimePct < 50 ? "#b3341f" : undefined }}>{ws.onTimePct}% on time</b></>}
+                {ws.late > 0 && <> · <b style={{ color: "#b3341f" }}>{ws.late} late</b></>}
+                {ws.overdue > 0 && <> · <b style={{ color: "#b3341f" }}>{ws.overdue} overdue</b></>}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2.5">
+        {criteria.map((c) => (
+          <div key={c.id} className="flex items-center justify-between gap-3">
+            <span className="text-[13px]">{c.label}</span>
+            <div className="flex gap-1">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} type="button"
+                  onClick={() => setScores((s) => ({ ...s, [c.id]: s[c.id] === n ? 0 : n }))}
+                  title={["Poor", "Needs development", "Meets expectations", "Good", "Excellent"][n - 1]}
+                  className={"w-7 h-7 rounded-lg text-[12px] font-[600] transition-colors ring-1 " +
+                    (scores[c.id] === n ? "btn-gold ring-transparent" : "bg-card ring-border hover:ring-[hsl(var(--gold)/0.5)]")}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4">
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="section-label">Your own metrics (optional)</label>
+          <button type="button" onClick={() => setMetrics((m) => [...m, { name: "", target: "", actual: "", score: "" }])}
+            className="text-[11.5px] font-semibold text-gold hover:underline">+ add a metric</button>
+        </div>
+        {metrics.map((m, i) => (
+          <div key={i} className="flex flex-wrap gap-2 mb-2">
+            <input value={m.name} onChange={(e) => setMetrics((a) => a.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+              placeholder="Metric (e.g. reels published)" className={INPUT + " flex-1 min-w-[160px] text-[12.5px] py-2"} />
+            <input value={m.target} onChange={(e) => setMetrics((a) => a.map((x, j) => j === i ? { ...x, target: e.target.value } : x))}
+              placeholder="Target" className={INPUT + " w-[90px] text-[12.5px] py-2"} />
+            <input value={m.actual} onChange={(e) => setMetrics((a) => a.map((x, j) => j === i ? { ...x, actual: e.target.value } : x))}
+              placeholder="Actual" className={INPUT + " w-[90px] text-[12.5px] py-2"} />
+            <select value={m.score} onChange={(e) => setMetrics((a) => a.map((x, j) => j === i ? { ...x, score: e.target.value } : x))}
+              className={INPUT + " w-[78px] text-[12.5px] py-2 appearance-none"}>
+              <option value="">—/5</option>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}/5</option>)}
+            </select>
+            <button type="button" onClick={() => setMetrics((a) => a.filter((_, j) => j !== i))}
+              className="text-[#b3341f] text-[15px] px-1">×</button>
+          </div>
+        ))}
+      </div>
+
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
+        placeholder="What went well, what to fix next week" className={INPUT + " mt-3 resize-y"} />
+
+      <div className="flex items-center gap-3 flex-wrap mt-3">
+        <button type="button" onClick={save} disabled={busy} className={GOLD + " px-5 py-2.5 text-[12.5px] disabled:opacity-50"}>
+          {busy ? "Saving…" : data?.existing ? "Update this week" : "Save review"}
+        </button>
+        {avg != null && <span className="text-[13px]">This week: <b className="font-mono">{avg.toFixed(1)} / 5</b></span>}
+        {msg && <span className={"text-[12.5px] " + (msg.ok ? "text-[#1e7a44]" : "text-[#b3341f]")}>{msg.t}</span>}
+      </div>
+    </div>
+  );
+}
+
+function Stat({ k, v, tone }: { k: string; v: string; tone?: string }) {
+  return (
+    <div className="card-lux rounded-xl px-4 py-3.5">
+      <div className="text-[11.5px] text-muted-foreground mb-1.5">{k}</div>
+      <div className="text-[20px] font-extrabold font-mono tracking-tight" style={tone ? { color: tone } : {}}>{v}</div>
+    </div>
+  );
+}
+function Th({ children, r }: { children: React.ReactNode; r?: boolean }) {
+  return <th className={"px-4 py-2.5 " + (r ? "text-right" : "text-left")}>{children}</th>;
+}

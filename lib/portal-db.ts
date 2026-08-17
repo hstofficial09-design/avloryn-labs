@@ -93,6 +93,40 @@ async function ensureSchema(c: PoolClient) {
   await c.query(`CREATE INDEX IF NOT EXISTS job_openings_status ON job_openings(status)`);
   await c.query(`ALTER TABLE job_openings ADD COLUMN IF NOT EXISTS form_fields JSONB NOT NULL DEFAULT '[]'::jsonb`);
 
+  // ── Work log: tasks + weekly reviews ────────────────────────────────────────
+  // One row per task, numbered per person so everyone's log reads 1, 2, 3…
+  // `source` records who wrote it: a task the owner assigned reads differently in a review
+  // from one the person set themselves, and after three months nobody remembers which was which.
+  // Two separate timestamps on purpose: `done_at` is the person saying they finished, and
+  // `delivered_at` is the owner accepting it. Collapsing them into one flag would let a task
+  // count as delivered on the strength of the claim alone.
+  await c.query(`CREATE TABLE IF NOT EXISTS portal_tasks (
+    id           TEXT PRIMARY KEY,
+    employee_id  TEXT NOT NULL,
+    seq          INT  NOT NULL,
+    title        TEXT NOT NULL,
+    detail       TEXT,
+    source       TEXT NOT NULL DEFAULT 'self',
+    assigned_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    due_at       TIMESTAMPTZ,
+    done_at      TIMESTAMPTZ,
+    delivered_at TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now())`);
+  await c.query(`CREATE INDEX IF NOT EXISTS portal_tasks_emp ON portal_tasks(employee_id, seq)`);
+
+  // One review per person per week. The week is stored as its Monday so a re-open of the same
+  // week updates rather than piles up a second review.
+  await c.query(`CREATE TABLE IF NOT EXISTS portal_reviews (
+    id          TEXT PRIMARY KEY,
+    employee_id TEXT NOT NULL,
+    week_start  TEXT NOT NULL,
+    scores      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    metrics     JSONB NOT NULL DEFAULT '[]'::jsonb,
+    note        TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now())`);
+  await c.query(`CREATE UNIQUE INDEX IF NOT EXISTS portal_reviews_week ON portal_reviews(employee_id, week_start)`);
+
   // owner's own personal profile (single row)
   await c.query(`CREATE TABLE IF NOT EXISTS company_profile (
     id INT PRIMARY KEY DEFAULT 1, full_name TEXT, email TEXT, mobile TEXT, dob TEXT, address TEXT, updated_at TIMESTAMPTZ)`);
@@ -275,6 +309,26 @@ export async function employeeOwnData(email: string) {
   return { employee: safeEmp as Employee, summary, orders };
 }
 
+/** An employee's PROMO codes (they can own several — for direct sales / campaigns). Separate from
+ *  their single referral/affiliate code. Shown on their own dashboard. */
+export async function employeePromoCodes(empId: string): Promise<
+  { code: string; type: string; value: number; commission_pct: number; active: boolean; uses: number }[]
+> {
+  if (!empId) return [];
+  return withClient(async (c) => {
+    try {
+      const r = await c.query(
+        `SELECT code, type, value, commission_pct, active, uses FROM promo_codes
+         WHERE employee_id=$1 ORDER BY code`, [empId]);
+      return r.rows.map((x: any) => ({
+        code: x.code, type: String(x.type || "percent"), value: +x.value || 0,
+        commission_pct: +x.commission_pct || 0,
+        active: x.active === 1 || x.active === true, uses: +x.uses || 0,
+      }));
+    } catch { return []; }
+  });
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 //  BD 2-TIER PARTNER NETWORK  (campus ambassador · influencer · agency …)
 //  Codes live in LivoDraft's shared DB. A BD intern recruits partners who each get a
@@ -357,6 +411,50 @@ export async function partnerBdMeta(
     // partner_approved only gates people who ARE partners; staff don't have one to wait for.
     const awaitingApproval = row.emp_type === "partner" && row.partner_approved === 0;
     return { id: row.id, isBd: live && !awaitingApproval, role: String(row.role || "") };
+  });
+}
+
+export type PartnerPerson = {
+  id: string; name: string; role: string; code: string;
+  direct_sales: number; direct_earned: number; direct_pending: number;
+  override_earned: number; override_pending: number;
+  network: NetworkPartner[];
+};
+
+/** Every active person, each with their OWN code + direct-sale commission, the 2% override they
+ *  earn as an upline, and the network under them. Powers the owner's all-people network view
+ *  (everyone can host a network now — not just those who already have a downline). */
+export async function listAllPartnerPeople(): Promise<PartnerPerson[]> {
+  return withClient(async (c) => {
+    let emps: any[] = [];
+    try {
+      emps = (await c.query(
+        `SELECT id, name, role, emp_type FROM employees
+         WHERE active=1 AND COALESCE(deleted_at::text,'')='' ORDER BY name`)).rows;
+    } catch { return []; }
+    const out: PartnerPerson[] = [];
+    for (const e of emps) {
+      const code = (await c.query(
+        `SELECT code FROM partner_codes WHERE employee_id=$1 ORDER BY created_at LIMIT 1`, [e.id])).rows[0]?.code || "";
+      const d = (await c.query(
+        `SELECT COALESCE(SUM(order_amount_inr),0) sales, COALESCE(SUM(commission_inr),0) earned,
+                COALESCE(SUM(CASE WHEN status='pending' THEN commission_inr ELSE 0 END),0) pending
+         FROM employee_commissions WHERE employee_id=$1 AND tier='direct' AND status<>'void'`, [e.id])).rows[0];
+      const ov = (await c.query(
+        `SELECT COALESCE(SUM(commission_inr),0) earned,
+                COALESCE(SUM(CASE WHEN status='pending' THEN commission_inr ELSE 0 END),0) pending
+         FROM employee_commissions WHERE employee_id=$1 AND tier='override' AND status<>'void'`, [e.id])).rows[0];
+      const network = await networkOf(c, e.id);
+      out.push({
+        id: e.id, name: e.name,
+        role: e.role || (e.emp_type === "intern" ? "Intern" : "Employee"),
+        code,
+        direct_sales: r2(d.sales), direct_earned: r2(d.earned), direct_pending: r2(d.pending),
+        override_earned: r2(ov.earned), override_pending: r2(ov.pending),
+        network,
+      });
+    }
+    return out;
   });
 }
 
@@ -646,6 +744,11 @@ export async function purgeExpiredEmployees(): Promise<number> {
     ).rows.map((r) => r.id);
     if (ids.length) {
       await c.query(`DELETE FROM employee_commissions WHERE employee_id = ANY($1)`, [ids]);
+      // Their work log goes with them — anything referencing an employee must be cleared here,
+      // or a purge leaves orphan rows pointing at an id that no longer exists.
+      for (const t of ["portal_tasks", "portal_reviews"]) {
+        try { await c.query(`DELETE FROM ${t} WHERE employee_id = ANY($1)`, [ids]); } catch { /* table may predate this */ }
+      }
       await c.query(`DELETE FROM employees WHERE id = ANY($1)`, [ids]);
     }
     return ids.length;
@@ -967,4 +1070,280 @@ export async function setOpeningStatus(id: string, status: "draft" | "open" | "c
 }
 export async function deleteOpening(id: string) {
   return withClient((c) => c.query(`DELETE FROM job_openings WHERE id=$1`, [id]));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// WORK LOG — tasks, weekly reviews, and the numbers a review should be based on
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** One person by id — for the documents that name them (work log, performance report). */
+export async function getEmployeeById(id: string) {
+  return withClient(async (c) => {
+    const r = await c.query(
+      `SELECT id, name, email, role, emp_type, track, start_date, duration
+         FROM employees WHERE id=$1 AND deleted_at IS NULL LIMIT 1`, [id]);
+    return r.rows[0] || null;
+  });
+}
+
+export type Task = {
+  id: string; employee_id: string; seq: number; title: string; detail: string | null;
+  source: "owner" | "self";
+  assigned_at: string; due_at: string | null; done_at: string | null; delivered_at: string | null;
+};
+
+/** The five things every review scores, whoever the person is. Deliberately not intern-specific
+ *  — the same five read sensibly for an intern, an employee or a network partner. */
+export const REVIEW_CRITERIA = [
+  { id: "completion", label: "Task completion" },
+  { id: "quality", label: "Work quality" },
+  { id: "timeliness", label: "Timeliness" },
+  { id: "communication", label: "Communication" },
+  { id: "ownership", label: "Ownership & initiative" },
+] as const;
+
+export type Review = {
+  id: string; employee_id: string; week_start: string;
+  scores: Record<string, number>;
+  metrics: { name: string; target?: string; actual?: string; score?: number }[];
+  note: string | null; created_at: string; updated_at: string;
+};
+
+const iso = (v: unknown): string | null => {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(String(v));
+  return isNaN(d.getTime()) ? null : d.toISOString();
+};
+const asTask = (r: any): Task => ({
+  id: r.id, employee_id: r.employee_id, seq: Number(r.seq), title: r.title, detail: r.detail ?? null,
+  source: r.source === "owner" ? "owner" : "self",
+  assigned_at: iso(r.assigned_at) || new Date().toISOString(),
+  due_at: iso(r.due_at), done_at: iso(r.done_at), delivered_at: iso(r.delivered_at),
+});
+
+/**
+ * Was it delivered on time?
+ *
+ * Only ever answered from the two timestamps, never stored — a stored flag would keep saying
+ * "on time" after someone edited the deadline. A task with no deadline can't be late; a task
+ * that isn't delivered yet is overdue only once its deadline has actually passed.
+ */
+export type TaskStatus = "on_time" | "late" | "pending" | "overdue" | "no_deadline";
+export function taskStatus(t: Task, now = Date.now()): TaskStatus {
+  if (t.delivered_at) {
+    if (!t.due_at) return "no_deadline";
+    return Date.parse(t.delivered_at) <= Date.parse(t.due_at) ? "on_time" : "late";
+  }
+  if (!t.due_at) return "pending";
+  return now > Date.parse(t.due_at) ? "overdue" : "pending";
+}
+
+export async function listTasks(employeeId: string): Promise<Task[]> {
+  return withClient(async (c) => {
+    const r = await c.query(`SELECT * FROM portal_tasks WHERE employee_id=$1 ORDER BY seq`, [employeeId]);
+    return r.rows.map(asTask);
+  });
+}
+
+/** Every task in the company, newest first — the owner's single view across people. */
+export async function listAllTasks(): Promise<(Task & { name: string; role: string | null })[]> {
+  return withClient(async (c) => {
+    const r = await c.query(
+      `SELECT t.*, e.name, e.role FROM portal_tasks t JOIN employees e ON e.id = t.employee_id
+       WHERE e.deleted_at IS NULL ORDER BY t.assigned_at DESC`);
+    return r.rows.map((x) => ({ ...asTask(x), name: x.name, role: x.role }));
+  });
+}
+
+export async function addTask(input: {
+  employeeId: string; title: string; detail?: string; dueAt?: string | null; source: "owner" | "self";
+}): Promise<Task> {
+  const title = input.title.trim().slice(0, 500);
+  if (!title) throw new Error("Write the task first");
+  return withClient(async (c) => {
+    // Serial per person, computed from what is already there so numbers stay 1..n even after a
+    // deletion. Taken inside the same statement as the insert so two quick adds can't collide.
+    const r = await c.query(
+      `INSERT INTO portal_tasks (id, employee_id, seq, title, detail, source, due_at)
+       VALUES ($1, $2, (SELECT COALESCE(MAX(seq),0)+1 FROM portal_tasks WHERE employee_id=$2), $3, $4, $5, $6)
+       RETURNING *`,
+      [randomUUID(), input.employeeId, title, (input.detail || "").trim().slice(0, 4000) || null,
+       input.source, input.dueAt || null]);
+    return asTask(r.rows[0]);
+  });
+}
+
+/** The person says they've finished (or un-says it). Not the same as the owner accepting it. */
+export async function markTaskDone(id: string, employeeId: string, done: boolean) {
+  return withClient((c) => c.query(
+    `UPDATE portal_tasks SET done_at = ${done ? "now()" : "NULL"} WHERE id=$1 AND employee_id=$2`,
+    [id, employeeId]));
+}
+
+/** The owner accepting it — this is what counts as delivered, and what decides on-time vs late. */
+export async function markTaskDelivered(id: string, delivered: boolean) {
+  return withClient((c) => c.query(
+    `UPDATE portal_tasks SET delivered_at = ${delivered ? "COALESCE(delivered_at, now())" : "NULL"} WHERE id=$1`,
+    [id]));
+}
+
+export async function updateTask(id: string, fields: { title?: string; detail?: string; dueAt?: string | null }) {
+  return withClient(async (c) => {
+    const sets: string[] = [], vals: any[] = [id];
+    if (fields.title !== undefined) { sets.push(`title=$${vals.length + 1}`); vals.push(fields.title.trim().slice(0, 500)); }
+    if (fields.detail !== undefined) { sets.push(`detail=$${vals.length + 1}`); vals.push(fields.detail.trim().slice(0, 4000) || null); }
+    if (fields.dueAt !== undefined) { sets.push(`due_at=$${vals.length + 1}`); vals.push(fields.dueAt || null); }
+    if (!sets.length) return;
+    await c.query(`UPDATE portal_tasks SET ${sets.join(", ")} WHERE id=$1`, vals);
+  });
+}
+
+/** Delete a task. `employeeId` scopes it so one person can never remove another's row. */
+export async function deleteTask(id: string, employeeId?: string) {
+  return withClient((c) => employeeId
+    ? c.query(`DELETE FROM portal_tasks WHERE id=$1 AND employee_id=$2`, [id, employeeId])
+    : c.query(`DELETE FROM portal_tasks WHERE id=$1`, [id]));
+}
+
+// ── Weekly reviews ───────────────────────────────────────────────────────────
+
+/** The Monday of a date's week, in IST — the team's week, not UTC's. */
+export function weekStartIST(d: Date | string = new Date()): string {
+  const t = typeof d === "string" ? new Date(d) : d;
+  const ist = new Date(t.getTime() + 5.5 * 3600 * 1000);
+  const dow = (ist.getUTCDay() + 6) % 7; // Monday = 0
+  ist.setUTCDate(ist.getUTCDate() - dow);
+  return ist.toISOString().slice(0, 10);
+}
+
+const asReview = (r: any): Review => ({
+  id: r.id, employee_id: r.employee_id, week_start: String(r.week_start).slice(0, 10),
+  scores: (r.scores && typeof r.scores === "object") ? r.scores : {},
+  metrics: Array.isArray(r.metrics) ? r.metrics : [],
+  note: r.note ?? null,
+  created_at: iso(r.created_at) || "", updated_at: iso(r.updated_at) || "",
+});
+
+export async function listReviews(employeeId: string): Promise<Review[]> {
+  return withClient(async (c) => {
+    const r = await c.query(
+      `SELECT * FROM portal_reviews WHERE employee_id=$1 ORDER BY week_start DESC`, [employeeId]);
+    return r.rows.map(asReview);
+  });
+}
+
+/** Save a week's review. Re-opening the same week edits it instead of adding a second one. */
+export async function saveReview(input: {
+  employeeId: string; weekStart: string;
+  scores: Record<string, number>;
+  metrics?: { name: string; target?: string; actual?: string; score?: number }[];
+  note?: string;
+}): Promise<Review> {
+  // Only the known criteria, only 1-5 — a stray key or a 9 would quietly skew every average.
+  const clean: Record<string, number> = {};
+  for (const c of REVIEW_CRITERIA) {
+    const n = Math.round(Number(input.scores?.[c.id]));
+    if (Number.isFinite(n) && n >= 1 && n <= 5) clean[c.id] = n;
+  }
+  const metrics = (input.metrics || []).slice(0, 20).map((m) => ({
+    name: String(m.name || "").trim().slice(0, 120),
+    target: String(m.target ?? "").trim().slice(0, 60),
+    actual: String(m.actual ?? "").trim().slice(0, 60),
+    score: Number.isFinite(Number(m.score)) ? Math.max(1, Math.min(5, Math.round(Number(m.score)))) : undefined,
+  })).filter((m) => m.name);
+
+  return withClient(async (c) => {
+    const r = await c.query(
+      `INSERT INTO portal_reviews (id, employee_id, week_start, scores, metrics, note)
+       VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6)
+       ON CONFLICT (employee_id, week_start)
+       DO UPDATE SET scores=$4::jsonb, metrics=$5::jsonb, note=$6, updated_at=now()
+       RETURNING *`,
+      [randomUUID(), input.employeeId, input.weekStart, JSON.stringify(clean), JSON.stringify(metrics),
+       (input.note || "").trim().slice(0, 4000) || null]);
+    return asReview(r.rows[0]);
+  });
+}
+
+export async function deleteReview(id: string) {
+  return withClient((c) => c.query(`DELETE FROM portal_reviews WHERE id=$1`, [id]));
+}
+
+// ── The numbers a review should be based on ──────────────────────────────────
+
+export type WorkStats = {
+  total: number; delivered: number; onTime: number; late: number; overdue: number; pending: number;
+  onTimePct: number | null;      // of delivered tasks that had a deadline
+  deliveredPct: number | null;
+  assignedByOwner: number; selfSet: number;
+};
+
+/** Task counts over a set of tasks — the factual half of a review, so a score isn't a guess. */
+export function workStats(tasks: Task[], now = Date.now()): WorkStats {
+  const s: WorkStats = { total: tasks.length, delivered: 0, onTime: 0, late: 0, overdue: 0, pending: 0,
+    onTimePct: null, deliveredPct: null, assignedByOwner: 0, selfSet: 0 };
+  for (const t of tasks) {
+    if (t.source === "owner") s.assignedByOwner++; else s.selfSet++;
+    switch (taskStatus(t, now)) {
+      case "on_time": s.delivered++; s.onTime++; break;
+      case "late": s.delivered++; s.late++; break;
+      case "no_deadline": s.delivered++; break;
+      case "overdue": s.overdue++; break;
+      default: s.pending++;
+    }
+  }
+  const withDeadline = s.onTime + s.late;
+  if (withDeadline > 0) s.onTimePct = Math.round((s.onTime / withDeadline) * 100);
+  if (s.total > 0) s.deliveredPct = Math.round((s.delivered / s.total) * 100);
+  return s;
+}
+
+/** Tasks assigned inside a given week (Monday→Sunday IST). */
+export function tasksInWeek(tasks: Task[], weekStart: string): Task[] {
+  const from = Date.parse(`${weekStart}T00:00:00+05:30`);
+  const to = from + 7 * 24 * 3600 * 1000;
+  return tasks.filter((t) => {
+    const at = Date.parse(t.assigned_at);
+    return at >= from && at < to;
+  });
+}
+
+/** Average of a review's five scores, out of 5. */
+export function reviewAverage(r: Review): number | null {
+  const vals = REVIEW_CRITERIA.map((c) => r.scores[c.id]).filter((n) => Number.isFinite(n));
+  if (!vals.length) return null;
+  return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
+}
+
+export type TenureScore = {
+  weeks: number;
+  average: number | null;          // mean of every week's average, out of 5
+  perCriterion: Record<string, number>;
+  stats: WorkStats;                // whole tenure, not one week
+  band: string;                    // plain-language summary of the average
+};
+
+/**
+ * The whole-tenure picture: every weekly review averaged, plus the task record behind it.
+ *
+ * Weeks are weighted equally rather than by number of tasks — a quiet week shouldn't count for
+ * less when judging how someone worked.
+ */
+export function tenureScore(reviews: Review[], tasks: Task[]): TenureScore {
+  const perCriterion: Record<string, number> = {};
+  for (const c of REVIEW_CRITERIA) {
+    const vals = reviews.map((r) => r.scores[c.id]).filter((n) => Number.isFinite(n));
+    if (vals.length) perCriterion[c.id] = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
+  }
+  const weekAvgs = reviews.map(reviewAverage).filter((n): n is number => n != null);
+  const average = weekAvgs.length
+    ? Math.round((weekAvgs.reduce((a, b) => a + b, 0) / weekAvgs.length) * 10) / 10
+    : null;
+  const band = average == null ? "Not yet reviewed"
+    : average >= 4.5 ? "Outstanding"
+    : average >= 3.5 ? "Exceeds expectations"
+    : average >= 2.5 ? "Meets expectations"
+    : average >= 1.5 ? "Needs development"
+    : "Below expectations";
+  return { weeks: reviews.length, average, perCriterion, stats: workStats(tasks), band };
 }

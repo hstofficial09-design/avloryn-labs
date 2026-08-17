@@ -32,6 +32,10 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd 
   type Card = { title: string; desc: string; href?: string; external?: boolean; onClick?: () => void; icon: React.ReactNode; feature?: boolean };
   const cards: Card[] = [];
   cards.push({ title: "Scheduling", desc: "Create meetings, share booking links, manage your calendar & Meet.", href: "/meet/admin", icon: <CalIcon />, feature: true });
+  cards.push({ title: isOwner ? "Tasks & Reviews" : "My Work Log", desc: isOwner
+    ? "Assign work with deadlines, tick off what's delivered, score each week and issue the report."
+    : "Write down what you're working on. Dated, numbered, and downloadable as a PDF whenever you want.",
+    href: "/portal/tasks", icon: <TaskIcon /> });
   if (isOwner || isCommissionRole) cards.push({ title: isOwner ? "Team & Commissions" : "My Earnings", desc: isOwner ? "Employees, referral codes, commissions and payouts." : "Your referral code, sales and payouts.", href: "/portal/commissions", icon: <CoinIcon /> });
   if (isOwner || isBd) cards.push({ title: isOwner ? "Partner Network" : "My Network", desc: isOwner ? "BD interns, the network partners they recruit, and the 2% override across every network." : "Add network partners (CAs, influencers, agencies) and earn a 2% override on your whole network.", href: "/portal/network", icon: <NetworkIcon /> });
   if (isOwner) cards.push({ title: "Onboarding Form", desc: "Roles, pay, form fields and each role's terms for new hires.", href: "/portal/onboarding", icon: <FormIcon /> });
@@ -101,6 +105,16 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd 
   );
 }
 
+function TaskIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1Z" />
+      <path d="M16 6h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h2" />
+      <path d="m9 12 1.8 1.8L14.5 10" />
+      <path d="M9 17h6" />
+    </svg>
+  );
+}
 function CalIcon() { return <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5" /><path d="M3 9h18M8 2.5v4M16 2.5v4" /></svg>; }
 function CoinIcon() { return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5v9M9.5 9.5h3.2a1.8 1.8 0 010 3.6H9.8" /></svg>; }
 function GlobeIcon() { return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.5 2.5 14 0 17M12 3.5c-2.5 2.5-2.5 14 0 17" /></svg>; }
