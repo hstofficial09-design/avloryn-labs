@@ -3,7 +3,7 @@ import { getSession } from "@/lib/portal-auth";
 import {
   listEmployeesWithSummary, listCommissionOrders, employeeOwnData,
   listDeletedEmployees, allEmployeeNames, purgeExpiredEmployees, commissionTracksMap, trackHasCommission,
-  companyGmv, partnerSelf, partnerUsers,
+  companyGmv, partnerSelf, partnerUsers, employeePromoCodes,
 } from "@/lib/portal-db";
 import OwnerDashboard from "../OwnerDashboard";
 import EmployeeDashboard from "../EmployeeDashboard";
@@ -34,12 +34,14 @@ export default async function CommissionsPage() {
   }
 
   let data: any = null, error: string | null = null, commissionRole = true;
-  let bdName = "", users: any[] = [], isPartner = false, refLink = "", refCode = "";
+  let bdName = "", users: any[] = [], isPartner = false, refLink = "", refCode = "", promoCodes: any[] = [];
   const livo = (process.env.LIVODRAFT_API_URL || "https://livodraft.com").replace(/\/+$/, "");
   try {
     data = await employeeOwnData(s.email);
     const map = await commissionTracksMap();
     commissionRole = trackHasCommission(data?.employee?.track, map);
+    // Their PROMO codes (they can own several — direct sales / campaigns).
+    if (data?.employee?.id) promoCodes = await employeePromoCodes(data.employee.id).catch(() => []);
     // If this person is a network partner, show WHO their BD is, the buyers under them, and their
     // shareable referral link + QR (derived from their active referral code).
     const self = await partnerSelf(s.email).catch(() => null);
@@ -53,5 +55,5 @@ export default async function CommissionsPage() {
   } catch (e: any) {
     error = e?.message || "Could not reach the commissions database.";
   }
-  return <EmployeeDashboard name={s.name || "there"} data={data} error={error} commissionRole={commissionRole} isPartner={isPartner} bdName={bdName} users={users} refCode={refCode} refLink={refLink} livoBase={livo} />;
+  return <EmployeeDashboard name={s.name || "there"} data={data} error={error} commissionRole={commissionRole} isPartner={isPartner} bdName={bdName} users={users} refCode={refCode} refLink={refLink} livoBase={livo} promoCodes={promoCodes} />;
 }

@@ -6,6 +6,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 import FamilyChart, { type TreeNode } from "./FamilyChart";
 
 type Code = { code: string; commission_pct: number; active: number; uses: number };
+type PromoCode = { code: string; type: string; value: number; commission_pct: number; active: boolean; uses: number };
 type Data = {
   employee: { id: string; name: string; emp_type: string; track: string | null; commission_pct: number };
   summary?: { orders: number; sales: number; earned: number; pending: number; paid: number; codes?: Code[] };
@@ -17,7 +18,7 @@ const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground
 const GOLD = "btn-gold rounded-full font-[560]";
 
 type PartnerUser = { name: string; email: string; docs: number; spent: number; commission: number; pending: number; paid: number };
-export default function EmployeeDashboard({ name, data, error, commissionRole, isPartner, bdName, users, refCode, refLink, livoBase }: { name: string; data: Data | null; error: string | null; commissionRole?: boolean; isPartner?: boolean; bdName?: string; users?: PartnerUser[]; refCode?: string; refLink?: string; livoBase?: string }) {
+export default function EmployeeDashboard({ name, data, error, commissionRole, isPartner, bdName, users, refCode, refLink, livoBase, promoCodes = [] }: { name: string; data: Data | null; error: string | null; commissionRole?: boolean; isPartner?: boolean; bdName?: string; users?: PartnerUser[]; refCode?: string; refLink?: string; livoBase?: string; promoCodes?: PromoCode[] }) {
   const router = useRouter();
   async function logout() { await fetch("/api/portal/logout", { method: "POST" }); router.push("/portal/login"); }
   const [copied, setCopied] = useState(false);
@@ -120,6 +121,38 @@ export default function EmployeeDashboard({ name, data, error, commissionRole, i
               <div><div className="section-label">{isPartner ? "Role" : "Role"}</div><div className="font-[560] mt-1">{isPartner ? "Network Partner" : (emp.emp_type === "intern" ? `Intern${emp.track ? " · " + emp.track : ""}` : "Employee")}</div></div>
               {isPartner && bdName && <div><div className="section-label">Your BD</div><div className="font-[560] mt-1">{bdName}</div></div>}
             </div>
+
+            {(refCode || promoCodes.length > 0) && (
+              <div className="card-lux rounded-2xl p-5 mb-5">
+                <div className="font-serif text-[15px] font-[600] mb-1">Your codes</div>
+                <p className="text-[12.5px] text-muted-foreground mb-3">Your one <b>referral code</b> (for signups) and any <b>promo codes</b> the owner gave you for direct sales.</p>
+                {refCode && (
+                  <div className="flex items-center justify-between gap-3 flex-wrap py-2.5 border-b border-border">
+                    <div>
+                      <span className="section-label !text-gold">Referral</span>
+                      <span className="font-mono text-[15px] font-extrabold text-gold ml-2">{refCode}</span>
+                    </div>
+                    <span className="text-[11.5px] text-muted-foreground">Signups get 25% off · you earn on every document, for life</span>
+                  </div>
+                )}
+                {promoCodes.length === 0 && (
+                  <div className="py-2.5 text-[12px] text-faint">No promo codes yet — the owner can create one for you.</div>
+                )}
+                {promoCodes.map((p) => (
+                  <div key={p.code} className="flex items-center justify-between gap-3 flex-wrap py-2.5 border-b border-border last:border-0">
+                    <div>
+                      <span className="section-label">Promo</span>
+                      <span className="font-mono text-[14px] font-bold text-foreground ml-2">{p.code}</span>
+                      {!p.active && <span className="text-[11px] text-[#b3341f] ml-2">disabled</span>}
+                    </div>
+                    <span className="text-[11.5px] text-muted-foreground">
+                      {p.type === "flat" ? `₹${p.value} off` : p.type === "free_pages" ? `${p.value} free pages` : `${p.value}% off`}
+                      {p.commission_pct > 0 ? ` · you earn ${p.commission_pct}%` : ""} · used {p.uses}×
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {refLink && (
               <div className="card-lux rounded-2xl p-5 mb-5 flex flex-col sm:flex-row gap-5 items-start">

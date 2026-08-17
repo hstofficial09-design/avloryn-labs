@@ -40,6 +40,8 @@ export async function POST(req: Request) {
 
   try {
     if (d.action === "add") {
+      // Roles are managed only from the owner portal now (not by BDs).
+      if (!w.owner) return NextResponse.json({ error: "Only the owner can add a role" }, { status: 403 });
       await addPartnerRole(String(d.role || ""));
       return NextResponse.json({ ok: true, roles: await listPartnerRolesPortal() });
     }

@@ -11,6 +11,12 @@ export type NetworkPartner = {
 export type PartnerBd = { id: string; name: string; network: NetworkPartner[]; bd_earned: number; bd_pending: number };
 export type PendingPartner = { id: string; name: string; email: string | null; role: string | null; bd_name: string; code: string };
 export type PartnerUser = { name: string; email: string; docs: number; spent: number; commission: number; pending: number; paid: number };
+export type PartnerPerson = {
+  id: string; name: string; role: string; code: string;
+  direct_sales: number; direct_earned: number; direct_pending: number;
+  override_earned: number; override_pending: number;
+  network: NetworkPartner[];
+};
 
 const inr = (n: number) => "₹" + Math.round(n || 0).toLocaleString("en-IN");
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
@@ -26,6 +32,7 @@ export default function NetworkDashboard(props: {
   isBd?: boolean;
   network?: NetworkPartner[];
   bds?: PartnerBd[];
+  people?: PartnerPerson[];
   roles?: string[];
   attachable?: { id: string; name: string; emp_type: string }[];
   pending?: PendingPartner[];
@@ -33,8 +40,11 @@ export default function NetworkDashboard(props: {
   error?: string | null;
 }) {
   const router = useRouter();
-  const { mode, name, myRole, parents = [], isBd, network = [], bds = [], roles = [], attachable = [], pending = [], users = [], error } = props;
+  const { mode, name, myRole, parents = [], isBd, network = [], people = [], roles = [], attachable = [], pending = [], users = [], error } = props;
   const [busy, setBusy] = useState(false);
+  // owner: which team member's card is open
+  const [selId, setSelId] = useState<string>("");
+  const sel = people.find((p) => p.id === selId) || people[0];
   async function logout() { await fetch("/api/portal/logout", { method: "POST" }); router.push("/portal/login"); }
 
   async function approvePartner(id: string, name: string) {
@@ -56,27 +66,7 @@ export default function NetworkDashboard(props: {
   const [nName, setNName] = useState("");
   const [roleList, setRoleList] = useState<string[]>(roles);
   const [nRole, setNRole] = useState(roles[0] || "");
-  const [newRole, setNewRole] = useState("");
-  const [roleBusy, setRoleBusy] = useState(false);
-  const [roleErr, setRoleErr] = useState("");
-
-  // Partners are signed up from both the admin view and a BD's own network, so a missing
-  // partner type can be added right here instead of blocking the sign-up.
-  async function addRole() {
-    const r = newRole.trim();
-    if (!r) return;
-    setRoleBusy(true); setRoleErr("");
-    try {
-      const res = await fetch("/api/portal/partner/roles", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "add", role: r }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d.error || "Could not add that role");
-      setRoleList(d.roles || []); setNRole(r); setNewRole("");
-    } catch (e) { setRoleErr(e instanceof Error ? e.message : "Could not add that role"); }
-    finally { setRoleBusy(false); }
-  }
+  // Roles are managed only by the owner (RoleManager below) — a BD can no longer add one inline.
   const [nEmail, setNEmail] = useState("");
   const [nMobile, setNMobile] = useState("");
   const [nExisting, setNExisting] = useState("");
@@ -172,19 +162,6 @@ export default function NetworkDashboard(props: {
                       {roleList.length === 0 && <option value="">Role</option>}
                       {roleList.map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      <input
-                        value={newRole} onChange={(e) => setNewRole(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRole(); } }}
-                        placeholder="Add another type of partner…"
-                        className={input + " flex-1 text-[12px] py-1.5"}
-                      />
-                      <button type="button" onClick={addRole} disabled={roleBusy || !newRole.trim()}
-                        className="text-[11.5px] font-semibold text-gold hover:underline disabled:opacity-40 disabled:no-underline shrink-0">
-                        {roleBusy ? "Adding…" : "Add"}
-                      </button>
-                    </div>
-                    {roleErr && <p className="text-[11px] text-[#b3341f] mt-1">{roleErr}</p>}
                   </div>
                   <input value={nEmail} onChange={(e) => setNEmail(e.target.value)} placeholder="Email (required — they log in with it)" className={input} />
                   <input value={nMobile} onChange={(e) => setNMobile(e.target.value)} placeholder="Mobile (optional)" className={input} />
@@ -297,59 +274,82 @@ export default function NetworkDashboard(props: {
                 </div>
               </div>
             )}
-            {bds.length === 0 && (
+            {people.length === 0 ? (
               <div className="card-lux rounded-2xl px-5 py-6 text-[13.5px] text-muted-foreground">
-                No BD networks yet. Create a BD and their network partners from the LivoDraft admin — they&rsquo;ll appear here automatically.
+                No team members yet. Add people from onboarding, or give someone a code in the LivoDraft admin — everyone shows up here.
               </div>
-            )}
-            <div className="space-y-5">
-              {bds.map((bd) => (
-                <div key={bd.id} className="card-lux rounded-2xl overflow-hidden">
-                  <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-3.5 border-b border-border">
-                    <div>
-                      <span className="font-serif text-[15px] font-[600]">{bd.name}</span>
-                      <span className="text-[11.5px] text-faint"> · BD intern · {bd.network.length} network partner{bd.network.length === 1 ? "" : "s"}</span>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className="text-[12px] text-muted-foreground">Override earned <b className="font-mono" style={{ color: "#A9852F" }}>{inr(bd.bd_earned)}</b></span>
-                      {bd.bd_pending > 0
-                        ? <button disabled={busy} onClick={() => markPaid(bd.id, bd.bd_pending)} className={GOLD + " text-[11.5px] px-3 py-1.5"}>Mark {inr(bd.bd_pending)} Paid</button>
+            ) : (
+              <>
+                {/* Everyone on the team — click a name to open their code, earnings & network */}
+                <div className="flex gap-2 flex-wrap mb-4">
+                  {people.map((p) => {
+                    const on = sel?.id === p.id;
+                    return (
+                      <button key={p.id} type="button" onClick={() => setSelId(p.id)}
+                        className={"rounded-full px-3.5 py-1.5 text-[12.5px] font-[560] ring-1 transition-colors " +
+                          (on ? "bg-gold-soft/60 ring-[hsl(var(--gold)/0.5)] text-foreground"
+                              : "bg-card ring-border hover:ring-[hsl(var(--gold)/0.4)] text-muted-foreground")}>
+                        {p.name}{p.network.length > 0 && <span className="ml-1.5 text-[11px] text-gold">+{p.network.length}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {sel && (
+                  <div className="card-lux rounded-2xl overflow-hidden">
+                    <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-3.5 border-b border-border">
+                      <div>
+                        <span className="font-serif text-[15px] font-[600]">{sel.name}</span>
+                        <span className="text-[11.5px] text-faint"> · {sel.role} · {sel.code
+                          ? <span className="font-mono text-gold font-[600]">{sel.code}</span>
+                          : <span className="text-[#b3341f]">no code yet</span>}</span>
+                      </div>
+                      {(sel.direct_pending + sel.override_pending) > 0
+                        ? <button disabled={busy} onClick={() => markPaid(sel.id, sel.direct_pending + sel.override_pending)} className={GOLD + " text-[11.5px] px-3 py-1.5"}>Mark {inr(sel.direct_pending + sel.override_pending)} Paid</button>
                         : <span className="text-[11.5px] text-faint">Settled ✓</span>}
                     </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4">
+                      <Stat k="Their sales" v={inr(sel.direct_sales)} />
+                      <Stat k="Direct earned" v={inr(sel.direct_earned)} />
+                      <Stat k="Direct pending" v={inr(sel.direct_pending)} tone="#946412" />
+                      <Stat k="Override earned" v={inr(sel.override_earned)} tone="#A9852F" />
+                    </div>
+                    {sel.network.length > 0 ? (
+                      <div className="overflow-x-auto border-t border-border">
+                        <table className="w-full text-[13px] min-w-[600px]">
+                          <thead><tr className="section-label bg-subtle/60">
+                            <Th>Role</Th><Th>Network Partner</Th><Th>Code</Th><Th r>Sales</Th><Th r>Their 10%</Th><Th r>Override 2%</Th><Th r>Pending</Th>
+                          </tr></thead>
+                          <tbody>
+                            {sel.network.map((s) => (
+                              <tr key={s.id} className="border-t border-border">
+                                <td className="px-4 py-2.5">{s.role || "—"}</td>
+                                <td className="px-4 py-2.5 font-[560]">{s.name}</td>
+                                <td className="px-4 py-2.5 font-mono text-[12px] text-gold font-[600]">{s.code || "—"}</td>
+                                <td className="px-4 py-2.5 text-right font-mono">{inr(s.sales)}</td>
+                                <td className="px-4 py-2.5 text-right font-mono">{inr(s.partner_commission)}</td>
+                                <td className="px-4 py-2.5 text-right font-mono" style={{ color: "#A9852F" }}>{inr(s.bd_commission)}</td>
+                                <td className="px-4 py-2.5 text-right font-mono text-[#946412]">{inr(s.bd_pending)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="px-5 py-4 text-[12.5px] text-faint border-t border-border">No one under {sel.name} yet.{sel.code ? "" : " Give them a code in the LivoDraft admin so they can start referring."}</div>
+                    )}
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-[13px] min-w-[600px]">
-                      <thead><tr className="section-label bg-subtle/60">
-                        <Th>Role</Th><Th>Network Partner</Th><Th>Code</Th><Th r>Sales</Th><Th r>Their 10%</Th><Th r>BD 2%</Th><Th r>Pending</Th>
-                      </tr></thead>
-                      <tbody>
-                        {bd.network.length === 0 && <tr><td colSpan={7} className="text-center text-faint py-5">No network partners yet.</td></tr>}
-                        {bd.network.map((s) => (
-                          <tr key={s.id} className="border-t border-border">
-                            <td className="px-4 py-2.5">{s.role || "—"}</td>
-                            <td className="px-4 py-2.5 font-[560]">{s.name}</td>
-                            <td className="px-4 py-2.5 font-mono text-[12px] text-gold font-[600]">{s.code || "—"}</td>
-                            <td className="px-4 py-2.5 text-right font-mono">{inr(s.sales)}</td>
-                            <td className="px-4 py-2.5 text-right font-mono">{inr(s.partner_commission)}</td>
-                            <td className="px-4 py-2.5 text-right font-mono" style={{ color: "#A9852F" }}>{inr(s.bd_commission)}</td>
-                            <td className="px-4 py-2.5 text-right font-mono text-[#946412]">{inr(s.bd_pending)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))}
-            </div>
+                )}
 
-            {bds.length > 0 && (
-              <section className="mt-8">
-                <h2 className="font-serif text-[20px] font-[600] tracking-[-0.01em] mb-1">The family</h2>
-                <p className="text-[13px] text-muted-foreground mb-3">Your whole network — every BD and the partners under them.</p>
-                <FamilyChart root={{ name: "Avloryn Labs", label: "Owner", you: true,
-                  children: bds.map((bd) => ({ name: bd.name, label: "BD", note: inr(bd.bd_earned) + " override",
-                    children: bd.network.map((p) => ({ name: p.name, label: p.role || "partner", note: inr(p.sales) })) })) }} />
-              </section>
+                <section className="mt-8">
+                  <h2 className="font-serif text-[20px] font-[600] tracking-[-0.01em] mb-1">The family</h2>
+                  <p className="text-[13px] text-muted-foreground mb-3">Your whole team — everyone, and the partners under them.</p>
+                  <FamilyChart root={{ name: "Avloryn Labs", label: "Owner", you: true,
+                    children: people.map((p) => ({ name: p.name, label: p.role || "team",
+                      note: p.code ? inr(p.direct_earned) : "no code",
+                      children: p.network.map((n) => ({ name: n.name, label: n.role || "partner", note: inr(n.sales) })) })) }} />
+                </section>
+              </>
             )}
           </>
         )}

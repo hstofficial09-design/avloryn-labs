@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/portal-auth";
-import { listPartnerBds, listPartnerNetwork, listPartnerRolesPortal, partnerBdMeta, listAttachableEmployees, listPendingPartners, partnerUsers, listAssignableParents } from "@/lib/portal-db";
+import { listPartnerBds, listPartnerNetwork, listPartnerRolesPortal, partnerBdMeta, listAttachableEmployees, listPendingPartners, partnerUsers, listAssignableParents, listAllPartnerPeople } from "@/lib/portal-db";
 import NetworkDashboard from "../NetworkDashboard";
 
 export const dynamic = "force-dynamic";
@@ -12,17 +12,20 @@ export default async function NetworkPage() {
   if (!s) redirect("/portal/login?next=/portal/network");
 
   if (s.role === "owner") {
-    let bds: any[] = [], roles: string[] = [], pending: any[] = [], parents: any[] = [], error: string | null = null;
+    let bds: any[] = [], roles: string[] = [], pending: any[] = [], parents: any[] = [], people: any[] = [], error: string | null = null;
     try {
       bds = await listPartnerBds();
       roles = await listPartnerRolesPortal();
       pending = await listPendingPartners().catch(() => []);
       // Anyone the owner can hand a walk-in partner to as a reward.
       parents = await listAssignableParents().catch(() => []);
+      // EVERY active person (each with their own code, direct commission, override + downline) —
+      // the owner sees the whole team as pills, not only those who already have a network.
+      people = await listAllPartnerPeople().catch(() => []);
     } catch (e: any) {
       error = e?.message || "Could not reach the network database.";
     }
-    return <NetworkDashboard mode="owner" name={s.name || "Owner"} bds={bds} roles={roles} pending={pending} parents={parents} error={error} />;
+    return <NetworkDashboard mode="owner" name={s.name || "Owner"} bds={bds} roles={roles} pending={pending} parents={parents} people={people} error={error} />;
   }
 
   let isBd = false, myRole = "", network: any[] = [], roles: string[] = [], attachable: any[] = [], users: any[] = [], error: string | null = null;
