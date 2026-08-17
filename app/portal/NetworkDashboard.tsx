@@ -50,7 +50,29 @@ export default function NetworkDashboard(props: {
   // BD add-network-partner form
   const [ownerMode, setOwnerMode] = useState<"new" | "existing">("new");
   const [nName, setNName] = useState("");
+  const [roleList, setRoleList] = useState<string[]>(roles);
   const [nRole, setNRole] = useState(roles[0] || "");
+  const [newRole, setNewRole] = useState("");
+  const [roleBusy, setRoleBusy] = useState(false);
+  const [roleErr, setRoleErr] = useState("");
+
+  // Partners are signed up from both the admin view and a BD's own network, so a missing
+  // partner type can be added right here instead of blocking the sign-up.
+  async function addRole() {
+    const r = newRole.trim();
+    if (!r) return;
+    setRoleBusy(true); setRoleErr("");
+    try {
+      const res = await fetch("/api/portal/partner/roles", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add", role: r }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "Could not add that role");
+      setRoleList(d.roles || []); setNRole(r); setNewRole("");
+    } catch (e) { setRoleErr(e instanceof Error ? e.message : "Could not add that role"); }
+    finally { setRoleBusy(false); }
+  }
   const [nEmail, setNEmail] = useState("");
   const [nMobile, setNMobile] = useState("");
   const [nExisting, setNExisting] = useState("");
@@ -113,7 +135,7 @@ export default function NetworkDashboard(props: {
         <p className="text-[13.5px] text-muted-foreground mb-6">
           {mode === "owner"
             ? "Every BD intern and the network partners they recruited. Each BD earns a 2% override on their whole network — pay by bank transfer, then Mark Paid."
-            : "Network partners you bring on — CAs, influencers, agencies. You earn a 2% override on every sale across your whole network, for life."}
+            : "Network partners you bring on — campus ambassadors, influencers, thesis-writing agencies. You earn a 2% override on every sale across your whole network, for life."}
         </p>
 
         {error ? (
@@ -140,10 +162,25 @@ export default function NetworkDashboard(props: {
               {ownerMode === "new" ? (
                 <div className="grid sm:grid-cols-2 gap-2.5">
                   <input value={nName} onChange={(e) => setNName(e.target.value)} placeholder="Full name" className={input} />
-                  <select value={nRole} onChange={(e) => setNRole(e.target.value)} className={input + " appearance-none"}>
-                    {roles.length === 0 && <option value="">Role</option>}
-                    {roles.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
+                  <div>
+                    <select value={nRole} onChange={(e) => setNRole(e.target.value)} className={input + " appearance-none w-full"}>
+                      {roleList.length === 0 && <option value="">Role</option>}
+                      {roleList.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <input
+                        value={newRole} onChange={(e) => setNewRole(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRole(); } }}
+                        placeholder="Add another type of partner…"
+                        className={input + " flex-1 text-[12px] py-1.5"}
+                      />
+                      <button type="button" onClick={addRole} disabled={roleBusy || !newRole.trim()}
+                        className="text-[11.5px] font-semibold text-gold hover:underline disabled:opacity-40 disabled:no-underline shrink-0">
+                        {roleBusy ? "Adding…" : "Add"}
+                      </button>
+                    </div>
+                    {roleErr && <p className="text-[11px] text-[#b3341f] mt-1">{roleErr}</p>}
+                  </div>
                   <input value={nEmail} onChange={(e) => setNEmail(e.target.value)} placeholder="Email (required — they log in with it)" className={input} />
                   <input value={nMobile} onChange={(e) => setNMobile(e.target.value)} placeholder="Mobile (optional)" className={input} />
                 </div>
@@ -222,6 +259,8 @@ export default function NetworkDashboard(props: {
         ) : (
           // OWNER OBSERVER
           <>
+            <RoleManager roles={roleList} setRoles={setRoleList} canDelete />
+
             {pending.length > 0 && (
               <div className="card-lux rounded-2xl overflow-hidden mb-6 ring-1 ring-[hsl(var(--gold)/0.35)]">
                 <div className="px-5 py-3.5 border-b border-border bg-gold-soft/40">
@@ -317,4 +356,63 @@ function Stat({ k, v, tone }: { k: string; v: string; tone?: string }) {
 }
 function Th({ children, r }: { children: React.ReactNode; r?: boolean }) {
   return <th className={"px-4 py-2.5 " + (r ? "text-right" : "text-left")}>{children}</th>;
+}
+
+
+/** Partner types, managed from the admin view. BDs get the same add box inside their
+ *  add-partner form; removing a type is the owner's call and is refused while it is in use. */
+function RoleManager({ roles, setRoles, canDelete }: { roles: string[]; setRoles: (r: string[]) => void; canDelete?: boolean }) {
+  const input = "w-full text-[13px] neu-inset text-foreground placeholder:text-faint rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-gold/25";
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function call(action: string, role: string) {
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch("/api/portal/partner/roles", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, role }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Could not save");
+      setRoles(d.roles || []);
+      if (action === "add") setName("");
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not save"); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="card-lux rounded-2xl p-5 mb-6">
+      <div className="font-serif text-[15px] font-[600] mb-1">Partner types</div>
+      <p className="text-[12.5px] text-muted-foreground mb-3">
+        What a network partner can be — campus ambassador, influencer, agency, or anything else you
+        start working with. BDs pick from this list when they add someone.
+      </p>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {roles.length === 0 && <span className="text-[12.5px] text-faint">No types yet — add the first one below.</span>}
+        {roles.map((r) => (
+          <span key={r} className="neu-chip rounded-full pl-3 pr-2 py-1 text-[12px] font-[560] inline-flex items-center gap-1.5">
+            {r}
+            {canDelete && (
+              <button type="button" onClick={() => { if (confirm(`Remove the partner type “${r}”?`)) call("delete", r); }} disabled={busy}
+                title={`Remove “${r}”`} className="text-[#b3341f] text-[14px] leading-none disabled:opacity-40">×</button>
+            )}
+          </span>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <input
+          value={name} onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (name.trim()) call("add", name.trim()); } }}
+          placeholder="e.g. Campus Ambassador" className={input + " sm:max-w-xs text-[13px]"}
+        />
+        <button type="button" onClick={() => name.trim() && call("add", name.trim())} disabled={busy || !name.trim()}
+          className={GOLD + " px-4 py-2 text-[12.5px] disabled:opacity-50"}>
+          {busy ? "Saving…" : "Add type"}
+        </button>
+      </div>
+      {err && <p className="text-[12px] text-[#b3341f] mt-2">{err}</p>}
+    </div>
+  );
 }

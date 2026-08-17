@@ -116,14 +116,14 @@ async function ensureSchema(c: PoolClient) {
   }
   // ── BD 2-tier partner network (SHARED with LivoDraft; defensive idempotent creates so the
   //    portal never breaks if it queries before LivoDraft has migrated the shared DB) ──
-  await add("role");           // partner role label (CA / influencer / agency / campus ambassador…)
+  await add("role");           // partner role label (campus ambassador / influencer / agency …)
   await add("parent_bd_id");   // the BD intern this partner sits under ('' = top-level / a BD itself)
   await c.query(`CREATE TABLE IF NOT EXISTS partner_codes (
     code TEXT PRIMARY KEY, employee_id TEXT NOT NULL,
     discount_pct REAL DEFAULT 25, commission_pct REAL DEFAULT 10, override_pct REAL DEFAULT 2,
     active INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`);
   await c.query(`CREATE TABLE IF NOT EXISTS partner_roles (role TEXT PRIMARY KEY, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`);
-  for (const rl of ["Chartered Accountant", "Influencer", "Thesis Writing Agency", "Campus Ambassador"]) {
+  for (const rl of ["Campus Ambassador", "Influencer", "Thesis Writing Agency"]) {
     try { await c.query(`INSERT INTO partner_roles (role) VALUES ($1) ON CONFLICT DO NOTHING`, [rl]); } catch { /* */ }
   }
   await c.query(`ALTER TABLE employee_commissions ADD COLUMN IF NOT EXISTS tier TEXT DEFAULT 'direct'`);
@@ -276,7 +276,7 @@ export async function employeeOwnData(email: string) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  BD 2-TIER PARTNER NETWORK  (CA · influencer · agency · campus ambassador …)
+//  BD 2-TIER PARTNER NETWORK  (campus ambassador · influencer · agency …)
 //  Codes live in LivoDraft's shared DB. A BD intern recruits partners who each get a
 //  referral-style affiliate code; the BD earns an override on their whole network.
 // ══════════════════════════════════════════════════════════════════════════════
@@ -300,6 +300,29 @@ export async function companyGmv(): Promise<number> {
          WHERE tier IS DISTINCT FROM 'override'`);
       return r2(+r.rows[0].g);
     } catch { return 0; }
+  });
+}
+
+/** Add a partner type. The seeded three are only a starting point. */
+export async function addPartnerRole(role: string) {
+  const r = String(role || "").trim().slice(0, 60);
+  if (!r) throw new Error("Give the role a name");
+  return withClient((c) => c.query(`INSERT INTO partner_roles (role) VALUES ($1) ON CONFLICT DO NOTHING`, [r]));
+}
+
+/** Remove a partner type. Refused while anyone is still on it, so nobody is left role-less. */
+export async function deletePartnerRole(role: string) {
+  const r = String(role || "").trim();
+  if (!r) throw new Error("Which role?");
+  return withClient(async (c) => {
+    const used = await c.query(`SELECT count(*)::int n FROM employees WHERE role=$1 AND deleted_at IS NULL`, [r]);
+    if (used.rows[0].n > 0) {
+      // Something for the owner to fix, not a server fault — carry the right status with it.
+      const e: any = new Error(`${used.rows[0].n} partner(s) are on “${r}” — move them first.`);
+      e.status = 409;
+      throw e;
+    }
+    await c.query(`DELETE FROM partner_roles WHERE role=$1`, [r]);
   });
 }
 

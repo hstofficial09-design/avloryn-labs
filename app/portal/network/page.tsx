@@ -37,5 +37,7 @@ export default async function NetworkPage() {
   } catch (e: any) {
     error = e?.message || "Could not reach the network database.";
   }
-  return <NetworkDashboard mode="bd" name={s.name || "there"} isBd={isBd} network={network} roles={roles} attachable={attachable} users={users} error={error} />;
+  // The name is only ever drawn as a node in the family tree, so the fallback has to read as a
+  // person there — "there" was a greeting fallback on a page that has no greeting.
+  return <NetworkDashboard mode="bd" name={s.name || "You"} isBd={isBd} network={network} roles={roles} attachable={attachable} users={users} error={error} />;
 }
