@@ -48,7 +48,7 @@ export default function NetworkDashboard(props: {
   async function logout() { await fetch("/api/portal/logout", { method: "POST" }); router.push("/portal/login"); }
 
   async function approvePartner(id: string, name: string) {
-    if (!confirm(`Approve ${name}? A login password will be emailed straight to them and their code goes live. (The BD won't see the password.)`)) return;
+    if (!confirm(`Approve ${name}? A login password will be emailed straight to them and their code goes live. (Their upline won't see the password.)`)) return;
     setBusy(true);
     try {
       const r = await fetch("/api/portal/partner/approve", {
@@ -99,7 +99,7 @@ export default function NetworkDashboard(props: {
     finally { setBusy(false); }
   }
   async function markPaid(id: string, amt: number) {
-    if (!confirm(`Mark ${inr(amt)} override as paid for this BD? (Bank transfer already done)`)) return;
+    if (!confirm(`Mark ${inr(amt)} as paid for this person? (Bank transfer already done)`)) return;
     setBusy(true);
     await fetch("/api/portal/mark-paid", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employee_id: id }) });
     setBusy(false); router.refresh();
@@ -128,7 +128,7 @@ export default function NetworkDashboard(props: {
         </h1>
         <p className="text-[13.5px] text-muted-foreground mb-6">
           {mode === "owner"
-            ? "Every BD intern and the network partners they recruited. Each BD earns a 2% override on their whole network — pay by bank transfer, then Mark Paid."
+            ? "Every team member and the network partners they recruited. Each upline earns a 2% override on their whole network — pay by bank transfer, then Mark Paid."
             : "Network partners you bring on — campus ambassadors, influencers, thesis-writing agencies. You earn a 2% override on every sale across your whole network, for life."}
         </p>
 
@@ -249,12 +249,12 @@ export default function NetworkDashboard(props: {
               <div className="card-lux rounded-2xl overflow-hidden mb-6 ring-1 ring-[hsl(var(--gold)/0.35)]">
                 <div className="px-5 py-3.5 border-b border-border bg-gold-soft/40">
                   <b className="font-serif text-[15px] font-[600]">Pending approval</b>{" "}
-                  <span className="text-[11.5px] text-faint">a BD added these — approve to email them a login and switch their code live</span>
+                  <span className="text-[11.5px] text-faint">someone added these — approve to email them a login and switch their code live</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-[13px] min-w-[620px]">
                     <thead><tr className="section-label bg-subtle/60">
-                      <Th>Name</Th><Th>Role</Th><Th>Email</Th><Th>Under BD</Th><Th>Code</Th><Th>Action</Th>
+                      <Th>Name</Th><Th>Role</Th><Th>Email</Th><Th>Upline</Th><Th>Code</Th><Th>Action</Th>
                     </tr></thead>
                     <tbody>
                       {pending.map((p) => (
@@ -469,7 +469,7 @@ function RoleManager({ roles, setRoles, canDelete }: { roles: string[]; setRoles
       <div className="font-serif text-[15px] font-[600] mb-1">Partner types</div>
       <p className="text-[12.5px] text-muted-foreground mb-3">
         What a network partner can be — campus ambassador, influencer, agency, or anything else you
-        start working with. BDs pick from this list when they add someone.
+        start working with. People pick from this list when they add someone.
       </p>
       <div className="flex flex-wrap gap-2 mb-3">
         {roles.length === 0 && <span className="text-[12.5px] text-faint">No types yet — add the first one below.</span>}

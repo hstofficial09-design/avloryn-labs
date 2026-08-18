@@ -37,7 +37,7 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd 
     : "Write down what you're working on. Dated, numbered, and downloadable as a PDF whenever you want.",
     href: "/portal/tasks", icon: <TaskIcon /> });
   if (isOwner || isCommissionRole) cards.push({ title: isOwner ? "Team & Commissions" : "My Earnings", desc: isOwner ? "Employees, referral codes, commissions and payouts." : "Your referral code, sales and payouts.", href: "/portal/commissions", icon: <CoinIcon /> });
-  if (isOwner || isBd) cards.push({ title: isOwner ? "Partner Network" : "My Network", desc: isOwner ? "BD interns, the network partners they recruit, and the 2% override across every network." : "Add network partners (CAs, influencers, agencies) and earn a 2% override on your whole network.", href: "/portal/network", icon: <NetworkIcon /> });
+  if (isOwner || isBd) cards.push({ title: isOwner ? "Partner Network" : "My Network", desc: isOwner ? "Everyone on the team, the network partners they recruit, and the 2% override across every network." : "Add network partners (CAs, influencers, agencies) and earn a 2% override on your whole network.", href: "/portal/network", icon: <NetworkIcon /> });
   if (isOwner) cards.push({ title: "Onboarding Form", desc: "Roles, pay, form fields and each role's terms for new hires.", href: "/portal/onboarding", icon: <FormIcon /> });
   if (isOwner) cards.push({ title: "Careers", desc: "Post openings on the website and take applications by email.", href: "/portal/careers", icon: <BriefcaseIcon /> });
   if (isOwner) cards.push({ title: "LivoDraft", desc: "Open the full LivoDraft admin — codes, users, billing, refunds, payouts, AI & more.", href: "/portal/go/livodraft", external: true, icon: <ProductIcon /> });

@@ -119,7 +119,7 @@ export default function EmployeeDashboard({ name, data, error, commissionRole, i
               </div>
               <div><div className="section-label">Your commission</div><div className="font-bold text-gold mt-1">{commissionPct}% of net sale</div></div>
               <div><div className="section-label">{isPartner ? "Role" : "Role"}</div><div className="font-[560] mt-1">{isPartner ? "Network Partner" : (emp.emp_type === "intern" ? `Intern${emp.track ? " · " + emp.track : ""}` : "Employee")}</div></div>
-              {isPartner && bdName && <div><div className="section-label">Your BD</div><div className="font-[560] mt-1">{bdName}</div></div>}
+              {isPartner && bdName && <div><div className="section-label">Your upline</div><div className="font-[560] mt-1">{bdName}</div></div>}
             </div>
 
             {(refCode || promoCodes.length > 0) && (
@@ -236,11 +236,11 @@ export default function EmployeeDashboard({ name, data, error, commissionRole, i
               const youNode: TreeNode = { name: emp.name || "You", label: "Network Partner", you: true,
                 children: (users || []).map((u) => ({ name: u.name, label: "student", note: inr(u.spent) })) };
               const root: TreeNode = { name: "Avloryn Labs", label: "Company",
-                children: [bdName ? { name: bdName, label: "BD", children: [youNode] } : youNode] };
+                children: [bdName ? { name: bdName, label: "Upline", children: [youNode] } : youNode] };
               return (
                 <section className="mt-8">
                   <h2 className="font-serif text-[20px] font-[600] tracking-[-0.01em] mb-1">Your family</h2>
-                  <p className="text-[13px] text-muted-foreground mb-3">Where you sit — your BD above you, and the students under you.</p>
+                  <p className="text-[13px] text-muted-foreground mb-3">Where you sit — your upline above you, and the students under you.</p>
                   <FamilyChart root={root} />
                 </section>
               );
