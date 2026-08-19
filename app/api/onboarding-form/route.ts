@@ -25,6 +25,7 @@ import {
   type Clause,
 } from "@/lib/intern-docs";
 import { listRoles, getFormConfig, getLegalConfig } from "@/lib/portal-db";
+import { getSession } from "@/lib/portal-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -159,24 +160,63 @@ class Doc {
   ensure(space: number) {
     if (this.y - space < MARGIN) this.addPage();
   }
+  /**
+   * The letterhead.
+   *
+   * Carries what an LLP must publish on official correspondence: the name, the registered office,
+   * the LLPIN and the limited-liability statement. Kept small and grey on the right so the page
+   * still reads as a letter rather than a form.
+   */
   header() {
+    const top = A4[1] - MARGIN;
     if (this.logo) {
       const s = 20;
-      this.page.drawImage(this.logo, {
-        x: MARGIN,
-        y: A4[1] - MARGIN - s + 4,
-        width: s,
-        height: s,
-      });
+      this.page.drawImage(this.logo, { x: MARGIN, y: top - s + 4, width: s, height: s });
       this.page.drawText("Avloryn Labs", {
-        x: MARGIN + s + 8,
-        y: A4[1] - MARGIN - 8,
-        size: 12,
-        font: this.fonts.bold,
-        color: INK,
+        x: MARGIN + s + 8, y: top - 8, size: 12, font: this.fonts.bold, color: INK,
+      });
+      this.page.drawText(pdfSafe(DOC_META.COMPANY), {
+        x: MARGIN + s + 8, y: top - 19, size: 7.5, font: this.fonts.reg, color: MUTED,
       });
     }
-    this.y = A4[1] - MARGIN - 40;
+
+    // The LLPIN line is skipped rather than printed empty when the number isn't configured — a
+    // blank "LLPIN:" on a signed letter looks like a mistake.
+    const idBits = [DOC_META.LLPIN ? `LLPIN: ${DOC_META.LLPIN}` : "", "PAN: ACOFA6798F"].filter(Boolean);
+    const lines = [
+      ...DOC_META.REGD_OFFICE_LINES,
+      idBits.join("   |   "),
+      `${DOC_META.LIMITED_LIABILITY}   |   contact@avloryn.com   |   avloryn.com`,
+    ];
+    let ly = top - 4;
+    // Wide enough that the address breaks at a phrase rather than stranding the PIN code on a
+    // line of its own; still clear of the logo and wordmark on the left.
+    const maxW = A4[0] - MARGIN * 2 - 128;
+    for (const raw of lines) {
+      for (const line of this.wrapPlain(pdfSafe(raw), maxW, 7)) {
+        const w = this.fonts.reg.widthOfTextAtSize(line, 7);
+        this.page.drawText(line, { x: A4[0] - MARGIN - w, y: ly, size: 7, font: this.fonts.reg, color: MUTED });
+        ly -= 9;
+      }
+    }
+
+    const ruleY = Math.min(top - 34, ly - 2);
+    this.page.drawRectangle({ x: MARGIN, y: ruleY, width: A4[0] - MARGIN * 2, height: 0.8, color: GOLD });
+    this.y = ruleY - 22;
+  }
+
+  /** Plain greedy wrap for the letterhead lines (the rich `para` path is for body copy). */
+  wrapPlain(s: string, width: number, size: number): string[] {
+    const words = s.split(/\s+/).filter(Boolean);
+    const out: string[] = [];
+    let line = "";
+    for (const w of words) {
+      const next = line ? `${line} ${w}` : w;
+      if (this.fonts.reg.widthOfTextAtSize(next, size) > width && line) { out.push(line); line = w; }
+      else line = next;
+    }
+    if (line) out.push(line);
+    return out;
   }
   title(t: string) {
     this.ensure(40);
@@ -309,6 +349,10 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });
   }
+
+  // Preview is OWNER-ONLY: it runs the whole builder, so without the check anyone could mint a
+  // signed-looking joining letter with a name of their choosing.
+  const isPreview = body.preview === true && (await getSession())?.role === "owner";
 
   // honeypot
   if (typeof body.company === "string" && (body.company as string).trim() !== "") {
@@ -454,23 +498,54 @@ export async function POST(req: Request) {
       : "On successful completion (a minimum of 3 months is required), you will receive an Internship Completion Certificate. An intern who leaves before completing 3 months is not eligible for a certificate or any other benefit. Standout performers will also receive a Letter of Recommendation and first preference for future paid roles.",
       { gap: 8 });
     nd.para("This offer is subject to your signed Internship Agreement and NDA (attached).", { gap: 14 });
-    nd.para("Warm regards,", { gap: 4 });
-    // owner signature (stored image if present) else name
-    try {
-      const sigBytes = await fs.readFile(path.join(process.cwd(), "public", "founder-signature.png"));
-      const sig = await n.pdf.embedPng(new Uint8Array(sigBytes));
-      // fit within 130w x 54h, preserving aspect ratio (no squish)
-      const scale = Math.min(130 / sig.width, 54 / sig.height);
-      const w = sig.width * scale, h = sig.height * scale;
-      nd.ensure(h + 4);
-      nd.page.drawImage(sig, { x: MARGIN, y: nd.y - h, width: w, height: h });
-      nd.y -= h + 4;
-    } catch {}
-    nd.para(`${DOC_META.FOUNDER}`, { font: n.fonts.bold, size: 10.5, gap: 1 });
-    nd.para(`Founder, ${DOC_META.COMPANY}  ·  contact@avloryn.com`, { size: 9.5, color: MUTED });
+    nd.para("Warm regards,", { gap: 6 });
+    // Both designated partners sign, side by side. An LLP acts through its designated partners,
+    // so an offer carrying both is signed by the firm rather than by one person in it.
+    {
+      const colW = (A4[0] - MARGIN * 2) / 2;
+      const boxH = 52;
+      nd.ensure(boxH + 34);
+      const top = nd.y;
+      for (let i = 0; i < DOC_META.SIGNATORIES.length; i++) {
+        const sg = DOC_META.SIGNATORIES[i];
+        const x = MARGIN + i * colW;
+        try {
+          const bytes = await fs.readFile(path.join(process.cwd(), "public", sg.sig));
+          const img = await n.pdf.embedPng(new Uint8Array(bytes));
+          // Match on HEIGHT first so two signatures of different proportions carry the same
+          // visual weight — fitting by width alone left the wider one looking half the size.
+          const scale = Math.min(boxH / img.height, 150 / img.width);
+          nd.page.drawImage(img, {
+            x, y: top - img.height * scale, width: img.width * scale, height: img.height * scale,
+          });
+        } catch { /* no image on this deployment — the printed name still identifies the signatory */ }
+        // Sits just under the stroke — the name belongs to the signature above it, not to the
+        // white space between them.
+        nd.page.drawText(pdfSafe(sg.name), {
+          x, y: top - boxH - 4, size: 10.5, font: n.fonts.bold, color: INK,
+        });
+        nd.page.drawText(pdfSafe(`${sg.title}, ${DOC_META.COMPANY}`), {
+          x, y: top - boxH - 15, size: 9, font: n.fonts.reg, color: MUTED,
+        });
+      }
+      nd.y = top - boxH - 26;
+    }
     addAgreement(nd, ia, signImgN, d);
     addAgreement(nd, nda, signImgN, d);
     const internBytes = await n.pdf.save();
+
+    // Owner preview: hand back the joining letter itself instead of emailing it and recording a
+    // hire. Deliberately built by this same code path — a preview generated any other way could
+    // drift from what a real candidate actually receives, which is the one thing it must not do.
+    if (isPreview) {
+      return new Response(Buffer.from(internBytes), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": 'inline; filename="joining-letter-preview.pdf"',
+          "Cache-Control": "no-store",
+        },
+      });
+    }
 
     // ---- emails ----
     const resend = new Resend(RESEND_API_KEY);

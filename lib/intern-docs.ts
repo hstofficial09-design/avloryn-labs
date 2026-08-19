@@ -44,6 +44,37 @@ export type InternData = {
 const COMPANY = "Avloryn Labs LLP";
 const FOUNDER = "Hardev Singh Thakur";
 
+/**
+ * What the letterhead has to carry.
+ *
+ * Section 21 of the LLP Act 2008 requires every LLP's invoices, official correspondence and
+ * publications to bear its name, the address of its registered office, its registration number
+ * (LLPIN) and a statement that it is registered with limited liability. A joining letter is
+ * official correspondence, so it needs all four. The penalty for leaving them off is Rs 10,000.
+ *
+ * "Designated Partner" — not "Director". An LLP has partners and designated partners; directors
+ * belong to companies. Signing as a director of an LLP names an office that does not exist.
+ */
+// The registered office as the partners write it. MCA's master data records the tehsil as
+// "Bhota, Barsar"; the postal address is Teh. Bhoranj, which is what goes on correspondence.
+//
+// Broken at a chosen point rather than left to wrap: at letterhead size the address runs just
+// past one line, and a greedy wrap strands the PIN code on a line of its own.
+const REGD_OFFICE_LINES = [
+  "C/o Sanjeev Kumar Thakur, Village Rathwani, P.O. Town Bharari,",
+  "Teh. Bhoranj, Distt. Hamirpur, Himachal Pradesh - 176041",
+];
+const REGD_OFFICE = REGD_OFFICE_LINES.join(" ");
+const LLPIN = process.env.LLPIN || "ACY-9473";
+const LIMITED_LIABILITY = "Registered with limited liability";
+
+/** Both designated partners on the register (DPIN 11756970 and 11756969), either of whom signs
+ *  for the LLP. */
+const SIGNATORIES = [
+  { name: "Hardev Singh Thakur", title: "Designated Partner", sig: "founder-signature.png" },
+  { name: "Sanjeev Kumar Thakur", title: "Designated Partner", sig: "sanjeev-signature.png" },
+];
+
 export type Clause = { h?: string; t: string };
 
 /** Internship Agreement — returns ordered clauses. HR interns get a role-specific
@@ -228,7 +259,7 @@ export function joiningLetter(d: InternData): {
   };
 }
 
-export const DOC_META = { COMPANY, FOUNDER };
+export const DOC_META = { COMPANY, FOUNDER, REGD_OFFICE, REGD_OFFICE_LINES, LLPIN, LIMITED_LIABILITY, SIGNATORIES };
 
 // ── Read-only text of the CURRENT NDA + terms, for the Onboarding Form editor ──
 function sampleData(roleCode: Role): InternData {
