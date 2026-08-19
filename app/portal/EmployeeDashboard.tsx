@@ -30,10 +30,25 @@ export default function EmployeeDashboard({ name, data, error, commissionRole, i
   const emp = data?.employee;
   const codes = data?.summary?.codes || [];
   const primaryCode = codes[0]?.code || data?.orders?.find((o) => o.code)?.code || null;
-  const commissionPct = codes[0]?.commission_pct ?? emp?.commission_pct ?? 10;
+  // "Your commission" is the standing rate on your own code — NOT whatever code happens to sort
+  // first. summary.codes lists promo codes before partner ones, so a single 8% promo handed out
+  // to close one sale was being displayed as the person's permanent rate.
+  const promoSet = new Set(promoCodes.map((p) => p.code.toUpperCase()));
+  const standingCode = codes.find((c) => !promoSet.has(c.code.toUpperCase()));
+  const commissionPct = standingCode?.commission_pct ?? emp?.commission_pct ?? 10;
   // Only referral roles (a code, or a commission % set by the owner) get the commission view.
   // Internal roles like HR see a clean role + Scheduling view instead.
   const isCommissionRole = commissionRole ?? (codes.length > 0 || !!primaryCode || (emp?.commission_pct ?? 0) > 0);
+
+  /** What each code has actually earned, read off the orders rather than guessed. */
+  const perCode = (code: string) => {
+    const rows = (data?.orders || []).filter((o) => (o.code || "").toUpperCase() === code.toUpperCase());
+    return {
+      uses: rows.length,
+      earned: rows.reduce((a, o) => a + (o.commission_inr || 0), 0),
+      sales: rows.reduce((a, o) => a + (o.order_amount_inr || 0), 0),
+    };
+  };
 
   const [showPw, setShowPw] = useState(false);
   const [cur, setCur] = useState("");
@@ -110,64 +125,20 @@ export default function EmployeeDashboard({ name, data, error, commissionRole, i
           </>
         ) : (
           <>
+            {/* Who you are — the code used to be crammed in here too, and then repeated twice
+                below. It now lives in one place: the cards underneath. */}
             <div className="flex flex-wrap items-center gap-6 card-lux rounded-2xl px-5 py-4 mb-5">
-              <div>
-                <div className="section-label">Your code{codes.length > 1 ? "s" : ""}</div>
-                {primaryCode
-                  ? <div className="font-mono text-[20px] font-extrabold text-gold mt-1">{codes.length ? codes.map((c) => c.code).join(", ") : primaryCode}</div>
-                  : <div className="text-[13px] text-faint mt-1">Owner will share it soon</div>}
-              </div>
+              <div><div className="section-label">Role</div><div className="font-[560] mt-1">{isPartner ? "Network Partner" : (emp.emp_type === "intern" ? `Intern${emp.track ? " · " + emp.track : ""}` : "Employee")}</div></div>
               <div><div className="section-label">Your commission</div><div className="font-bold text-gold mt-1">{commissionPct}% of net sale</div></div>
-              <div><div className="section-label">{isPartner ? "Role" : "Role"}</div><div className="font-[560] mt-1">{isPartner ? "Network Partner" : (emp.emp_type === "intern" ? `Intern${emp.track ? " · " + emp.track : ""}` : "Employee")}</div></div>
               {isPartner && bdName && <div><div className="section-label">Your upline</div><div className="font-[560] mt-1">{bdName}</div></div>}
+              <div><div className="section-label">Earned so far</div><div className="font-bold mt-1">{inr(s?.earned || 0)}</div></div>
             </div>
 
-            {(refCode || promoCodes.length > 0) && (
-              <div className="card-lux rounded-2xl p-5 mb-5">
-                <div className="font-serif text-[15px] font-[600] mb-1">Your codes</div>
-                <p className="text-[12.5px] text-muted-foreground mb-3">Your one <b>referral code</b> (for signups) and any <b>promo codes</b> the owner gave you for direct sales.</p>
-                {refCode && (
-                  <div className="flex items-center justify-between gap-3 flex-wrap py-2.5 border-b border-border">
-                    <div>
-                      <span className="section-label !text-gold">Referral</span>
-                      <span className="font-mono text-[15px] font-extrabold text-gold ml-2">{refCode}</span>
-                    </div>
-                    <span className="text-[11.5px] text-muted-foreground">Signups get 25% off · you earn on every document, for life</span>
-                  </div>
-                )}
-                {promoCodes.length === 0 && (
-                  <div className="py-2.5 text-[12px] text-faint">No promo codes yet — the owner can create one for you.</div>
-                )}
-                {promoCodes.map((p) => (
-                  <div key={p.code} className="flex items-center justify-between gap-3 flex-wrap py-2.5 border-b border-border last:border-0">
-                    <div>
-                      <span className="section-label">Promo</span>
-                      <span className="font-mono text-[14px] font-bold text-foreground ml-2">{p.code}</span>
-                      {!p.active && <span className="text-[11px] text-[#b3341f] ml-2">disabled</span>}
-                    </div>
-                    <span className="text-[11.5px] text-muted-foreground">
-                      {p.type === "flat" ? `₹${p.value} off` : p.type === "free_pages" ? `${p.value} free pages` : `${p.value}% off`}
-                      {p.commission_pct > 0 ? ` · you earn ${p.commission_pct}%` : ""} · used {p.uses}×
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {refLink && (
-              <div className="card-lux rounded-2xl p-5 mb-5 flex flex-col sm:flex-row gap-5 items-start">
-                <img src={`${livoBase || "https://livodraft.com"}/qr?d=${encodeURIComponent(refLink)}`} alt="Your referral QR" width={128} height={128} className="rounded-xl ring-1 ring-border bg-white shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="font-serif text-[16px] font-[600] mb-1">Share &amp; earn</div>
-                  <p className="text-[12.5px] text-muted-foreground mb-3">Share your link or QR. Anyone who signs up through it becomes yours — they get 25% off their first document and you earn commission on every document, for life.</p>
-                  <div className="flex items-center gap-2 mb-3">
-                    <input readOnly value={refLink} className="flex-1 min-w-0 text-[12.5px] neu-inset rounded-lg px-3 py-2 font-mono text-foreground" onFocus={(e) => e.currentTarget.select()} />
-                    <button onClick={copyLink} className={GHOST + " text-[12px] px-3 py-2 shrink-0"}>{copied ? "Copied ✓" : "Copy"}</button>
-                  </div>
-                  <a href={waHref} target="_blank" rel="noopener noreferrer" className={GOLD + " text-[12.5px] px-4 py-2 inline-block"}>Share on WhatsApp</a>
-                </div>
-              </div>
-            )}
+            <CodesSection
+              refCode={refCode} refLink={refLink} waHref={waHref} livoBase={livoBase}
+              copied={copied} onCopy={copyLink}
+              partnerCodes={codes} promoCodes={promoCodes} perCode={perCode}
+            />
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
               <Stat k="Commission earned" v={inr(s?.earned || 0)} tone="#A9852F" />
@@ -233,8 +204,26 @@ export default function EmployeeDashboard({ name, data, error, commissionRole, i
             )}
 
             {isPartner && (() => {
-              const youNode: TreeNode = { name: emp.name || "You", label: "Network Partner", you: true,
-                children: (users || []).map((u) => ({ name: u.name, label: "student", note: inr(u.spent) })) };
+              const youNode: TreeNode = {
+                name: emp.name || "You", label: "Network Partner", you: true,
+                details: [
+                  { k: "Your code", v: refCode || primaryCode || "—" },
+                  { k: "Students", v: String((users || []).length) },
+                  { k: "They spent", v: inr((users || []).reduce((a, u) => a + u.spent, 0)), gold: true },
+                  { k: "You earned", v: inr(s?.earned || 0), gold: true },
+                  { k: "Pending payout", v: inr(s?.pending || 0) },
+                ],
+                children: (users || []).map((u) => ({
+                  name: u.name, label: "student", note: inr(u.spent),
+                  details: [
+                    { k: "Documents", v: String(u.docs) },
+                    { k: "They spent", v: inr(u.spent) },
+                    { k: "You earned", v: inr(u.commission), gold: true },
+                    { k: "Paid to you", v: inr(u.paid) },
+                    { k: "Still pending", v: inr(u.pending) },
+                  ],
+                })),
+              };
               const root: TreeNode = { name: "Avloryn Labs", label: "Company",
                 children: [bdName ? { name: bdName, label: "Upline", children: [youNode] } : youNode] };
               return (
@@ -249,6 +238,154 @@ export default function EmployeeDashboard({ name, data, error, commissionRole, i
         )}
       </div>
     </main>
+  );
+}
+
+/**
+ * Your codes.
+ *
+ * There are two completely different things here and they were previously shown as near-identical
+ * one-line rows, twice over, with the explanation squeezed into grey text on the right — so nobody
+ * could tell which code to send to whom, or what they'd earn from it.
+ *
+ * They differ in the thing that actually matters: a REFERRAL brings you a person (and pays you on
+ * everything they ever buy), a PROMO discounts a single sale (and pays you once, on that sale).
+ * Each now gets its own card that says what the buyer gets, what you get, and what it has earned
+ * so far — read from the real orders, not asserted.
+ */
+function CodesSection({ refCode, refLink, waHref, livoBase, copied, onCopy, partnerCodes, promoCodes, perCode }: {
+  refCode?: string; refLink?: string; waHref: string; livoBase?: string;
+  copied: boolean; onCopy: () => void;
+  partnerCodes: Code[];
+  promoCodes: PromoCode[];
+  perCode: (code: string) => { uses: number; earned: number; sales: number };
+}) {
+  const [copiedCode, setCopiedCode] = useState("");
+  const copyCode = async (c: string) => {
+    try { await navigator.clipboard.writeText(c); setCopiedCode(c); setTimeout(() => setCopiedCode(""), 1500); } catch { /* */ }
+  };
+  // A partner's affiliate code and the signup referral code are the same idea to the person
+  // holding them; show the referral one if we have it, else the partner code.
+  const shareCode = refCode || partnerCodes[0]?.code || "";
+  const shareStats = shareCode ? perCode(shareCode) : null;
+  if (!shareCode && promoCodes.length === 0) return null;
+
+  return (
+    <section className="mb-5">
+      <h2 className="font-serif text-[18px] font-[600] tracking-[-0.01em] mb-1">Your codes</h2>
+      <p className="text-[12.5px] text-muted-foreground mb-3 max-w-[70ch]">
+        Two different jobs. Your <b>referral</b> brings you a person — they stay yours and you earn on
+        everything they ever buy. A <b>promo</b> is for closing one sale — a discount you hand over,
+        and you earn once on that sale.
+      </p>
+
+      {/* Side by side only when there is something in both. A lone empty promo card standing as
+          tall as a full referral card just looked broken. */}
+      <div className={promoCodes.length > 0 ? "grid lg:grid-cols-2 gap-4 items-start" : "space-y-3"}>
+        {shareCode && (
+          <div className="card-lux rounded-2xl p-5 ring-1 ring-[hsl(var(--gold)/0.35)]">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <div className="section-label !text-gold">Referral — brings you people</div>
+                <button type="button" onClick={() => copyCode(shareCode)} title="Copy code"
+                  className="font-mono text-[24px] font-extrabold text-gold mt-1 hover:opacity-75 transition-opacity block text-left">
+                  {shareCode}
+                </button>
+              </div>
+              {refLink && (
+                <img src={`${livoBase || "https://livodraft.com"}/qr?d=${encodeURIComponent(refLink)}`}
+                  alt="Your referral QR" width={82} height={82}
+                  className="rounded-lg ring-1 ring-border bg-white shrink-0" />
+              )}
+            </div>
+
+            <dl className="text-[12.5px] border-t border-border pt-2.5 mb-3">
+              <Row k="They get" v="25% off their first document" />
+              <Row k="You get" v="commission on every document they ever buy — for life" gold />
+              <Row k="Use it when" v="someone might come back again: a classmate, a junior, a group" />
+            </dl>
+
+            {shareStats && (
+              <div className="flex gap-5 text-[12.5px] mb-3">
+                <span className="text-muted-foreground">Used <b className="text-foreground font-mono">{shareStats.uses}×</b></span>
+                <span className="text-muted-foreground">Earned <b className="text-gold font-mono">{inr(shareStats.earned)}</b></span>
+              </div>
+            )}
+
+            {refLink ? (
+              <>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <input readOnly value={refLink} onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 min-w-0 text-[12px] neu-inset rounded-lg px-3 py-2 font-mono text-foreground" />
+                  <button onClick={onCopy} className={GHOST + " text-[12px] px-3 py-2 shrink-0"}>{copied ? "Copied ✓" : "Copy link"}</button>
+                </div>
+                <a href={waHref} target="_blank" rel="noopener noreferrer" className={GOLD + " text-[12.5px] px-4 py-2 inline-block"}>Share on WhatsApp</a>
+              </>
+            ) : (
+              <button onClick={() => copyCode(shareCode)} className={GHOST + " text-[12px] px-3.5 py-2"}>
+                {copiedCode === shareCode ? "Copied ✓" : "Copy code"}
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className={"card-lux rounded-2xl " + (promoCodes.length === 0 ? "px-5 py-3.5" : "p-5")}>
+          <div className="section-label mb-1">Promo — closes one sale</div>
+          {promoCodes.length === 0 ? (
+            <p className="text-[12.5px] text-muted-foreground">
+              You don&rsquo;t have one yet — ask the founder when you need a discount to close a specific
+              sale. Your referral code above already earns you commission in the meantime.
+            </p>
+          ) : (
+            <>
+              <p className="text-[12.5px] text-muted-foreground mb-3 mt-1">
+                A one-off discount for a buyer you&rsquo;re closing yourself. They don&rsquo;t become yours — you earn on that sale.
+              </p>
+              <div className="space-y-3">
+                {promoCodes.map((p) => {
+                  const st = perCode(p.code);
+                  const off = p.type === "flat" ? `₹${p.value} off` : p.type === "free_pages" ? `${p.value} free pages` : `${p.value}% off`;
+                  return (
+                    <div key={p.code} className="border-t border-border pt-3 first:border-0 first:pt-0">
+                      <div className="flex items-center justify-between gap-3 flex-wrap mb-1.5">
+                        <button type="button" onClick={() => copyCode(p.code)} title="Copy code"
+                          className="font-mono text-[17px] font-extrabold hover:opacity-75 transition-opacity">
+                          {p.code}
+                        </button>
+                        <span className="text-[11.5px]">
+                          {copiedCode === p.code
+                            ? <span className="text-[#1e7a44] font-[600]">Copied ✓</span>
+                            : !p.active
+                              ? <span className="text-[#b3341f] font-[600]">Disabled — ask the founder</span>
+                              : <span className="text-[#1e7a44] font-[600]">Active</span>}
+                        </span>
+                      </div>
+                      <dl className="text-[12.5px]">
+                        <Row k="They get" v={off} />
+                        <Row k="You get" v={p.commission_pct > 0 ? `${p.commission_pct}% of that sale` : "no commission on this one"} gold={p.commission_pct > 0} />
+                      </dl>
+                      <div className="flex gap-5 text-[12px] mt-1.5 text-muted-foreground">
+                        <span>Used <b className="text-foreground font-mono">{p.uses}×</b></span>
+                        {st.earned > 0 && <span>Earned <b className="text-gold font-mono">{inr(st.earned)}</b></span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Row({ k, v, gold }: { k: string; v: string; gold?: boolean }) {
+  return (
+    <div className="flex gap-2 py-[3px]">
+      <dt className="text-muted-foreground shrink-0 w-[74px]">{k}</dt>
+      <dd className={gold ? "text-gold font-[560]" : "text-foreground"}>{v}</dd>
+    </div>
   );
 }
 

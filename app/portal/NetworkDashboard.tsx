@@ -109,6 +109,10 @@ export default function NetworkDashboard(props: {
     (a, s) => ({ sales: a.sales + s.sales, bd: a.bd + s.bd_commission, pending: a.pending + s.bd_pending }),
     { sales: 0, bd: 0, pending: 0 });
 
+  // Anyone who already sits inside somebody's network has an upline, so they are not a top-level
+  // node. Derived from the data we already have rather than asking the server for a parent id.
+  const nestedIds = new Set(people.flatMap((p) => p.network.map((n) => n.id)));
+
   return (
     <main className="portal-light min-h-screen font-sans px-4 sm:px-6 py-7">
       <div className="max-w-[1000px] mx-auto">
@@ -234,7 +238,28 @@ export default function NetworkDashboard(props: {
               <h2 className="font-serif text-[20px] font-[600] tracking-[-0.01em] mb-1">Your family</h2>
               <p className="text-[13px] text-muted-foreground mb-3">Your network at a glance — you, and the partners under you.</p>
               <FamilyChart root={{ name: "Avloryn Labs", label: "Company", children: [
-                { name, label: myRole || "Team", you: true, children: network.map((p) => ({ name: p.name, label: p.role || "partner", note: inr(p.sales) })) },
+                {
+                  name, label: myRole || "Team", you: true,
+                  details: [
+                    { k: "Partners", v: String(network.length) },
+                    { k: "Network sales", v: inr(netTotals.sales), gold: true },
+                    { k: "Your override", v: inr(netTotals.bd), gold: true },
+                    { k: "Pending payout", v: inr(netTotals.pending) },
+                  ],
+                  children: network.map((p) => ({
+                    name: p.name, label: p.role || "partner", note: inr(p.sales),
+                    // Tapping a partner answers what you actually want to know about them: which
+                    // code they're on, whether they're selling, and what you make from them.
+                    details: [
+                      { k: "Code", v: p.code || "—" },
+                      { k: "Orders", v: String(p.orders) },
+                      { k: "Their sales", v: inr(p.sales), gold: true },
+                      { k: "They earned", v: inr(p.partner_commission) },
+                      { k: "You earned", v: inr(p.bd_commission), gold: true },
+                      { k: "Owed to you", v: inr(p.bd_pending) },
+                    ],
+                  })),
+                },
               ] }} />
             </section>
           </>
@@ -345,9 +370,39 @@ export default function NetworkDashboard(props: {
                   <h2 className="font-serif text-[20px] font-[600] tracking-[-0.01em] mb-1">The family</h2>
                   <p className="text-[13px] text-muted-foreground mb-3">Your whole team — everyone, and the partners under them.</p>
                   <FamilyChart root={{ name: "Avloryn Labs", label: "Owner", you: true,
-                    children: people.map((p) => ({ name: p.name, label: p.role || "team",
+                    details: [
+                      { k: "People", v: String(people.length) },
+                      { k: "With a code", v: String(people.filter((p) => p.code).length) },
+                      { k: "Partners", v: String(people.reduce((a, p) => a + p.network.length, 0)) },
+                    ],
+                    // Only people with nobody above them hang off the company. Everyone else
+                    // already appears inside their upline's branch — listing them at the top too
+                    // showed the same partner twice, once in the wrong place, and inflated the
+                    // headcount. A tree that repeats people can't tell you who reports to whom.
+                    children: people.filter((p) => !nestedIds.has(p.id)).map((p) => ({
+                      name: p.name, label: p.role || "team",
                       note: p.code ? inr(p.direct_earned) : "no code",
-                      children: p.network.map((n) => ({ name: n.name, label: n.role || "partner", note: inr(n.sales) })) })) }} />
+                      // One tap tells you whether this person is actually producing, without
+                      // unfolding their whole downline over the rest of the chart.
+                      details: [
+                        { k: "Code", v: p.code || "not issued yet" },
+                        { k: "Own sales", v: inr(p.direct_sales), gold: true },
+                        { k: "Own commission", v: inr(p.direct_earned) },
+                        { k: "Unpaid", v: inr(p.direct_pending + p.override_pending) },
+                        { k: "Partners", v: String(p.network.length) },
+                        { k: "Override earned", v: inr(p.override_earned), gold: true },
+                      ],
+                      children: p.network.map((n) => ({
+                        name: n.name, label: n.role || "partner", note: inr(n.sales),
+                        details: [
+                          { k: "Code", v: n.code || "—" },
+                          { k: "Orders", v: String(n.orders) },
+                          { k: "Sales", v: inr(n.sales), gold: true },
+                          { k: "They earned", v: inr(n.partner_commission) },
+                          { k: "Upline earned", v: inr(n.bd_commission) },
+                        ],
+                      })),
+                    })) }} />
                 </section>
               </>
             )}
