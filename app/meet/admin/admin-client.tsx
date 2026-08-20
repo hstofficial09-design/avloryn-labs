@@ -38,11 +38,13 @@ export default function MeetAdmin({ googleReady }: { googleReady: boolean }) {
   const [types, setTypes] = useState<MType[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [zohoReady, setZohoReady] = useState(false);
+  // Only the owner and the operations mailbox may change who is on the team.
+  const [canManage, setCanManage] = useState(false);
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState("");
 
   useEffect(() => { setOrigin(window.location.origin); }, []);
-  const loadMembers = useCallback(async () => { try { const d = await api("/api/meet/admin/members"); setMembers(d.members); setZohoReady(!!d.zohoConfigured); } catch (e) { setErr(msg(e)); } }, []);
+  const loadMembers = useCallback(async () => { try { const d = await api("/api/meet/admin/members"); setMembers(d.members); setZohoReady(!!d.zohoConfigured); setCanManage(!!d.canManage); } catch (e) { setErr(msg(e)); } }, []);
   const loadTypes = useCallback(async () => { try { setTypes((await api("/api/meet/admin/types")).types); } catch (e) { setErr(msg(e)); } }, []);
   const loadBookings = useCallback(async () => { try { setBookings((await api("/api/meet/admin/bookings")).bookings); } catch (e) { setErr(msg(e)); } }, []);
   useEffect(() => { loadMembers(); loadTypes(); loadBookings(); }, [loadMembers, loadTypes, loadBookings]);
@@ -76,7 +78,7 @@ export default function MeetAdmin({ googleReady }: { googleReady: boolean }) {
       </div>
 
       {tab === "calendar" && <TeamCalendar bookings={bookings} members={members} reload={loadBookings} refreshTick={refreshTick} />}
-      {tab === "members" && <MembersTab members={members} reload={loadMembers} copy={copy} copied={copied} origin={origin} zohoReady={zohoReady} />}
+      {tab === "members" && <MembersTab members={members} reload={loadMembers} copy={copy} copied={copied} origin={origin} zohoReady={zohoReady} canManage={canManage} />}
       {tab === "types" && <TypesTab types={types} members={members} reload={loadTypes} copy={copy} copied={copied} origin={origin} />}
       {tab === "availability" && <AvailabilityTab members={members} />}
       {tab === "bookings" && <BookingsTab bookings={bookings} reload={loadBookings} members={members} copy={copy} copied={copied} />}
@@ -86,7 +88,7 @@ export default function MeetAdmin({ googleReady }: { googleReady: boolean }) {
 }
 
 /* ─────────────── Members ─────────────── */
-function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { members: Member[]; reload: () => void | Promise<void>; copy: (t: string, id: string) => void; copied: string; origin: string; zohoReady: boolean }) {
+function MembersTab({ members, reload, copy, copied, origin, zohoReady, canManage }: { members: Member[]; reload: () => void | Promise<void>; copy: (t: string, id: string) => void; copied: string; origin: string; zohoReady: boolean; canManage: boolean }) {
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [tz, setTz] = useState("Asia/Kolkata");
   const [busy, setBusy] = useState(false); const [e, setE] = useState("");
   const [team, setTeam] = useState<{ name: string; email: string }[]>([]); const [pick, setPick] = useState("");
@@ -138,7 +140,7 @@ function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { memb
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={() => toggleOrg(m)} className={btnNeu}>{m.is_organizer ? "Unset organizer" : "Make organizer"}</button>
-                  <button onClick={() => del(m.id)} className="text-[12px] font-semibold text-[#b3341f] hover:underline">Remove</button>
+                  {canManage && <button onClick={() => del(m.id)} className="text-[12px] font-semibold text-[#b3341f] hover:underline">Remove</button>}
                 </div>
               </div>
               {(() => {
@@ -176,6 +178,9 @@ function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { memb
           ))}
         </div>
       </div>
+      {/* Adding and removing people is HR's job, not everyone's — the endpoints refuse anyone
+          else regardless, so showing these to the team would only offer buttons that fail. */}
+      {canManage && (<>
       <div className={card}>
         <h3 className="font-serif text-[17px] font-[600] mb-1">Add from your team</h3>
         <p className="text-[12.5px] text-muted-foreground mb-4">Pick a company employee — name &amp; email fill in automatically.</p>
@@ -197,6 +202,7 @@ function MembersTab({ members, reload, copy, copied, origin, zohoReady }: { memb
           <div className="sm:col-span-3 flex items-center gap-3"><button type="submit" disabled={busy} className={btnGold}>{busy ? "Adding…" : "Add member"}</button>{e && <span className="text-[12.5px] text-[#b3341f]">{e}</span>}</div>
         </form>
       </div>
+      </>)}
     </div>
   );
 }

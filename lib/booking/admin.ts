@@ -14,6 +14,27 @@ export async function isOwner(): Promise<boolean> {
 }
 
 /**
+ * Who may change the SETUP — the team list, booking links, working hours, time off, coupons.
+ *
+ * Booking and attending meetings is everyone's job; deciding who is on the team is not. Each of
+ * those endpoints previously asked only "are you signed in?", so any intern could remove a
+ * colleague, delete a booking link, or rewrite someone else's hours. Hiding the buttons would not
+ * have helped — the endpoints answered whoever called them.
+ *
+ * The owner, plus the HR/operations mailbox. TEAM_ADMIN_EMAILS (comma-separated) overrides it if
+ * that ever needs to be more than one address.
+ */
+const TEAM_ADMINS = (process.env.TEAM_ADMIN_EMAILS || "operations@avloryn.com")
+  .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+
+export async function canManageTeam(): Promise<boolean> {
+  const s = await getSession();
+  if (!s) return false;
+  if (s.role === "owner") return true;
+  return TEAM_ADMINS.includes((s.email || "").trim().toLowerCase());
+}
+
+/**
  * Who this session may see in Scheduling.
  *
  * The whole team can use Scheduling, but a meeting is nobody else's business: an employee who

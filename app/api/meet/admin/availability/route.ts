@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canSchedule } from "@/lib/booking/admin";
+import { canSchedule, canManageTeam } from "@/lib/booking/admin";
 import { getAvailability, setAvailability } from "@/lib/booking/db";
 import type { WorkingHours } from "@/lib/booking/availability";
 
@@ -17,7 +17,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  if (!(await canSchedule())) return deny();
+  if (!(await canManageTeam())) return deny();
   const d = await req.json().catch(() => ({}));
   const memberId = String(d.memberId || "");
   if (!memberId) return NextResponse.json({ error: "memberId required" }, { status: 400 });

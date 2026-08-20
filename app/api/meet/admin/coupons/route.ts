@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canSchedule } from "@/lib/booking/admin";
+import { canSchedule, canManageTeam } from "@/lib/booking/admin";
 import { listCoupons, createCoupon, deleteCoupon } from "@/lib/booking/db";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  if (!(await canSchedule())) return deny();
+  if (!(await canManageTeam())) return deny();
   const d = await req.json().catch(() => ({}));
   const code = String(d.code || "").toUpperCase().trim();
   if (!/^[A-Z0-9]{3,24}$/.test(code)) return NextResponse.json({ error: "Code must be 3–24 letters/numbers" }, { status: 400 });
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  if (!(await canSchedule())) return deny();
+  if (!(await canManageTeam())) return deny();
   const code = new URL(req.url).searchParams.get("code") || "";
   if (!code) return NextResponse.json({ error: "code required" }, { status: 400 });
   await deleteCoupon(code);

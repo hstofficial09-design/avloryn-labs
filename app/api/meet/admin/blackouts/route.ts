@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canSchedule } from "@/lib/booking/admin";
+import { canSchedule, canManageTeam } from "@/lib/booking/admin";
 import { getBlackoutDays, addBlackout, deleteBlackout } from "@/lib/booking/db";
 
 export const runtime = "nodejs";
@@ -16,7 +16,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  if (!(await canSchedule())) return deny();
+  if (!(await canManageTeam())) return deny();
   const d = await req.json().catch(() => ({}));
   const memberId = String(d.memberId || "");
   const day = String(d.day || "");
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  if (!(await canSchedule())) return deny();
+  if (!(await canManageTeam())) return deny();
   const sp = new URL(req.url).searchParams;
   const memberId = sp.get("memberId") || "", day = sp.get("day") || "";
   if (!memberId || !day) return NextResponse.json({ error: "memberId + day required" }, { status: 400 });

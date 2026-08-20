@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canSchedule } from "@/lib/booking/admin";
+import { canSchedule, canManageTeam } from "@/lib/booking/admin";
 import { listMeetingTypes, createMeetingType, updateMeetingType, deleteMeetingType } from "@/lib/booking/db";
 
 export const runtime = "nodejs";
@@ -52,7 +52,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  if (!(await canSchedule())) return deny();
+  if (!(await canManageTeam())) return deny();
   const d = await req.json().catch(() => ({}));
   const name = String(d.name || "").trim();
   if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  if (!(await canSchedule())) return deny();
+  if (!(await canManageTeam())) return deny();
   const d = await req.json().catch(() => ({}));
   const id = String(d.id || "");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
@@ -104,7 +104,7 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  if (!(await canSchedule())) return deny();
+  if (!(await canManageTeam())) return deny();
   const id = new URL(req.url).searchParams.get("id") || "";
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   await deleteMeetingType(id);

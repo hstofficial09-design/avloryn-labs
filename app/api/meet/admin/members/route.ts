@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canSchedule, schedulingScope } from "@/lib/booking/admin";
+import { canSchedule, schedulingScope, canManageTeam } from "@/lib/booking/admin";
 import { listMembers, addMember, updateMember, deleteMember, membersWithGoogle, getGoogle, membersWithZoho, getZoho, setAvailability } from "@/lib/booking/db";
 import { signMemberToken } from "@/lib/booking/link";
 import { googleConfigured, verifyMemberGoogle } from "@/lib/booking/google";
@@ -54,11 +54,16 @@ export async function GET() {
       };
     })
   );
-  return NextResponse.json({ members: rows, googleConfigured: googleConfigured(), zohoConfigured: zohoConfigured() });
+  // Tells the page whether to offer the team-management controls at all. The server enforces it
+  // regardless; this is so people aren't shown buttons that would only refuse them.
+  return NextResponse.json({
+    members: rows, googleConfigured: googleConfigured(), zohoConfigured: zohoConfigured(),
+    canManage: await canManageTeam(),
+  });
 }
 
 export async function POST(req: Request) {
-  if (!(await canSchedule())) return deny();
+  if (!(await canManageTeam())) return deny();
   const d = await req.json().catch(() => ({}));
   const name = String(d.name || "").trim();
   const email = String(d.email || "").trim();
@@ -74,7 +79,7 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  if (!(await canSchedule())) return deny();
+  if (!(await canManageTeam())) return deny();
   const d = await req.json().catch(() => ({}));
   const id = String(d.id || "");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
@@ -87,7 +92,7 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  if (!(await canSchedule())) return deny();
+  if (!(await canManageTeam())) return deny();
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id") || "";
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
