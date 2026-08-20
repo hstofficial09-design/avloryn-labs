@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/portal-auth";
 import {
-  listTasks, listAllTasks, addTask, updateTask, deleteTask, markTaskDone, markTaskDelivered,
+  listTasks, listAllTasks, addTask, updateTask, deleteTask, markTaskDone, markTaskDelivered, giveTaskTo,
   listReviews, workStats, tenureScore, weekStartIST, getEmployeeProfile, listEmployeesWithSummary,
   REVIEW_CRITERIA,
 } from "@/lib/portal-db";
@@ -120,6 +120,16 @@ export async function POST(req: Request) {
           ...(d.dueAt !== undefined ? { dueAt: d.dueAt ? String(d.dueAt) : null } : {}),
         });
         return NextResponse.json({ ok: true });
+      }
+
+      case "give": {
+        // Owner only: handing work to someone else is an assignment decision.
+        if (!w.owner) return NextResponse.json({ error: "Only the owner can reassign a task" }, { status: 403 });
+        const id = String(d.id || ""), to = String(d.toEmployeeId || "").trim();
+        if (!id || !to) return NextResponse.json({ error: "Which task, and to whom?" }, { status: 400 });
+        const task = await giveTaskTo(id, to, !!d.copy);
+        if (!task) return NextResponse.json({ error: "That task no longer exists" }, { status: 404 });
+        return NextResponse.json({ ok: true, task });
       }
 
       case "delete": {

@@ -252,7 +252,7 @@ const PROFILE_COLS = "e.dob,e.address,e.id_type,e.id_number,e.is_student,e.colle
 export async function listEmployeesWithSummary(): Promise<EmployeeSummary[]> {
   return withClient(async (c) => {
     const r = await c.query(`
-      SELECT e.id,e.name,e.email,e.mobile,e.emp_type,e.track,e.commission_pct,e.active,e.source,
+      SELECT e.id,e.name,e.email,e.mobile,e.emp_type,e.track,e.role,e.commission_pct,e.active,e.source,
              ${PROFILE_COLS},
              (e.password_hash IS NOT NULL AND e.password_hash<>'') AS has_password,
              COUNT(ec.id)::int AS orders,
@@ -1222,6 +1222,37 @@ export async function updateTask(id: string, fields: { title?: string; detail?: 
     if (fields.dueAt !== undefined) { sets.push(`due_at=$${vals.length + 1}`); vals.push(fields.dueAt || null); }
     if (!sets.length) return;
     await c.query(`UPDATE portal_tasks SET ${sets.join(", ")} WHERE id=$1`, vals);
+  });
+}
+
+/**
+ * Hand a task to someone else — either as well as, or instead of, the person who has it.
+ *
+ * `copy` leaves the original where it is and gives the same work to a second person; without it
+ * the task moves. Either way the task is renumbered for whoever receives it, because the serial
+ * runs per person and a task arriving with someone else's number would break the sequence.
+ */
+export async function giveTaskTo(id: string, toEmployeeId: string, copy: boolean): Promise<Task | null> {
+  return withClient(async (c) => {
+    const t = (await c.query(`SELECT * FROM portal_tasks WHERE id=$1`, [id])).rows[0];
+    if (!t) return null;
+    if (t.employee_id === toEmployeeId) return asTask(t);   // already theirs; nothing to do
+
+    if (copy) {
+      const r = await c.query(
+        `INSERT INTO portal_tasks (id, employee_id, seq, title, detail, source, due_at)
+         VALUES ($1, $2, (SELECT COALESCE(MAX(seq),0)+1 FROM portal_tasks WHERE employee_id=$2), $3, $4, 'owner', $5)
+         RETURNING *`,
+        [randomUUID(), toEmployeeId, t.title, t.detail, t.due_at]);
+      return asTask(r.rows[0]);
+    }
+    const r = await c.query(
+      `UPDATE portal_tasks
+          SET employee_id=$2,
+              seq=(SELECT COALESCE(MAX(seq),0)+1 FROM portal_tasks WHERE employee_id=$2),
+              source='owner'
+        WHERE id=$1 RETURNING *`, [id, toEmployeeId]);
+    return r.rows[0] ? asTask(r.rows[0]) : null;
   });
 }
 

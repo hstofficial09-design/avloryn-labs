@@ -62,7 +62,6 @@ export default function NetworkDashboard(props: {
   }
 
   // BD add-network-partner form
-  const [ownerMode, setOwnerMode] = useState<"new" | "existing">("new");
   const [nName, setNName] = useState("");
   const [roleList, setRoleList] = useState<string[]>(roles);
   const [nRole, setNRole] = useState(roles[0] || "");
@@ -77,21 +76,12 @@ export default function NetworkDashboard(props: {
     e.preventDefault(); setNRes(null);
     setBusy(true);
     try {
-      let r: Response;
-      if (ownerMode === "existing") {
-        if (!nExisting) { setNRes({ ok: false, t: "Pick an existing person." }); setBusy(false); return; }
-        r = await fetch("/api/portal/partner/attach-existing", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ employee_id: nExisting }),
-        });
-      } else {
-        if (!nName.trim()) { setNRes({ ok: false, t: "Enter the person's name." }); setBusy(false); return; }
-        if (!nEmail.trim() || !nEmail.includes("@")) { setNRes({ ok: false, t: "A valid email is required — they log in with it." }); setBusy(false); return; }
-        r = await fetch("/api/portal/partner/create", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: nName.trim(), role: nRole, email: nEmail.trim(), mobile: nMobile.trim() }),
-        });
-      }
+      if (!nName.trim()) { setNRes({ ok: false, t: "Enter the person's name." }); setBusy(false); return; }
+      if (!nEmail.trim() || !nEmail.includes("@")) { setNRes({ ok: false, t: "A valid email is required — they log in with it." }); setBusy(false); return; }
+      const r = await fetch("/api/portal/partner/create", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nName.trim(), role: nRole, email: nEmail.trim(), mobile: nMobile.trim() }),
+      });
       const d = await r.json().catch(() => ({}));
       if (r.ok && d.ok) { setNRes({ ok: true, t: d.approved === false ? `Added — pending owner approval.` : `Code created: ${d.code}` }); setNName(""); setNEmail(""); setNMobile(""); setNExisting(""); router.refresh(); }
       else setNRes({ ok: false, t: d.error || "Could not add the network partner." });
@@ -154,31 +144,26 @@ export default function NetworkDashboard(props: {
             <form onSubmit={addPartner} className="card-lux rounded-2xl p-5 mb-5">
               <div className="font-serif text-[15px] font-[600] mb-1">Add a network partner</div>
               <p className="text-[12.5px] text-muted-foreground mb-3">They&rsquo;re added as <b>pending</b> — once the owner approves, we email them a login and their code goes live. Buyers get 25% off their first document; the partner earns 10%.</p>
-              <div className="flex gap-4 mb-3 text-[13px]">
-                <label className="flex items-center gap-1.5 cursor-pointer"><input type="radio" checked={ownerMode === "new"} onChange={() => setOwnerMode("new")} /> New person</label>
-                <label className="flex items-center gap-1.5 cursor-pointer"><input type="radio" checked={ownerMode === "existing"} onChange={() => setOwnerMode("existing")} /> Existing person</label>
-              </div>
-              {ownerMode === "new" ? (
-                <div className="grid sm:grid-cols-2 gap-2.5">
-                  <input value={nName} onChange={(e) => setNName(e.target.value)} placeholder="Full name" className={input} />
-                  <div>
-                    <select value={nRole} onChange={(e) => setNRole(e.target.value)} className={input + " appearance-none w-full"}>
-                      {roleList.length === 0 && <option value="">Role</option>}
-                      {roleList.map((r) => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                  </div>
-                  <input value={nEmail} onChange={(e) => setNEmail(e.target.value)} placeholder="Email (required — they log in with it)" className={input} />
-                  <input value={nMobile} onChange={(e) => setNMobile(e.target.value)} placeholder="Mobile (optional)" className={input} />
-                </div>
-              ) : (
+              {/* "Add an existing person" is gone from this side.
+                  It let you take a colleague who was already on the team, put them under you, and
+                  start earning 2% of their sales — without them agreeing to it and without the
+                  founder deciding. That mattered less when only BDs had a network; now that
+                  everyone can build one, it turns colleagues into something to claim first.
+                  Placing an existing person under someone is the founder's call, and they have it
+                  on the admin side ("Add a partner yourself" → "Put them under"). It had also
+                  stopped being able to do anything useful: it only offers people with no code yet,
+                  and everyone now gets a code when they join. */}
+              <div className="grid sm:grid-cols-2 gap-2.5">
+                <input value={nName} onChange={(e) => setNName(e.target.value)} placeholder="Full name" className={input} />
                 <div>
-                  <select value={nExisting} onChange={(e) => setNExisting(e.target.value)} className={input + " appearance-none"}>
-                    <option value="">— pick an existing person —</option>
-                    {attachable.map((a) => <option key={a.id} value={a.id}>{a.name}{a.emp_type === "intern" ? " · Intern" : ""}</option>)}
+                  <select value={nRole} onChange={(e) => setNRole(e.target.value)} className={input + " appearance-none w-full"}>
+                    {roleList.length === 0 && <option value="">Role</option>}
+                    {roleList.map((r) => <option key={r} value={r}>{r}</option>)}
                   </select>
-                  <p className="text-[11.5px] text-faint mt-1.5">Only people who aren&rsquo;t already in a network and don&rsquo;t have a code yet appear here.{attachable.length === 0 ? " None available right now." : ""}</p>
                 </div>
-              )}
+                <input value={nEmail} onChange={(e) => setNEmail(e.target.value)} placeholder="Email (required — they log in with it)" className={input} />
+                <input value={nMobile} onChange={(e) => setNMobile(e.target.value)} placeholder="Mobile (optional)" className={input} />
+              </div>
               {nRes && <div className={"text-[12.5px] mt-2.5 " + (nRes.ok ? "text-[#1e7a44] font-mono font-[560]" : "text-[#b3341f]")}>{nRes.ok ? "✓ " : ""}{nRes.t}</div>}
               <button type="submit" disabled={busy} className={GOLD + " text-[12.5px] px-4 py-2 mt-3 disabled:opacity-60"}>{busy ? "Generating…" : "Generate code"}</button>
             </form>

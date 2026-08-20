@@ -29,7 +29,7 @@ type Stats = {
   onTimePct: number | null; deliveredPct: number | null; assignedByOwner: number; selfSet: number;
 };
 type Tenure = { weeks: number; average: number | null; perCriterion: Record<string, number>; stats: Stats; band: string };
-type Member = { id: string; name: string; role?: string | null; emp_type?: string | null; active?: number | boolean };
+type Member = { id: string; name: string; role?: string | null; track?: string | null; emp_type?: string | null; active?: number | boolean };
 
 const INPUT = "w-full text-[13px] neu-inset text-foreground placeholder:text-faint rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-gold/25";
 const GOLD = "btn-gold rounded-full font-[560]";
@@ -73,7 +73,11 @@ export default function WorkLog({ mode }: { mode: "employee" | "owner" }) {
   const [tenure, setTenure] = useState<Tenure | null>(null);
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [team, setTeam] = useState<Member[]>([]);
+  // Every task in the company — what the per-person cards are built from.
+  const [allTasks, setAllTasks] = useState<(Task & { employee_id: string })[]>([]);
   const [who, setWho] = useState("");              // owner mode: whose log is open
+  const [giving, setGiving] = useState("");        // task id whose "give to" panel is open
+  const [giveTo, setGiveTo] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   // Bumped on every successful write so the review panel re-reads the week it is showing.
@@ -93,6 +97,7 @@ export default function WorkLog({ mode }: { mode: "employee" | "owner" }) {
       if (!r.ok) throw new Error(d.error || "Could not load the work log");
       setCriteria(d.criteria || []);
       if (d.team) setTeam((d.team as Member[]).filter((m) => m.active !== 0));
+      if (!employeeId && d.owner && Array.isArray(d.tasks)) setAllTasks(d.tasks);
       if (employeeId || !d.owner) {
         setTasks(d.tasks || []); setReviews(d.reviews || []);
         setStats(d.stats || null); setTenure(d.tenure || null);
@@ -140,23 +145,57 @@ export default function WorkLog({ mode }: { mode: "employee" | "owner" }) {
   // duplicate heading.
   return (
     <section className="mt-6">
-      {mode === "owner" && (
-        <div className="card-lux rounded-2xl p-4 mb-4 flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[220px]">
-            <label className="section-label block mb-1">Whose log</label>
-            <select value={who} onChange={(e) => setWho(e.target.value)} className={INPUT + " appearance-none"}>
-              <option value="">— pick a person —</option>
-              {team.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}{m.role ? ` · ${m.role}` : ""}</option>
-              ))}
-            </select>
-          </div>
-          {who && (
-            <div className="flex gap-2 flex-wrap">
-              <a href={pdfHref("log")} className={GHOST + " text-[12.5px] px-4 py-2.5 inline-block"}>↓ Work log</a>
-              <a href={pdfHref("report")} className={GOLD + " text-[12.5px] px-4 py-2.5 inline-block"}>↓ Performance report</a>
+      {/* A dropdown hid the whole team behind one click and told you nothing until you picked
+          someone. Cards show everyone at once, with what each person is actually carrying — so
+          you can see who is loaded up and who is overdue before opening anybody. */}
+      {mode === "owner" && !who && (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4 items-start">
+          {team.length === 0 && (
+            <div className="card-lux rounded-2xl px-5 py-8 text-center text-[13px] text-muted-foreground sm:col-span-2 lg:col-span-3">
+              No team members yet.
             </div>
           )}
+          {team.map((m) => {
+            const theirs = allTasks.filter((t) => t.employee_id === m.id);
+            const open = theirs.filter((t) => !t.delivered_at);
+            const overdue = open.filter((t) => t.due_at && Date.now() > Date.parse(t.due_at));
+            const delivered = theirs.length - open.length;
+            return (
+              <button key={m.id} type="button" onClick={() => setWho(m.id)}
+                className="card-lux rounded-2xl p-4 text-left hover:-translate-y-0.5 hover:shadow-[0_14px_30px_-16px_rgba(120,95,40,0.4)] transition-all">
+                <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                  <span className="font-serif text-[15.5px] font-[600]">{m.name}</span>
+                  <span className="text-[11px] text-faint">{m.role || m.track || m.emp_type || ""}</span>
+                </div>
+                <div className="text-[12px] text-muted-foreground mb-2.5">
+                  {theirs.length === 0 ? "No tasks yet"
+                    : <>{open.length} open · {delivered} delivered{overdue.length > 0 && <span className="text-[#b3341f] font-[600]"> · {overdue.length} overdue</span>}</>}
+                </div>
+                {open.slice(0, 3).map((t) => (
+                  <div key={t.id} className="text-[12px] truncate py-[3px] border-t border-border first:border-0">
+                    <span className="font-mono text-faint mr-1.5">{t.seq}</span>
+                    <span className={t.due_at && Date.now() > Date.parse(t.due_at) ? "text-[#b3341f]" : ""}>{t.title}</span>
+                  </div>
+                ))}
+                {open.length > 3 && <div className="text-[11.5px] text-faint pt-1">+{open.length - 3} more</div>}
+                <div className="text-[11.5px] font-semibold text-gold mt-2.5">Open full view →</div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {mode === "owner" && who && (
+        <div className="card-lux rounded-2xl p-4 mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <button type="button" onClick={() => setWho("")} className="text-[12px] font-semibold text-gold hover:underline">← All people</button>
+            <div className="font-serif text-[17px] font-[600] mt-0.5">{person?.name || "—"}</div>
+            <div className="text-[12px] text-muted-foreground">{person?.role || person?.track || person?.emp_type || ""}</div>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <a href={pdfHref("log")} className={GHOST + " text-[12.5px] px-4 py-2.5 inline-block"}>↓ Work log</a>
+            <a href={pdfHref("report")} className={GOLD + " text-[12.5px] px-4 py-2.5 inline-block"}>↓ Performance report</a>
+          </div>
         </div>
       )}
 
@@ -246,10 +285,43 @@ export default function WorkLog({ mode }: { mode: "employee" | "owner" }) {
                               <span className="text-[12px] text-muted-foreground">done</span>
                             </label>
                           )}
+                          {mode === "owner" && (
+                            <button type="button" title="Give this task to someone else" disabled={busy}
+                              onClick={() => setGiving(giving === t.id ? "" : t.id)}
+                              className="ml-2 text-[12px] font-semibold text-gold hover:underline disabled:opacity-40">give →</button>
+                          )}
                           {(mode === "owner" || (t.source === "self" && !t.delivered_at)) && (
                             <button type="button" title="Remove this task" disabled={busy}
                               onClick={() => { if (confirm(`Remove task #${t.seq}?`)) post({ action: "delete", id: t.id }); }}
                               className="ml-2 text-[#b3341f] text-[15px] leading-none disabled:opacity-40">×</button>
+                          )}
+
+                          {/* Two different intentions, so two buttons rather than one ambiguous
+                              "assign": handing the same work to a second person is not the same as
+                              taking it off the first. */}
+                          {giving === t.id && (
+                            <div className="mt-2 p-2.5 rounded-xl bg-subtle/70 text-left inline-block min-w-[240px]">
+                              <label className="section-label block mb-1">Give “{t.title.slice(0, 28)}{t.title.length > 28 ? "…" : ""}” to</label>
+                              <select value={giveTo} onChange={(e) => setGiveTo(e.target.value)} className={INPUT + " appearance-none text-[12.5px] py-2"}>
+                                <option value="">— pick a person —</option>
+                                {team.filter((m) => m.id !== who).map((m) => (
+                                  <option key={m.id} value={m.id}>{m.name}{m.role ? ` · ${m.role}` : ""}</option>
+                                ))}
+                              </select>
+                              <div className="flex items-center gap-2 mt-2">
+                                <button type="button" disabled={busy || !giveTo}
+                                  onClick={async () => { if (await post({ action: "give", id: t.id, toEmployeeId: giveTo, copy: true })) { setGiving(""); setGiveTo(""); } }}
+                                  className={GHOST + " text-[11.5px] px-3 py-1.5 disabled:opacity-40"}>Also give</button>
+                                <button type="button" disabled={busy || !giveTo}
+                                  onClick={async () => { if (await post({ action: "give", id: t.id, toEmployeeId: giveTo, copy: false })) { setGiving(""); setGiveTo(""); } }}
+                                  className={GOLD + " text-[11.5px] px-3 py-1.5 disabled:opacity-40"}>Move</button>
+                                <button type="button" onClick={() => { setGiving(""); setGiveTo(""); }}
+                                  className="text-[11.5px] text-muted-foreground hover:underline">cancel</button>
+                              </div>
+                              <p className="text-[11px] text-faint mt-1.5">
+                                <b>Also give</b> keeps it here too · <b>Move</b> takes it off {person?.name?.split(" ")[0] || "them"}.
+                              </p>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -336,11 +408,7 @@ export default function WorkLog({ mode }: { mode: "employee" | "owner" }) {
         </>
       )}
 
-      {mode === "owner" && !who && (
-        <div className="card-lux rounded-2xl px-5 py-8 text-center text-[13px] text-muted-foreground">
-          Pick a person above to see their tasks, score their week, and issue their report.
-        </div>
-      )}
+
     </section>
   );
 }
