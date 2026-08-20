@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs the regression guards before anything leaves this machine.
+# The suite is fast and touches no database, no calendar and no network.
+# Override (NOT recommended): git push --no-verify
+
+echo "Running regression guards before push…"
+if ! npm run --silent guard; then
+  echo ""
+  echo "✋ push blocked: a guard failed. Fix it, or push with --no-verify if you are certain."
+  exit 1
+fi
+exit 0

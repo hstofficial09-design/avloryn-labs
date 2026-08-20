@@ -1,0 +1,159 @@
+/**
+ * CLASS GUARD (static) — reads the source and FAILS if a whole class of bug reappears.
+ *
+ * A test proves one case works. This proves a RULE holds everywhere, so a NEW endpoint that
+ * forgets a gate is caught automatically instead of shipping quietly. Every rule below exists
+ * because the thing it checks was actually broken at some point.
+ *
+ * Run:  node tests/test_invariants.mjs
+ */
+import fs from "fs";
+import path from "path";
+
+const ROOT = path.dirname(new URL(import.meta.url).pathname).replace(/\/tests$/, "");
+const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
+const fails = [];
+const fail = (rule, what) => fails.push(`${rule}  ${what}`);
+
+/** Every route.ts under a directory, as { route, file, src }. */
+function routes(under) {
+  const out = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${e.name}`;
+      if (e.isDirectory()) walk(rel);
+      else if (e.name === "route.ts") {
+        out.push({ route: dir.replace(/^app/, "").replace(/\/\[([^\]]+)\]/g, "/:$1"), file: rel, src: read(rel) });
+      }
+    }
+  };
+  walk(under);
+  return out;
+}
+
+/** The body of one HTTP handler, so a rule can look at POST without seeing GET. */
+function handler(src, method) {
+  const m = new RegExp(`export async function ${method}\\s*\\(`).exec(src);
+  if (!m) return null;
+  const from = m.index;
+  const next = /\nexport async function [A-Z]+\s*\(/.exec(src.slice(from + 10));
+  return src.slice(from, next ? from + 10 + next.index : src.length);
+}
+
+const API = routes("app/api");
+const WRITES = ["POST", "PATCH", "PUT", "DELETE"];
+
+// ── R1 · every portal endpoint must establish who is calling ────────────────────────────────
+// Anything under /api/portal reads or writes company data. An endpoint that never looks at the
+// session is open to the internet.
+// Signing in, out, and password recovery are how a session begins and ends — they cannot be
+// asked to already have one.
+const NO_SESSION_YET = ["/api/portal/login", "/api/portal/logout", "/api/portal/forgot-password", "/api/portal/reset-password"];
+for (const r of API.filter((r) => r.route.startsWith("/api/portal"))) {
+  if (NO_SESSION_YET.includes(r.route)) continue;
+  if (!/getSession\s*\(/.test(r.src)) fail("R1 session check MISSING:", `${r.route} (${r.file})`);
+}
+
+// ── R2 · scheduling SETUP is the owner's and HR's, not everyone's ───────────────────────────
+// Every one of these once asked only "are you signed in?", so any intern could remove a colleague
+// from the team, delete a booking link, or rewrite someone else's working hours.
+const SETUP = ["members", "types", "availability", "blackouts", "coupons"];
+// Using scheduling is not configuring it: creating a meeting stays open to the team, and acting on
+// a booking is scoped to its attendees.
+const SCHEDULING_WRITE_ALLOW = {
+  "/api/meet/admin/create-meeting": "canSchedule",
+  "/api/meet/admin/bookings": "schedulingScope",
+};
+for (const r of API.filter((r) => r.route.startsWith("/api/meet/admin"))) {
+  const isSetup = SETUP.some((s) => r.route.endsWith(`/${s}`));
+  for (const m of WRITES) {
+    const body = handler(r.src, m);
+    if (!body) continue;
+    if (isSetup) {
+      if (!/canManageTeam\s*\(/.test(body)) fail("R2 setup not owner/HR-only:", `${m} ${r.route}`);
+    } else {
+      const allow = SCHEDULING_WRITE_ALLOW[r.route];
+      if (!allow) fail("R2 unclassified scheduling write:", `${m} ${r.route} — add it to the allow-list or gate it with canManageTeam`);
+      else if (!new RegExp(allow).test(body)) fail("R2 wrong gate:", `${m} ${r.route} should use ${allow}`);
+    }
+  }
+}
+
+// ── R3 · decisions that belong to the owner must check for the owner ────────────────────────
+// Removing a person, restoring them, scoring someone's week, approving a partner: an employee
+// session must not be able to do any of it just because they are signed in.
+const OWNER_ONLY = [
+  "app/api/portal/delete-employee/route.ts",
+  "app/api/portal/restore-employee/route.ts",
+  "app/api/portal/reviews/route.ts",
+  "app/api/portal/partner/approve/route.ts",
+];
+for (const f of OWNER_ONLY) {
+  const r = API.find((x) => x.file === f);
+  if (!r) { fail("R3 endpoint vanished:", f); continue; }
+  if (!/role\s*[!=]==?\s*"owner"|s\.role === "owner"/.test(r.src)) fail("R3 owner check MISSING:", r.route);
+}
+// Reassigning someone's task is an assignment decision, not a self-service one.
+{
+  const t = API.find((x) => x.file === "app/api/portal/tasks/route.ts");
+  if (t && !/case "give"[\s\S]{0,220}w\.owner/.test(t.src)) fail("R3 owner check MISSING:", "tasks → give (reassign)");
+}
+
+// ── R4 · nothing books over a time that is already taken ────────────────────────────────────
+// The public booking route always re-read the calendars; creating by hand and rescheduling did
+// not, so either could drop a meeting on top of one already in the diary.
+for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-meeting/route.ts"]) {
+  const r = API.find((x) => x.file === f);
+  if (!r) { fail("R4 endpoint vanished:", f); continue; }
+  if (!/findClashes\s*\(/.test(r.src)) fail("R4 clash check MISSING:", `${r.route} can double-book`);
+}
+
+// ── R5 · the sync decides by WHEN a copy changed, never by disagreement alone ────────────────
+// Treating any disagreeing copy as "somebody moved it" made the cron undo a reschedule: a copy our
+// own write hadn't reached yet looked like a deliberate change.
+{
+  const sync = read("lib/booking/sync.ts");
+  if (!/updatedAt/.test(sync)) fail("R5 sync no longer compares modification times:", "a stale copy can overrule a reschedule again");
+  if (!/sort\([\s\S]{0,120}updatedAt/.test(sync)) fail("R5 sync must pick the most recently modified copy:", "lib/booking/sync.ts");
+}
+
+// ── R6 · people who were deleted stay deleted, in every listing ──────────────────────────────
+// Both apps share the employees table; a listing that forgets the filter shows leavers as staff.
+{
+  const db = read("lib/portal-db.ts");
+  const listings = [...db.matchAll(/FROM employees\s+([\s\S]{0,220}?)(?:`|\)\s*;)/g)];
+  let guarded = 0;
+  for (const m of listings) if (/deleted_at/.test(m[1])) guarded++;
+  if (guarded < 3) fail("R6 employee listings lost their deleted_at filter:", `only ${guarded} of ${listings.length} mention it`);
+  if (!/DELETE FROM \$\{t\} WHERE employee_id|portal_tasks", "portal_reviews"/.test(db))
+    fail("R6 purge no longer clears a person's work log:", "orphan rows will be left behind");
+}
+
+// ── R7 · a document must never die on a character ────────────────────────────────────────────
+// pdf-lib's standard fonts are WinAnsi: one rupee sign threw and took the whole download with it.
+{
+  const pdf = read("lib/worklog-pdf.ts");
+  if (!/function pdfSafe/.test(pdf)) fail("R7 pdfSafe is gone:", "lib/worklog-pdf.ts");
+  const draws = [...pdf.matchAll(/drawText\(([^,]+),/g)].map((m) => m[1].trim());
+  for (const arg of draws) {
+    if (!/pdfSafe\(/.test(arg)) fail("R7 raw text drawn into a PDF:", `drawText(${arg}) must go through pdfSafe`);
+  }
+}
+
+// ── R8 · a delete must reach everywhere the person can still act ─────────────────────────────
+// Scheduling is a different database and hears about nothing on its own.
+{
+  const del = read("app/api/portal/delete-employee/route.ts");
+  if (!/setMemberActiveByEmail/.test(del)) fail("R8 delete no longer reaches scheduling:", "a leaver stays bookable");
+  const soft = read("lib/portal-db.ts");
+  if (!/softDeleteEmployee[\s\S]{0,900}partner_codes SET active=0/.test(soft))
+    fail("R8 delete no longer disables their code:", "a leaver keeps earning");
+}
+
+console.log(`[invariants] scanned ${API.length} API routes`);
+if (fails.length) {
+  console.log("FAIL — class-guard violations:");
+  for (const f of fails) console.log("  ✗ " + f);
+  process.exit(1);
+}
+console.log("ALL INVARIANTS HOLD ✓ (portal sessions · scheduling setup owner/HR-only · owner-only decisions · clash checks · sync by modification time · deleted stay deleted · PDF-safe text · delete cascades)");

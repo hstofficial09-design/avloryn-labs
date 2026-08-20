@@ -213,7 +213,7 @@ class Sheet {
     const pages = this.pdf.getPages();
     pages.forEach((p, i) => {
       const label = `Page ${i + 1} of ${pages.length}`;
-      p.drawText(label, {
+      p.drawText(pdfSafe(label), {
         x: p.getWidth() - MARGIN - this.reg.widthOfTextAtSize(label, 8),
         y: MARGIN - 14, size: 8, font: this.reg, color: MUTED,
       });

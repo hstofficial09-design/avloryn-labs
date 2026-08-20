@@ -1,0 +1,27 @@
+#!/bin/sh
+# Avloryn secret-scan guard — blocks committing credentials or secret files.
+# This repository is PUBLIC, so anything committed here is world-readable the moment it is pushed.
+# Auto-runs before every `git commit`. Override (NOT recommended): git commit --no-verify
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+
+# 1) Files that must never enter git.
+for f in .env .env.local .env.production; do
+  if printf '%s\n' "$staged" | grep -qx "$f"; then
+    echo "✋ commit blocked: refusing to commit '$f' — it holds live credentials. Keep it gitignored."
+    exit 1
+  fi
+done
+
+# 2) Content that looks like a credential, whatever file it is in.
+#    Supabase service keys, Google OAuth secrets, Resend/Razorpay keys, private key blocks.
+if git diff --cached -U0 | grep -nE \
+   '(eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]{20}|GOCSPX-[A-Za-z0-9_-]{20}|re_[A-Za-z0-9]{24}|rzp_(live|test)_[A-Za-z0-9]{14}|sk-[A-Za-z0-9]{32}|1000\.[a-f0-9]{32}|BEGIN (RSA |EC )?PRIVATE KEY)' \
+   >/dev/null 2>&1; then
+  echo "✋ commit blocked: a string that looks like a live credential is in your staged changes."
+  echo "   Move it to .env.local and read it with process.env instead."
+  echo "   If this is a false positive: git commit --no-verify"
+  exit 1
+fi
+
+exit 0

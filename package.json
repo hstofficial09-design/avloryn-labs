@@ -2,12 +2,13 @@
   "name": "avloryn-labs",
   "version": "1.0.0",
   "private": true,
-  "description": "Avloryn Labs — intelligent software products for people.",
+  "description": "Avloryn Labs \u2014 intelligent software products for people.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "guard": "node tests/run_all.mjs"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",

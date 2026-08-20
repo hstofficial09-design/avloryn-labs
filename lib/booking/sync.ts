@@ -34,6 +34,9 @@ const parseEvents = <T,>(raw: string | null): T[] => {
 /**
  * Which time is the real one now?
  *
+ * Exported so the guard suite can prove this rule directly — it is the function that moves real
+ * meetings, and it got this wrong once.
+ *
  * The copy that was edited MOST RECENTLY wins — nothing else.
  *
  * The obvious rule, "any copy that disagrees with our record must have been moved", is wrong and
@@ -48,7 +51,7 @@ const parseEvents = <T,>(raw: string | null): T[] => {
  * Someone dragging their copy makes THEIRS the most recent, so their time wins and everything
  * follows. A copy whose age can't be read never wins, because guessing here moves real meetings.
  */
-function decideNewTime(
+export function decideNewTime(
   booking: Booking,
   times: { memberId: string; startISO: string | null; updatedAt?: string | null }[],
   _hostId: string | null,
