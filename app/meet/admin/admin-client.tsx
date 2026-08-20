@@ -749,7 +749,7 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
           <button onClick={refreshAll} disabled={loadingBusy} className={btnNeu + " disabled:opacity-60"}>{loadingBusy ? "…" : "Refresh"}</button>
         </div>
       </div>
-      <div className="flex gap-3 flex-wrap mb-3">{members.map((m) => <span key={m.id} className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded-full" style={{ background: colorOf(m.id) }} />{m.name}</span>)}{mf && <span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded bg-[#5b8a72]/30" />available</span>}<span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded bg-foreground/10 border border-foreground/15" />busy (their calendar)</span></div>
+      <div className="flex gap-3 flex-wrap mb-3">{members.map((m) => <span key={m.id} className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded-full" style={{ background: colorOf(m.id) }} />{m.name}</span>)}{mf && <span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded bg-[#5b8a72]/30" />available</span>}<span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="w-2.5 h-2.5 rounded" style={{ background: "#c8a24a1f", borderLeft: "3px solid #c8a24a" }} />busy elsewhere (tinted = whose)</span></div>
       <div className="overflow-x-auto">
         <div className="min-w-[720px]">
           <div className="grid" style={{ gridTemplateColumns: `48px repeat(7,1fr)` }}>
@@ -771,10 +771,13 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
                 if (bottom <= 0 || top >= gridH || bottom - top < 1) return null;
                 return { top, height: Math.max(minH, bottom - top) };
               };
-              type Item = { top: number; height: number; lane: number } & ({ k: "busy"; nm: string; iv: { start: string; end: string; title?: string } } | { k: "book"; b: Booking });
+              // `mid` rides along so a busy block can be drawn in that person's own colour. Without
+              // it every calendar's events came out the same grey, and on a shared calendar you
+              // could not tell at a glance whose time was whose.
+              type Item = { top: number; height: number; lane: number } & ({ k: "busy"; nm: string; mid: string; iv: { start: string; end: string; title?: string } } | { k: "book"; b: Booking });
               const items: Item[] = [];
               busyFor.forEach((bm) => bm.intervals.filter((iv) => sameDay(iv.start, day)).forEach((iv) => {
-                const p = place(iv.start, iv.end, 18); if (p) items.push({ k: "busy", nm: bm.name, iv, lane: 0, ...p });
+                const p = place(iv.start, iv.end, 18); if (p) items.push({ k: "busy", nm: bm.name, mid: bm.memberId, iv, lane: 0, ...p });
               }));
               active.filter((b) => sameDay(b.start_utc, day)).forEach((b) => {
                 const p = place(b.start_utc, b.end_utc, 24); if (p) items.push({ k: "book", b, lane: 0, ...p });
@@ -799,9 +802,11 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
                     return <div key={ai} className="absolute inset-x-0.5 rounded bg-[#5b8a72]/12" style={{ top, height: bottom - top }} />;
                   })}
                   {items.map((it, ii) => it.k === "busy" ? (
-                    <div key={"b" + ii} className="absolute rounded bg-foreground/[0.09] border border-foreground/10 overflow-hidden" style={lstyle(it)} title={`${it.iv.title || "Busy"} · ${it.nm} · ${new Date(it.iv.start).toLocaleTimeString("en-US", { timeZone: CAL_TZ, hour: "numeric", minute: "2-digit" })} IST`}>
-                      <div className="text-[9px] text-foreground/60 px-1 leading-tight truncate font-[560]">{it.iv.title || "Busy"}</div>
-                      {!mf && <div className="text-[8px] text-foreground/40 px-1 leading-tight truncate">{it.nm.split(" ")[0]}</div>}
+                    // Their own colour, tinted rather than solid: still clearly "occupied
+                    // elsewhere" rather than one of our bookings, but you can now see whose.
+                    <div key={"b" + ii} className="absolute rounded overflow-hidden" style={{ ...lstyle(it), background: `${colorOf(it.mid)}1f`, borderLeft: `3px solid ${colorOf(it.mid)}`, boxShadow: `inset 0 0 0 1px ${colorOf(it.mid)}33` }} title={`${it.iv.title || "Busy"} · ${it.nm} · ${new Date(it.iv.start).toLocaleTimeString("en-US", { timeZone: CAL_TZ, hour: "numeric", minute: "2-digit" })} IST`}>
+                      <div className="text-[9px] px-1 leading-tight truncate font-[600]" style={{ color: colorOf(it.mid) }}>{it.iv.title || "Busy"}</div>
+                      {!mf && <div className="text-[8px] px-1 leading-tight truncate" style={{ color: `${colorOf(it.mid)}bb` }}>{it.nm.split(" ")[0]}</div>}
                     </div>
                   ) : (
                     <button key={"k" + ii} onClick={() => setSel(it.b)} className="absolute rounded-md px-1.5 py-0.5 overflow-hidden text-white shadow-sm text-left hover:ring-2 hover:ring-white/50 transition" style={{ ...lstyle(it), background: colorOf(it.b.member_ids[0] || ""), opacity: it.b.status === "pending" ? 0.6 : 1 }} title={`${fmtT(it.b.start_utc)} · ${it.b.client_name} · ${it.b.meetingTypeName} · ${it.b.memberNames.join(", ")}${it.b.status === "pending" ? " (pending)" : ""}`}>
@@ -822,7 +827,7 @@ function TeamCalendar({ bookings, members, reload, refreshTick }: { bookings: Bo
         </div>
       </div>
       {active.length === 0 && <p className="text-[12.5px] text-faint text-center mt-3">No bookings this week{mf ? " for this member" : ""}.</p>}
-      <p className="text-[11px] text-faint mt-3">Shows Avloryn bookings <b>and</b> each member&rsquo;s real Google/Zoho calendar events (grey = busy). Click a booking for details · pick a member to see their working hours.</p>
+      <p className="text-[11px] text-faint mt-3">Shows Avloryn bookings (solid) <b>and</b> each member&rsquo;s real Google/Zoho events (tinted, in their own colour). Click a booking for details · pick a member to see their working hours.</p>
 
       {sel && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4" onClick={() => setSel(null)}>
