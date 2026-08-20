@@ -78,6 +78,42 @@ export async function updateMember(id: string, fields: Partial<Pick<Member, "nam
   const { error } = await s.from("booking_members").update(fields).eq("id", id);
   if (error) throw new Error(error.message);
 }
+/**
+ * Switch someone off (or back on) in scheduling, found by their work email.
+ *
+ * Used when the owner removes a person from the team: scheduling lives in a different database,
+ * so nothing here happened automatically and a leaver stayed bookable.
+ *
+ * Deactivated, never deleted. Bookings store member ids, so removing the row leaves past meetings
+ * pointing at an id that resolves to nobody — which is exactly how the orphaned bookings in the
+ * calendar came about. Deactivating takes them out of the pickers and off future bookings while
+ * their name still resolves on the meetings they actually attended.
+ *
+ * Returns how many rows changed, so the caller can tell the owner what really happened.
+ */
+export async function setMemberActiveByEmail(email: string, active: boolean): Promise<number> {
+  const s = db(); if (!s || !email.trim()) return 0;
+  const { data, error } = await s.from("booking_members")
+    .update({ active })
+    .ilike("email", email.trim())
+    .select("id");
+  if (error) throw new Error(error.message);
+  return (data || []).length;
+}
+
+/** Confirmed meetings still to come that this member is on — the owner needs to reassign these. */
+export async function upcomingForMemberEmail(email: string): Promise<{ id: string; start_utc: string; client_name: string }[]> {
+  const s = db(); if (!s || !email.trim()) return [];
+  const { data: mem } = await s.from("booking_members").select("id").ilike("email", email.trim());
+  const ids = (mem || []).map((m: any) => m.id);
+  if (!ids.length) return [];
+  const { data } = await s.from("bookings").select("id,start_utc,client_name,member_ids")
+    .eq("status", "confirmed").gte("start_utc", new Date().toISOString());
+  return (data || [])
+    .filter((b: any) => (b.member_ids || []).some((x: string) => ids.includes(x)))
+    .map((b: any) => ({ id: b.id, start_utc: b.start_utc, client_name: b.client_name }));
+}
+
 export async function deleteMember(id: string) {
   const s = db(); if (!s) throw new Error("Supabase not configured");
   await s.from("booking_members").delete().eq("id", id); // cascades google + availability

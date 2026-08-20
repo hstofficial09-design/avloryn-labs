@@ -34,17 +34,33 @@ const parseEvents = <T,>(raw: string | null): T[] => {
 /**
  * Which time is the real one now?
  *
- * Whoever moved their copy wins — that is the point. When several copies disagree (two people
- * moved it before we looked), the host's copy is authoritative, because that is the copy the
- * guest was invited from and the one carrying the Meet link.
+ * The copy that was edited MOST RECENTLY wins — nothing else.
+ *
+ * The obvious rule, "any copy that disagrees with our record must have been moved", is wrong and
+ * was actively destructive. When one of our own writes reaches one calendar but not another (a
+ * reschedule where the Zoho leg failed, say), the calendar left behind still holds the old time.
+ * Under that rule the stale copy looked like a deliberate move, so the next run dragged the
+ * meeting — and every other calendar — back to a time the owner had already changed. A meeting
+ * rescheduled by hand would quietly revert within fifteen minutes.
+ *
+ * Comparing modification times tells the two cases apart. Our own write makes that calendar the
+ * most recently touched one, so its time (which matches our record) wins and nothing moves.
+ * Someone dragging their copy makes THEIRS the most recent, so their time wins and everything
+ * follows. A copy whose age can't be read never wins, because guessing here moves real meetings.
  */
-function decideNewTime(booking: Booking, times: { memberId: string; startISO: string | null }[], hostId: string | null) {
+function decideNewTime(
+  booking: Booking,
+  times: { memberId: string; startISO: string | null; updatedAt?: string | null }[],
+  _hostId: string | null,
+) {
   const stored = Date.parse(booking.start_utc);
-  const moved = times.filter((t) => t.startISO && Math.abs(Date.parse(t.startISO) - stored) > DRIFT_TOLERANCE_MS);
-  if (!moved.length) return null;
-  const host = moved.find((t) => t.memberId === hostId);
-  const winner = host || moved[0];
-  return { startISO: winner.startISO!, movedBy: winner.memberId, others: moved.length };
+  const dated = times
+    .filter((t) => t.startISO && t.updatedAt && !Number.isNaN(Date.parse(t.updatedAt)))
+    .sort((a, b) => Date.parse(b.updatedAt!) - Date.parse(a.updatedAt!));
+  const newest = dated[0];
+  if (!newest) return null;
+  if (Math.abs(Date.parse(newest.startISO!) - stored) <= DRIFT_TOLERANCE_MS) return null;
+  return { startISO: newest.startISO!, movedBy: newest.memberId, others: dated.length };
 }
 
 export async function syncCalendarChanges(): Promise<{ checked: number; moved: number }> {

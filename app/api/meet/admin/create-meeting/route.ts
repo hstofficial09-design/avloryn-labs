@@ -5,6 +5,7 @@ import { canSchedule } from "@/lib/booking/admin";
 import { listMembers, createBooking, titleAnswer, membersWithZoho } from "@/lib/booking/db";
 import { createMeetingForMembers } from "@/lib/booking/google";
 import { createZohoForMembers } from "@/lib/booking/zoho";
+import { findClashes, clashMessage } from "@/lib/booking/clash";
 import { buildICS } from "@/lib/booking/ics";
 import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
 import { SITE_URL } from "@/lib/seo";
@@ -46,6 +47,19 @@ export async function POST(req: Request) {
   const memberNames = memberIds.map((id) => byId.get(id)?.name).filter(Boolean).join(", ");
   const guest = clientEmail && EMAIL_RE.test(clientEmail) ? clientEmail : "";
   const baseDesc = `${title}${clientName ? ` with ${clientName}` : ""}.${notes ? `\n\nNotes: ${notes}` : ""}`;
+
+  // Refuse to book over something already in the diary. `force` lets the owner override when they
+  // genuinely mean to double-book, but the default has to be a warning rather than a silent clash.
+  if (!d.force) {
+    try {
+      const clashes = await findClashes({ memberIds, startISO, endISO });
+      if (clashes.length) {
+        return NextResponse.json(
+          { error: `${clashMessage(clashes)}. Pick another time, or confirm to book anyway.`, clash: true },
+          { status: 409 });
+      }
+    } catch (e) { console.error("[meet/create] clash check skipped:", e); }
+  }
 
   // Zoho is the working calendar for whoever has it connected; Google is what produces the Meet
   // link and invites the guest. So each member gets exactly ONE copy, on the calendar they use.

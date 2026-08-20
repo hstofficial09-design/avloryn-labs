@@ -724,14 +724,41 @@ export async function markCommissionsPaid(employeeId: string): Promise<number> {
 }
 
 /** Soft delete: hide from the active list but keep the record + its commissions. */
-export async function softDeleteEmployee(id: string) {
-  return withClient((c) => c.query(
-    `UPDATE employees SET deleted_at=$1, active=0 WHERE id=$2`, [new Date().toISOString(), id]));
+/**
+ * Remove someone from the team.
+ *
+ * Removing a person has to reach everything they can still act through, or they stay half-present:
+ * the code they hold keeps discounting orders and booking commission to someone who has gone.
+ * This used to set two columns and stop there.
+ *
+ * Their commission rows are deliberately left alone — that is money actually earned, and the
+ * record has to outlive the person. It is purged with them a year later.
+ *
+ * Returns their email so the caller can also switch them off in scheduling, which lives in a
+ * different database entirely and therefore hears about none of this on its own.
+ */
+export async function softDeleteEmployee(id: string): Promise<{ email: string; name: string; codes: number }> {
+  return withClient(async (c) => {
+    const who = (await c.query(`SELECT name, email FROM employees WHERE id=$1`, [id])).rows[0] || {};
+    await c.query(`UPDATE employees SET deleted_at=$1, active=0 WHERE id=$2`, [new Date().toISOString(), id]);
+    let codes = 0;
+    try {
+      const r = await c.query(`UPDATE partner_codes SET active=0 WHERE employee_id=$1 RETURNING code`, [id]);
+      codes = r.rows.length;
+    } catch { /* partner_codes may not exist on a fresh database */ }
+    try { await c.query(`UPDATE promo_codes SET active=0 WHERE employee_id=$1`, [id]); } catch { /* same */ }
+    return { email: String(who.email || ""), name: String(who.name || ""), codes };
+  });
 }
 
-export async function restoreEmployee(id: string) {
-  return withClient((c) => c.query(
-    `UPDATE employees SET deleted_at=NULL, active=1 WHERE id=$1`, [id]));
+/** Undo it — including the codes, or someone restored comes back unable to earn. */
+export async function restoreEmployee(id: string): Promise<{ email: string; name: string }> {
+  return withClient(async (c) => {
+    const who = (await c.query(`SELECT name, email FROM employees WHERE id=$1`, [id])).rows[0] || {};
+    await c.query(`UPDATE employees SET deleted_at=NULL, active=1 WHERE id=$1`, [id]);
+    try { await c.query(`UPDATE partner_codes SET active=1 WHERE employee_id=$1`, [id]); } catch { /* */ }
+    return { email: String(who.email || ""), name: String(who.name || "") };
+  });
 }
 
 /** Hard-purge employees soft-deleted more than 1 year ago (+ their commission rows).

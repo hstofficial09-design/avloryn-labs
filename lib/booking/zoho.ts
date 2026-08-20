@@ -198,9 +198,9 @@ async function findEventUid(token: string, calUid: string, startISO: string, end
  */
 export async function readZohoTimes(
   events: ZohoEvent[],
-): Promise<{ memberId: string; startISO: string | null; endISO: string | null }[]> {
+): Promise<{ memberId: string; startISO: string | null; endISO: string | null; updatedAt: string | null }[]> {
   if (!zohoConfigured()) return [];
-  const out: { memberId: string; startISO: string | null; endISO: string | null }[] = [];
+  const out: { memberId: string; startISO: string | null; endISO: string | null; updatedAt: string | null }[] = [];
   for (const e of events) {
     try {
       const z = await zohoAccess(e.memberId);
@@ -210,10 +210,20 @@ export async function readZohoTimes(
       const j = await r.json();
       const ev = j?.events?.[0];
       if (!ev || ev.message) continue;
+      // Zoho reports the last change as "lastmodifiedtime" — epoch millis in most replies, and
+      // occasionally its own yyyyMMddTHHmmss form. Accept either; a copy whose age we cannot
+      // read simply never wins the comparison, which is the safe direction.
+      const lm = ev?.lastmodifiedtime;
+      let updatedAt: string | null = null;
+      if (lm != null) {
+        const n = Number(lm);
+        updatedAt = Number.isFinite(n) && n > 1e11 ? new Date(n).toISOString() : zohoDtToISO(String(lm));
+      }
       out.push({
         memberId: e.memberId,
         startISO: zohoDtToISO(ev?.dateandtime?.start),
         endISO: zohoDtToISO(ev?.dateandtime?.end),
+        updatedAt,
       });
     } catch (err) {
       console.error(`[zoho] could not read event for member ${e.memberId}:`, err);

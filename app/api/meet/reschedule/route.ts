@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { getBookingByCancelToken, getMeetingTypeById, updateBookingTime, listMembers, storedTitle } from "@/lib/booking/db";
 import { moveMeetingEvents, type MemberEvent } from "@/lib/booking/google";
 import { moveZohoEvents, type ZohoEvent } from "@/lib/booking/zoho";
+import { findClashes, clashMessage } from "@/lib/booking/clash";
 import { buildICS, icsSequence } from "@/lib/booking/ics";
 import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
 import { SITE_URL } from "@/lib/seo";
@@ -43,6 +44,24 @@ export async function POST(req: Request) {
   const durationMs = Date.parse(b.end_utc) - Date.parse(b.start_utc);
   const startISO = new Date(startMs).toISOString();
   const endISO = new Date(startMs + durationMs).toISOString();
+
+  // Don't move a meeting on top of something already in the diary. This route never checked, so
+  // a reschedule could land straight over an existing meeting — the person's own copy at the old
+  // time is excluded, or nudging a meeting by ten minutes would report a clash with itself.
+  try {
+    const clashes = await findClashes({
+      memberIds: b.member_ids || [], startISO, endISO, ignoreStartISO: b.start_utc,
+    });
+    if (clashes.length) {
+      return NextResponse.json(
+        { error: `That time is already taken — ${clashMessage(clashes)}. Please pick another.`, clash: true },
+        { status: 409 });
+    }
+  } catch (e) {
+    // If the calendars can't be read we let it through rather than block a legitimate change;
+    // the same choice the booking route makes.
+    console.error("[meet/reschedule] clash check skipped:", e);
+  }
 
   // Move the calendar events (keeps the same Meet link) then update our record.
   if (b.google_event_id) {

@@ -313,13 +313,20 @@ export async function createMeetingForMembers(opts: {
   return { meetLink, events, hostId };
 }
 
-export type EventTime = { memberId: string; startISO: string | null; endISO: string | null; cancelled: boolean };
+export type EventTime = {
+  memberId: string; startISO: string | null; endISO: string | null; cancelled: boolean;
+  /** When Google last changed this copy — decides which copy is telling the truth. */
+  updatedAt: string | null;
+};
 
 /**
- * Read each per-member event's CURRENT time straight from Google.
+ * Read each per-member event's CURRENT time straight from Google, WITH the moment it was last
+ * modified.
  *
- * Every member holds their own copy of the meeting, so a copy that someone dragged in their own
- * calendar no longer matches the others or our record. This is how we notice.
+ * The timestamp is the important part. Every member holds their own copy, and when one of our own
+ * writes reaches one calendar but not another, the calendars disagree — a copy left on the old
+ * time is not somebody moving the meeting, it is a copy we failed to update. Without knowing
+ * which copy changed most recently there is no way to tell those two apart.
  */
 export async function readMeetingTimes(events: MemberEvent[]): Promise<EventTime[]> {
   const out: EventTime[] = [];
@@ -336,6 +343,7 @@ export async function readMeetingTimes(events: MemberEvent[]): Promise<EventTime
         startISO: s ? new Date(s).toISOString() : null,
         endISO: e ? new Date(e).toISOString() : null,
         cancelled: res.data.status === "cancelled",
+        updatedAt: res.data.updated ? new Date(res.data.updated).toISOString() : null,
       });
     } catch (e) {
       // A deleted event 404s here. Report nothing rather than guess — we must never infer a
