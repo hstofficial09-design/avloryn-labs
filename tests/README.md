@@ -27,6 +27,30 @@ through live in scenarios nobody thought to test. So for every fix:
 3. Think **adversarially**: not "does the happy path work", but "who could call this, and what
    would they get".
 
+## The other half: the watchdog
+
+These guards catch a mistake **while it is being written**. They cannot catch a thing that was
+working and quietly stopped — a revoked Google grant, a cron that died, a leaver whose referral
+code kept earning. Nothing on any screen changes when those happen, so nobody finds out for weeks.
+
+That is what `lib/monitor/` is for. It runs hourly in production
+(`.github/workflows/system-watch.yml` → `/api/cron/monitor`), checks both Avloryn and LivoDraft,
+emails when something breaks, and puts a banner at the top of the portal that stays until the thing
+actually passes again.
+
+Two properties matter more than the checks themselves, and `R9` in `test_invariants.mjs` enforces
+both:
+
+- **It is read-only.** A monitor that can write is a bug factory running unattended against
+  production. No writes, no sends, no bookings — it looks at state and never changes it.
+- **It reports on silence.** A job that has stopped running cannot report its own failure, so every
+  scheduled job records a heartbeat and the watchdog alerts on the *absence* of one. That is the
+  only shape of check that would have caught the reminders cron sitting dead for weeks.
+
+Alerting is throttled deliberately — first failure, then a day, three days, a week, each one saying
+plainly that nobody has touched it. Emailing every failure every hour is how real alerts come to be
+ignored, so `shouldAlert` is unit-tested in `test_logic.ts` rather than left to judgement.
+
 ## What is deliberately NOT here
 
 Anything that needs a live Google/Zoho calendar or the production database. Those checks exist as

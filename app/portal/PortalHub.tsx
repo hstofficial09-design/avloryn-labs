@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogoMark } from "@/components/ui/logo";
 import { PasswordInput } from "@/components/ui/password-input";
+import SystemWatch from "./SystemWatch";
 
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
 const GOLD = "btn-gold rounded-full font-[560]";
@@ -63,6 +64,10 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd 
             <button onClick={logout} className={GHOST + " text-[12.5px] px-3.5 py-1.5"}>Sign out</button>
           </div>
         </header>
+
+        {/* Anything broken across Avloryn or LivoDraft, above everything else — an alert email can
+            be missed, an open dashboard cannot. Renders nothing when there is nothing to say. */}
+        <SystemWatch />
 
         {/* Hero */}
         <div className="card-lux rounded-[26px] p-7 sm:p-9 mb-7 relative overflow-hidden">

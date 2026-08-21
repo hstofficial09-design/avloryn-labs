@@ -9,6 +9,7 @@
  */
 import { decideNewTime } from "../lib/booking/sync";
 import { taskStatus, workStats, reviewAverage, tenureScore, weekStartIST, tasksInWeek, type Task, type Review } from "../lib/portal-db";
+import { shouldAlert, type Tracked } from "../lib/monitor/state";
 
 let pass = 0;
 const fails: string[] = [];
@@ -97,6 +98,38 @@ const review = (week: string, s: Record<string, number>): Review => ({
 }
 ok(tenureScore([], []).average === null && tenureScore([], []).band === "Not yet reviewed",
    "with no reviews it says so rather than inventing a score");
+
+console.log("\n── when the watchdog is allowed to interrupt you ──");
+{
+  // Being heard is the whole job. Emailing every failure on every hourly run teaches you to skim
+  // past the subject line, and then the one that actually matters is skimmed past too. So: once
+  // when it breaks, then only at a day, three days, a week — each one saying plainly that nobody
+  // has touched it. Acknowledging stops the reminders without hiding the fault.
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+  const t = (o: Partial<Tracked>): Tracked => ({
+    id: "c", app: "Avloryn", title: "c", ok: false, severity: "critical", detail: "",
+    first_failed_at: null, last_ok_at: null, last_alert_at: null, ack_at: null, ack_by: null,
+    brokenHours: 0, acknowledged: false, ...o,
+  } as Tracked);
+
+  ok(shouldAlert(t({ ok: true })).alert === false, "a passing check never emails");
+  ok(shouldAlert(t({})).alert === true, "a brand-new failure emails immediately");
+  ok(shouldAlert(t({ last_alert_at: hoursAgo(1), brokenHours: 1 })).alert === false,
+     "the same failure an hour later does NOT email again");
+  ok(shouldAlert(t({ last_alert_at: hoursAgo(23), brokenHours: 23 })).alert === false,
+     "…nor after most of a day");
+  ok(shouldAlert(t({ last_alert_at: hoursAgo(25), brokenHours: 25 })).alert === true,
+     "…but at a day it says so again");
+  ok(shouldAlert(t({ last_alert_at: hoursAgo(50), brokenHours: 75 })).stage === 2,
+     "…and three days in, louder", String(shouldAlert(t({ last_alert_at: hoursAgo(50), brokenHours: 75 })).stage));
+  ok(shouldAlert(t({ brokenHours: 200, last_alert_at: hoursAgo(100) })).stage === 3,
+     "…a week in, loudest");
+  ok(shouldAlert(t({ acknowledged: true, ack_at: hoursAgo(1), brokenHours: 300 })).alert === false,
+     "'I'm on it' stops the reminders even when it has been broken for weeks");
+  // A check that stopped being able to run is itself a fault. Treating unknown as fine is how a
+  // watchdog goes quiet at exactly the moment you needed it.
+  ok(shouldAlert(t({ ok: null })).alert === true, "a check that could not run is treated as broken, never as fine");
+}
 
 console.log("\n── the week a task belongs to ──");
 {

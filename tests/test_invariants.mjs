@@ -31,6 +31,19 @@ function routes(under) {
   return out;
 }
 
+/**
+ * Source with comments and imports removed.
+ *
+ * Needed because a rule that greps raw source is satisfied by the WORD appearing anywhere — in a
+ * comment explaining the rule, or in the import line for a function nobody calls any more. Two
+ * rules below silently passed against deliberately broken code for exactly that reason.
+ */
+const code = (p) =>
+  read(p)
+    .replace(/\/\*[\s\S]*?\*\//g, "")     // block comments
+    .replace(/(^|[^:])\/\/.*$/gm, "$1")   // line comments, leaving http:// alone
+    .replace(/^import[\s\S]*?from\s+["'][^"']+["'];?$/gm, "");
+
 /** The body of one HTTP handler, so a rule can look at POST without seeing GET. */
 function handler(src, method) {
   const m = new RegExp(`export async function ${method}\\s*\\(`).exec(src);
@@ -150,10 +163,60 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     fail("R8 delete no longer disables their code:", "a leaver keeps earning");
 }
 
+// ── R9 · the watchdog must stay read-only, gated, and actually wired up ──────────────────────
+// A watchdog is the one thing whose own failure nobody notices, so its wiring is guarded rather
+// than trusted. And a monitor that can WRITE is a bug factory pointed straight at production.
+{
+  const checks = code("lib/monitor/checks.ts");
+  // Read-only: no writes, no sends, no bookings. It looks at state, it never changes it.
+  for (const [pattern, what] of [
+    [/\b(insert|update|delete)\s*\(/i, "a write call"],
+    [/\.(?:from\([^)]*\)\.(?:insert|update|delete|upsert))/i, "a Supabase write"],
+    [/emails\.send|sendMail/i, "sending email"],
+    [/INSERT INTO|UPDATE |DELETE FROM/i, "a SQL write"],
+  ]) {
+    if (pattern.test(checks)) fail("R9 the watchdog must not change anything:", `checks.ts contains ${what}`);
+  }
+  // Every check has to be individually guarded or one thrown error takes the whole run with it —
+  // and the run that throws is precisely the one you needed to hear about.
+  const pushes = (checks.match(/out\.push\(/g) || []).length;
+  const guarded = (checks.match(/out\.push\(await attempt\(/g) || []).length;
+  if (guarded < pushes) fail("R9 an unguarded check:", `${pushes - guarded} check(s) not wrapped in attempt() — one failure would kill the run`);
+
+  // The dead-man's switch only works if the job it watches actually records a beat.
+  const rem = read("app/api/meet/cron/reminders/route.ts");
+  if (!/beat\(\s*["']meet-reminders["']/.test(rem))
+    fail("R9 the reminders job stopped reporting in:", "its silence is what proves it died — without the beat, a dead cron looks healthy");
+  const runner = code("lib/monitor/run.ts");
+  if (!/beat\(\s*["']monitor["']/.test(runner))
+    fail("R9 the watchdog stopped reporting in:", "a dead watchdog would look like 'all clear'");
+  // Alerting must be throttled. Emailing every failure on every run trains you to ignore the
+  // email, and then the one that matters is ignored too — so the decision must genuinely be made
+  // by shouldAlert(), not merely imported from it.
+  if (!/shouldAlert\s*\(/.test(runner))
+    fail("R9 alerts are no longer throttled:", "every run would email — alert fatigue is how real alerts get missed");
+
+  // Both cron endpoints must be gated, or anyone can trigger runs and send mail from our domain.
+  for (const f of ["app/api/cron/monitor/route.ts", "app/api/meet/cron/reminders/route.ts"]) {
+    const r = API.find((x) => x.file === f);
+    if (!r) { fail("R9 cron endpoint vanished:", f); continue; }
+    if (!/process\.env\.CRON_SECRET/.test(code(f))) fail("R9 cron endpoint is open:", r.route);
+  }
+  // Acknowledging a fault and forcing a run are the owner's calls, not everyone's.
+  const portal = API.find((x) => x.file === "app/api/portal/monitor/route.ts");
+  if (!portal) fail("R9 endpoint vanished:", "app/api/portal/monitor/route.ts");
+  else if (!/role !== "owner"/.test(code("app/api/portal/monitor/route.ts")))
+    fail("R9 owner check MISSING:", "monitor → ack / run");
+
+  // The banner is the half people actually see; unmounted, the whole thing is invisible.
+  if (!/<SystemWatch\s*\/>/.test(read("app/portal/PortalHub.tsx")))
+    fail("R9 the alert banner is no longer shown:", "app/portal/PortalHub.tsx");
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");
   for (const f of fails) console.log("  ✗ " + f);
   process.exit(1);
 }
-console.log("ALL INVARIANTS HOLD ✓ (portal sessions · scheduling setup owner/HR-only · owner-only decisions · clash checks · sync by modification time · deleted stay deleted · PDF-safe text · delete cascades)");
+console.log("ALL INVARIANTS HOLD ✓ (portal sessions · scheduling setup owner/HR-only · owner-only decisions · clash checks · sync by modification time · deleted stay deleted · PDF-safe text · delete cascades · watchdog read-only, gated and wired)");

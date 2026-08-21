@@ -6,6 +6,7 @@ import {
 } from "@/lib/booking/db";
 import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
 import { syncCalendarChanges } from "@/lib/booking/sync";
+import { beat } from "@/lib/monitor/state";
 import { SITE_URL } from "@/lib/seo";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -104,6 +105,14 @@ async function run() {
       await markFollowedUp(b.id); // mark either way so it isn't reconsidered
     } catch { /* skip */ }
   }
+
+  // "I ran." The dead-man's switch: this job once sat dead for weeks — its scheduler lived on a
+  // host the site had moved off — and nothing said so, because a job that is not running cannot
+  // report its own failure. The watchdog reads this timestamp and alerts on the SILENCE instead.
+  // Recorded at the end, so a run that throws half way through never counts as a healthy one.
+  try {
+    await beat("meet-reminders", `${reminders} reminder(s), ${followups} follow-up(s)`);
+  } catch { /* recording the beat must never break the run that earned it */ }
 
   return { reminders, followups, checked: synced.checked, resynced: synced.moved };
 }
