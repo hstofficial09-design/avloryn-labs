@@ -8,7 +8,7 @@ import SystemWatch from "./SystemWatch";
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
 const GOLD = "btn-gold rounded-full font-[560]";
 
-export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd, isPartner }: { role: string; name: string; isOwner: boolean; isCommissionRole: boolean; isBd?: boolean; isPartner?: boolean }) {
+export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd, isPartner, needsPayout }: { role: string; name: string; isOwner: boolean; isCommissionRole: boolean; isBd?: boolean; isPartner?: boolean; needsPayout?: boolean }) {
   const router = useRouter();
   const [showPw, setShowPw] = useState(false);
   const [cur, setCur] = useState(""); const [nw, setNw] = useState(""); const [nw2, setNw2] = useState("");
@@ -85,6 +85,25 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd,
         {/* Anything broken across Avloryn or LivoDraft, above everything else — an alert email can
             be missed, an open dashboard cannot. Renders nothing when there is nothing to say. */}
         <SystemWatch />
+
+        {/* Nothing else in the portal ever asks for a bank account or UPI, so without this the
+            first anyone discovers a payout cannot be made is when the owner tries to make it.
+            Asked once, before there is money waiting, and gone the moment it is filled in. */}
+        {needsPayout && (
+          <a href="/portal/profile#payout" className="block mb-6 rounded-2xl p-4 sm:p-5 transition-colors hover:opacity-90"
+             style={{ background: "rgba(174,140,74,0.08)", boxShadow: "inset 0 0 0 1px rgba(174,140,74,0.35)" }}>
+            <div className="flex items-start gap-3">
+              <span className="mt-1.5 inline-block w-2 h-2 rounded-full shrink-0" style={{ background: "#AE8C4A" }} />
+              <div>
+                <div className="font-[620] text-[14px]" style={{ color: "#8a6d33" }}>Add where your money should go</div>
+                <div className="text-[12.5px] text-faint mt-1">
+                  You have no bank account or UPI on file yet, so commission you earn cannot be paid out.
+                  It takes a minute — add it now rather than when there is money waiting. <span className="text-gold font-[560]">Add payout details →</span>
+                </div>
+              </div>
+            </div>
+          </a>
+        )}
 
         {/* Hero */}
         <div className="card-lux rounded-[26px] p-7 sm:p-9 mb-7 relative overflow-hidden">

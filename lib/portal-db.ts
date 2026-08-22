@@ -947,7 +947,7 @@ export function trackHasCommission(track: string | null | undefined, map: Record
 export async function getEmployeeProfile(email: string) {
   return withClient(async (c) => {
     const r = await c.query(
-      `SELECT id,name,email,mobile,dob,address,start_date,duration,emp_type,track,
+      `SELECT id,name,email,mobile,dob,address,start_date,duration,emp_type,track,role,
               id_type,id_number,is_student,college,student_id,custom_answers,
               COALESCE(payout_account_name,'') payout_account_name,
               COALESCE(payout_account_no,'')   payout_account_no,

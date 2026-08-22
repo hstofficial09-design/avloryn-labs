@@ -141,7 +141,8 @@ export default function ProfileForm({ profile, isOwner }: { profile: any; isOwne
                 Your photo and ID document stay in the onboarding email — they are not stored here.
               </p>
 
-              <div className="sm:col-span-2 mt-1"><div className="section-label">Payout details</div>
+              {/* Anchor: the dashboard nudge links straight here (/portal/profile#payout). */}
+              <div id="payout" className="sm:col-span-2 mt-1 scroll-mt-24"><div className="section-label">Payout details</div>
                 <p className="text-[11.5px] text-muted-foreground mt-1">Where your commission is paid. Add a UPI id <b>or</b> a bank account — this enables instant auto-payout.</p>
               </div>
               <div className="sm:col-span-2"><label className={label}>UPI id</label><input value={pUpi} onChange={(e) => setPUpi(e.target.value)} placeholder="name@okhdfc" className={input} /></div>

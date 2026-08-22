@@ -20,7 +20,7 @@ export default async function PortalPage() {
   }
 
   let name = s.name || "there", isCommissionRole = false, role = "Employee", needsProfile = false, isBd = false;
-  let isPartner = false;
+  let isPartner = false, needsPayout = false;
   try {
     const prof: any = await getEmployeeProfile(s.email);
     isPartner = prof?.emp_type === "partner";
@@ -36,6 +36,11 @@ export default async function PortalPage() {
         : prof?.emp_type === "intern" ? `Intern${prof?.track ? " · " + prof.track : ""}` : "Employee";
       const meta = await partnerBdMeta(s.email).catch(() => null);
       isBd = !!meta?.isBd;
+      // Nothing anywhere asks for a bank account or UPI, so the first anyone learns that a payout
+      // cannot be made is when the owner tries to make it. Ask before there is money waiting.
+      needsPayout = isCommissionRole
+        && !String(prof?.payout_upi || "").trim()
+        && !String(prof?.payout_account_no || "").trim();
     }
   } catch { /* fall back to defaults */ }
   // Missing key info (DOB) → complete profile first (redirect OUTSIDE try/catch).
@@ -43,7 +48,7 @@ export default async function PortalPage() {
 
   return (
     <main className="portal-light min-h-screen">
-      <PortalHub role={role} name={name} isOwner={false} isCommissionRole={isCommissionRole} isBd={isBd} isPartner={isPartner} />
+      <PortalHub role={role} name={name} isOwner={false} isCommissionRole={isCommissionRole} isBd={isBd} isPartner={isPartner} needsPayout={needsPayout} />
     </main>
   );
 }
