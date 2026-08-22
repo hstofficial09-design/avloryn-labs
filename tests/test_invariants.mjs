@@ -202,11 +202,19 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     if (!r) { fail("R9 cron endpoint vanished:", f); continue; }
     if (!/process\.env\.CRON_SECRET/.test(code(f))) fail("R9 cron endpoint is open:", r.route);
   }
-  // Acknowledging a fault and forcing a run are the owner's calls, not everyone's.
+  // Owner only, on READING as well as acting. The findings name people ("X's calendar is broken",
+  // "a leaver is still earning") and nobody else can do anything about them; this was briefly open
+  // to everyone signed in and the whole team saw the red panel.
   const portal = API.find((x) => x.file === "app/api/portal/monitor/route.ts");
   if (!portal) fail("R9 endpoint vanished:", "app/api/portal/monitor/route.ts");
-  else if (!/role !== "owner"/.test(code("app/api/portal/monitor/route.ts")))
-    fail("R9 owner check MISSING:", "monitor → ack / run");
+  else {
+    const src = code("app/api/portal/monitor/route.ts");
+    for (const m of ["GET", "POST"]) {
+      const body = handler(src, m);
+      if (!body) { fail("R9 handler vanished:", `${m} /api/portal/monitor`); continue; }
+      if (!/role !== "owner"/.test(body)) fail("R9 owner check MISSING:", `${m} /api/portal/monitor`);
+    }
+  }
 
   // The banner is the half people actually see; unmounted, the whole thing is invisible.
   if (!/<SystemWatch\s*\/>/.test(read("app/portal/PortalHub.tsx")))

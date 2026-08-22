@@ -12,6 +12,9 @@ type Emp = {
   is_student?: string | null; college?: string | null; student_id?: string | null;
   start_date?: string | null; duration?: string | null; codes?: Code[];
   orders: number; sales: number; earned: number; pending: number; paid: number;
+  /** Network partners only. `role` is their kind (Campus Ambassador, Influencer…), `upline` is
+   *  whose network they sit in, and partner_approved is 0 while they await the owner's approval. */
+  role?: string | null; upline?: string | null; partner_approved?: number | null;
 };
 type Order = {
   id: string; employee_id: string; product: string; code: string | null; doc_ref: string | null;
@@ -47,8 +50,14 @@ export default function OwnerDashboard({ employees, orders, deleted, names, trac
   { employees: Emp[]; orders: Order[]; deleted: Deleted[]; names: Record<string, string>; trackMap: Record<string, boolean>; gmv?: number; error: string | null }) {
   const router = useRouter();
   const isComm = (track: string | null) => (track ? trackMap[track] !== false : true);
-  const commEmps = employees.filter((e) => isComm(e.track));
-  const nonCommEmps = employees.filter((e) => !isComm(e.track));
+  // Network partners are not staff — they are outside recruiters (campus ambassadors, influencers,
+  // agencies) on a different deal: their own 10%, plus 2% to whoever brought them in. They have no
+  // track, so the commission split above swept them in with the team and they read as employees.
+  // They get their own table, with the one column that only matters for them: whose network.
+  const partners = employees.filter((e) => e.emp_type === "partner");
+  const staff = employees.filter((e) => e.emp_type !== "partner");
+  const commEmps = staff.filter((e) => isComm(e.track));
+  const nonCommEmps = staff.filter((e) => !isComm(e.track));
   const [busy, setBusy] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -136,7 +145,11 @@ export default function OwnerDashboard({ employees, orders, deleted, names, trac
         ) : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-              <Stat k="Active employees" v={String(employees.filter((e) => e.active).length)} />
+              {/* Staff and network partners counted apart — a partner is not on the payroll, and
+                  one number covering both answers neither "how big is the team" nor "how big is
+                  the network". */}
+              <Stat k="Active employees" v={String(staff.filter((e) => e.active).length)}
+                    sub={partners.length ? `+ ${partners.length} network partner${partners.length === 1 ? "" : "s"}` : undefined} />
               <Stat k="Sales generated" v={inr(sales)} />
               <Stat k="Commission owed" v={inr(owed)} tone="#946412" />
               <Stat k="Paid out" v={inr(paidTot)} tone="#1e7a44" />
@@ -189,6 +202,60 @@ export default function OwnerDashboard({ employees, orders, deleted, names, trac
                           {!e.has_password
                             ? <button disabled={busy} onClick={() => setLogin(e.id, e.name)} className="mt-1 text-[10.5px] font-semibold text-gold underline underline-offset-2">Set login password →</button>
                             : <div className="text-[10px] text-faint mt-0.5">✓ can log in</div>}
+                        </td>
+                        <td className="px-4 py-3">{codeCell(e)}</td>
+                        <td className="px-4 py-3 text-right font-mono">{e.orders}</td>
+                        <td className="px-4 py-3 text-right font-mono">{inr(e.sales)}</td>
+                        <td className="px-4 py-3 text-right font-mono">{inr(e.earned)}</td>
+                        <td className="px-4 py-3 text-right font-mono">{inr(e.pending)}</td>
+                        <td className="px-4 py-3">
+                          {e.pending > 0
+                            ? <button disabled={busy} onClick={() => markPaid(e.id, e.pending)} className={GOLD + " text-[12px] px-3 py-1.5"}>Mark {inr(e.pending)} Paid</button>
+                            : <span className="text-[12px] text-faint">{e.orders > 0 ? "Settled ✓" : "—"}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="card-lux rounded-2xl overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <b className="font-serif text-[15px] font-[600]">Network partners</b>{" "}
+                  <span className="text-[11.5px] text-faint">campus ambassadors, influencers and agencies — not staff</span>
+                </div>
+                <a href="/portal/network" className="text-[11.5px] font-[560] text-gold underline underline-offset-2">Open the network →</a>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px] min-w-[780px]">
+                  <thead><tr className="section-label bg-subtle/60">
+                    <Th>Partner</Th><Th>In whose network</Th><Th>Code / Commission</Th><Th r>Orders</Th><Th r>Sales</Th><Th r>Earned</Th><Th r>Pending</Th><Th>Payout</Th>
+                  </tr></thead>
+                  <tbody>
+                    {partners.length === 0 && (
+                      <tr><td colSpan={8} className="text-center text-faint py-6">
+                        No network partners yet — anyone on the team can add one from <a href="/portal/network" className="text-gold underline underline-offset-2">their network</a>.
+                      </td></tr>
+                    )}
+                    {partners.map((e) => (
+                      <tr key={e.id} className="border-t border-border">
+                        <td className="px-4 py-3">
+                          <button onClick={() => setDetail(e)} className="font-[600] text-left text-foreground hover:text-gold transition-colors">{e.name}</button>
+                          <div className="text-[10.5px] font-bold text-gold">{e.role || "Network Partner"}</div>
+                          {/* A partner approved but never given a password is earning and locked out —
+                              they see nothing and assume nothing has sold. */}
+                          {e.partner_approved === 0
+                            ? <div className="text-[10.5px] font-semibold text-[#b3341f] mt-0.5">Waiting for your approval</div>
+                            : !e.has_password
+                              ? <button disabled={busy} onClick={() => setLogin(e.id, e.name)} className="mt-1 text-[10.5px] font-semibold text-gold underline underline-offset-2">Set login password →</button>
+                              : <div className="text-[10px] text-faint mt-0.5">✓ can log in</div>}
+                        </td>
+                        <td className="px-4 py-3">
+                          {e.upline
+                            ? <><span className="text-foreground">{e.upline}</span><div className="text-[10.5px] text-faint">earns 2% override</div></>
+                            : <><span className="text-faint">Direct — yours</span><div className="text-[10.5px] text-faint">no override paid</div></>}
                         </td>
                         <td className="px-4 py-3">{codeCell(e)}</td>
                         <td className="px-4 py-3 text-right font-mono">{e.orders}</td>
@@ -347,8 +414,12 @@ function Row({ k, v, full }: { k: string; v?: string | null; full?: boolean }) {
 function MiniStat({ k, v, tone }: { k: string; v: string; tone?: string }) {
   return <div><div className="text-[10px] uppercase tracking-wide text-muted-foreground">{k}</div><div className="font-mono font-extrabold text-[15px]" style={tone ? { color: tone } : {}}>{v}</div></div>;
 }
-function Stat({ k, v, tone }: { k: string; v: string; tone?: string }) {
-  return <div className="card-lux rounded-xl px-4 py-3.5"><div className="text-[11.5px] text-muted-foreground mb-1.5">{k}</div><div className="text-[24px] font-extrabold font-mono tracking-tight" style={tone ? { color: tone } : {}}>{v}</div></div>;
+function Stat({ k, v, tone, sub }: { k: string; v: string; tone?: string; sub?: string }) {
+  return <div className="card-lux rounded-xl px-4 py-3.5">
+    <div className="text-[11.5px] text-muted-foreground mb-1.5">{k}</div>
+    <div className="text-[24px] font-extrabold font-mono tracking-tight" style={tone ? { color: tone } : {}}>{v}</div>
+    {sub && <div className="text-[11px] text-faint mt-0.5">{sub}</div>}
+  </div>;
 }
 function Th({ children, r }: { children: React.ReactNode; r?: boolean }) {
   return <th className={"px-4 py-2.5 " + (r ? "text-right" : "text-left")}>{children}</th>;

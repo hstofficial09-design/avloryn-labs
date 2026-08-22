@@ -207,6 +207,10 @@ export type CommissionOrder = {
 
 export type EmployeeSummary = Employee & {
   orders: number; sales: number; earned: number; pending: number; paid: number;
+  /** Network partners only: the person whose network they sit in, who earns the 2% override. */
+  upline?: string | null;
+  /** 0 while a BD-recruited partner is waiting for the owner to approve them. */
+  partner_approved?: number | null;
 };
 
 export async function getEmployeeByEmail(email: string) {
@@ -254,6 +258,10 @@ export async function listEmployeesWithSummary(): Promise<EmployeeSummary[]> {
     const r = await c.query(`
       SELECT e.id,e.name,e.email,e.mobile,e.emp_type,e.track,e.role,e.commission_pct,e.active,e.source,
              ${PROFILE_COLS},
+             e.partner_approved,
+             -- Who recruited this network partner — i.e. who earns the 2% override on their sales.
+             -- Without it the owner cannot tell whose network a partner belongs to.
+             (SELECT b.name FROM employees b WHERE b.id = e.parent_bd_id) AS upline,
              (e.password_hash IS NOT NULL AND e.password_hash<>'') AS has_password,
              COUNT(ec.id)::int AS orders,
              COALESCE(SUM(ec.order_amount_inr),0) AS sales,

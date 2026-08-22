@@ -35,6 +35,9 @@ export default function SystemWatch() {
   const [busy, setBusy] = useState("");
   const [open, setOpen] = useState(false);
 
+  // Owner only — the endpoint answers 403 to everyone else, and the panel then renders nothing at
+  // all. Deliberately gated on the SERVER rather than by hiding the component: the findings name
+  // people and are the company's business, not a colleague's.
   const load = useCallback(async () => {
     try {
       const r = await fetch("/api/portal/monitor", { cache: "no-store" });

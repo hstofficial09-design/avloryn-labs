@@ -17,6 +17,10 @@ export const maxDuration = 120;
 export async function GET() {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+  // Owner only. These findings name people and read as the company's dirty laundry — "X's calendar
+  // is broken", "a leaver is still earning" — and nobody but the owner can act on any of it. An
+  // intern seeing a red panel about systems they cannot touch is noise at best.
+  if (s.role !== "owner") return NextResponse.json({ error: "Not authorized" }, { status: 403 });
 
   const [state, beats] = await Promise.all([readState().catch(() => []), readBeats().catch(() => [])]);
   const failing = state.filter((c) => c.ok !== true);
@@ -26,9 +30,7 @@ export async function GET() {
   const staleMin = lastRun ? Math.round((Date.now() - Date.parse(lastRun)) / 60000) : null;
 
   return NextResponse.json({
-    // Everyone signed in sees that something is broken — the person who spots it first is often
-    // not the owner. Only the owner can act on it (below).
-    canAct: s.role === "owner",
+    canAct: true,
     lastRun,
     stale: staleMin === null || staleMin > BEAT_GRACE_MIN.monitor,
     staleMin,
