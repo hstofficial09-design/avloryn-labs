@@ -221,6 +221,30 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     fail("R9 the alert banner is no longer shown:", "app/portal/PortalHub.tsx");
 }
 
+// ── R10 · the commission ladder is TWO levels, and a partner is not a recruiter ───────────────
+// The engine pays the seller 10% and 2% to whoever recruited them. There is no third level. But
+// `partnerBdMeta` once answered "yes, you may build a network" to ANY live approved account — so an
+// approved network partner could recruit their own sub-partners. It looked like it worked, because
+// the two rows still book; what it actually created was an unbounded recruitment chain nobody
+// designed or priced. Every network-building route asks this one function, so guarding it here
+// guards all of them.
+{
+  const db = code("lib/portal-db.ts");
+  const fn = /export async function partnerBdMeta[\s\S]*?\n}/.exec(db)?.[0] || "";
+  // The check has to be on the isBd VALUE itself. An earlier version accepted the mere presence of
+  // an isPartner variable anywhere in the function, so removing it from isBd still passed — the
+  // guard proved nothing.
+  if (!fn) fail("R10 partnerBdMeta is gone:", "every network-building gate reads it");
+  else if (!/isBd:[^,\n]*!isPartner/.test(fn))
+    fail("R10 a network partner can build their own network again:", "the ladder is 2 levels — this quietly makes it unbounded");
+
+  // The refusal must be honest. A partner is refused permanently; telling them to wait for an
+  // approval they already have leaves them waiting for something that is never coming.
+  const create = code("app/api/portal/partner/create/route.ts");
+  if (!/isPartner/.test(create))
+    fail("R10 the refusal no longer tells a partner why:", "they are approved, so 'awaiting approval' is a lie");
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");

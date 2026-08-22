@@ -20,14 +20,20 @@ export default async function PortalPage() {
   }
 
   let name = s.name || "there", isCommissionRole = false, role = "Employee", needsProfile = false, isBd = false;
+  let isPartner = false;
   try {
     const prof: any = await getEmployeeProfile(s.email);
-    if (prof && !prof.dob) { needsProfile = true; }
+    isPartner = prof?.emp_type === "partner";
+    // The onboarding profile (DOB, college, ID) belongs to staff. A network partner never filled
+    // one in, so gating on it would lock them out of their own earnings on first sign-in.
+    if (prof && !prof.dob && !isPartner) { needsProfile = true; }
     else {
       const map = await commissionTracksMap();
-      isCommissionRole = trackHasCommission(prof?.track, map);
+      // Partners always earn, whatever the staff track settings say.
+      isCommissionRole = isPartner || trackHasCommission(prof?.track, map);
       name = prof?.name || name;
-      role = prof?.emp_type === "intern" ? `Intern${prof?.track ? " · " + prof.track : ""}` : "Employee";
+      role = isPartner ? (prof?.role || "Network Partner")
+        : prof?.emp_type === "intern" ? `Intern${prof?.track ? " · " + prof.track : ""}` : "Employee";
       const meta = await partnerBdMeta(s.email).catch(() => null);
       isBd = !!meta?.isBd;
     }
@@ -37,7 +43,7 @@ export default async function PortalPage() {
 
   return (
     <main className="portal-light min-h-screen">
-      <PortalHub role={role} name={name} isOwner={false} isCommissionRole={isCommissionRole} isBd={isBd} />
+      <PortalHub role={role} name={name} isOwner={false} isCommissionRole={isCommissionRole} isBd={isBd} isPartner={isPartner} />
     </main>
   );
 }

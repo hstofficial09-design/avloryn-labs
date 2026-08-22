@@ -8,7 +8,7 @@ import SystemWatch from "./SystemWatch";
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
 const GOLD = "btn-gold rounded-full font-[560]";
 
-export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd }: { role: string; name: string; isOwner: boolean; isCommissionRole: boolean; isBd?: boolean }) {
+export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd, isPartner }: { role: string; name: string; isOwner: boolean; isCommissionRole: boolean; isBd?: boolean; isPartner?: boolean }) {
   const router = useRouter();
   const [showPw, setShowPw] = useState(false);
   const [cur, setCur] = useState(""); const [nw, setNw] = useState(""); const [nw2, setNw2] = useState("");
@@ -31,19 +31,36 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd 
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
 
   type Card = { title: string; desc: string; href?: string; external?: boolean; onClick?: () => void; icon: React.ReactNode; feature?: boolean };
+  // A network partner is an outside recruiter, not staff: they do not take internal meetings and
+  // they have no work log to keep. Showing them tools they can neither use nor be judged on just
+  // buries the one thing they came for — their earnings.
   const cards: Card[] = [];
-  cards.push({ title: "Scheduling", desc: "Create meetings, share booking links, manage your calendar & Meet.", href: "/meet/admin", icon: <CalIcon />, feature: true });
-  cards.push({ title: isOwner ? "Tasks & Reviews" : "My Work Log", desc: isOwner
-    ? "Assign work with deadlines, tick off what's delivered, score each week and issue the report."
-    : "Write down what you're working on. Dated, numbered, and downloadable as a PDF whenever you want.",
-    href: "/portal/tasks", icon: <TaskIcon /> });
-  if (isOwner || isCommissionRole) cards.push({ title: isOwner ? "Team & Commissions" : "My Earnings", desc: isOwner ? "Employees, referral codes, commissions and payouts." : "Your referral code, sales and payouts.", href: "/portal/commissions", icon: <CoinIcon /> });
+  if (!isPartner) {
+    cards.push({ title: "Scheduling", desc: "Create meetings, share booking links, manage your calendar & Meet.", href: "/meet/admin", icon: <CalIcon />, feature: true });
+    cards.push({ title: isOwner ? "Tasks & Reviews" : "My Work Log", desc: isOwner
+      ? "Assign work with deadlines, tick off what's delivered, score each week and issue the report."
+      : "Write down what you're working on. Dated, numbered, and downloadable as a PDF whenever you want.",
+      href: "/portal/tasks", icon: <TaskIcon /> });
+  }
+  if (isOwner || isCommissionRole) cards.push({
+    title: isOwner ? "Team & Commissions" : "My Earnings",
+    desc: isOwner ? "Employees, referral codes, commissions and payouts."
+      : "Your referral code, sales and payouts.",
+    href: "/portal/commissions", icon: <CoinIcon />, feature: isPartner });
   if (isOwner || isBd) cards.push({ title: isOwner ? "Partner Network" : "My Network", desc: isOwner ? "Everyone on the team, the network partners they recruit, and the 2% override across every network." : "Add network partners (CAs, influencers, agencies) and earn a 2% override on your whole network.", href: "/portal/network", icon: <NetworkIcon /> });
   if (isOwner) cards.push({ title: "Onboarding Form", desc: "Roles, pay, form fields and each role's terms for new hires.", href: "/portal/onboarding", icon: <FormIcon /> });
   if (isOwner) cards.push({ title: "Careers", desc: "Post openings on the website and take applications by email.", href: "/portal/careers", icon: <BriefcaseIcon /> });
   if (isOwner) cards.push({ title: "LivoDraft", desc: "Open the full LivoDraft admin — codes, users, billing, refunds, payouts, AI & more.", href: "/portal/go/livodraft", external: true, icon: <ProductIcon /> });
-  cards.push({ title: "My Profile", desc: "Your personal details — name, contact, date of birth, address.", href: "/portal/profile", icon: <UserIcon /> });
-  cards.push({ title: "Company site", desc: "View the public Avloryn Labs website.", href: "/", icon: <GlobeIcon /> });
+  cards.push({ title: isPartner ? "My Details & Payout" : "My Profile",
+    // Payout details are how a partner actually gets paid, and nothing else prompts them for it —
+    // an unpaid partner who never filled these in looks identical to one nobody has paid yet.
+    desc: isPartner ? "Your contact details, and the bank account or UPI your commission is paid into."
+      : "Your personal details — name, contact, date of birth, address.",
+    href: "/portal/profile", icon: <UserIcon /> });
+  // Partners point at the thing they are selling; staff at the company site.
+  cards.push(isPartner
+    ? { title: "LivoDraft", desc: "The product you're referring — open it to show someone what they're getting.", href: "https://livodraft.com", external: true, icon: <GlobeIcon /> }
+    : { title: "Company site", desc: "View the public Avloryn Labs website.", href: "/", icon: <GlobeIcon /> });
   cards.push({ title: "Password", desc: "Change your account password securely.", onClick: () => setShowPw((v) => !v), icon: <LockIcon /> });
   cards.push({ title: "Support", desc: "Questions or an issue? Email contact@avloryn.com", href: "mailto:contact@avloryn.com", external: true, icon: <MailIcon /> });
 
@@ -74,7 +91,9 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd 
           <div aria-hidden className="absolute -right-10 -top-14 w-56 h-56 rounded-full" style={{ background: "radial-gradient(circle, rgba(203,177,118,0.28), transparent 70%)" }} />
           <div className="section-label mb-2">{today}</div>
           <h1 className="font-serif text-[30px] sm:text-[34px] font-[600] tracking-[-0.015em] mb-1.5">Hi, {name} <span className="inline-block">👋</span></h1>
-          <p className="text-[14px] text-muted-foreground max-w-[52ch]">Welcome to your Avloryn workspace — scheduling, {isOwner || isCommissionRole ? "earnings, " : ""}and everything for your work, all behind one login.</p>
+          <p className="text-[14px] text-muted-foreground max-w-[52ch]">{isPartner
+            ? "Your referral code, what it has earned, and where your payout goes — all behind one login."
+            : <>Welcome to your Avloryn workspace — scheduling, {isOwner || isCommissionRole ? "earnings, " : ""}and everything for your work, all behind one login.</>}</p>
         </div>
 
         <div className="section-label mb-3 px-1">Your tools</div>

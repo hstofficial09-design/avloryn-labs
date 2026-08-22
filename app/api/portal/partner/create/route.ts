@@ -36,8 +36,12 @@ export async function POST(req: Request) {
       const meta = await partnerBdMeta(s.email);
       if (!meta) return NextResponse.json({ error: "Your account was not found" }, { status: 404 });
       if (!meta.isBd) {
+        // A partner is refused for a permanent reason, not a temporary one. Telling them to wait
+        // for an approval that already happened leaves them waiting for something never coming.
         return NextResponse.json(
-          { error: "Your account can't add partners right now — it's inactive or still awaiting approval." },
+          { error: meta.isPartner
+              ? "Building a network is for the Avloryn team. Your earnings come from your own referrals instead."
+              : "Your account can't add partners right now — it's inactive or still awaiting approval." },
           { status: 403 });
       }
       bdEmail = s.email;

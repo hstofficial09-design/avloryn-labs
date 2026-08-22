@@ -28,10 +28,11 @@ export default async function NetworkPage() {
     return <NetworkDashboard mode="owner" name={s.name || "Owner"} bds={bds} roles={roles} pending={pending} parents={parents} people={people} error={error} />;
   }
 
-  let isBd = false, myRole = "", network: any[] = [], roles: string[] = [], attachable: any[] = [], users: any[] = [], error: string | null = null;
+  let isBd = false, isPartner = false, myRole = "", network: any[] = [], roles: string[] = [], attachable: any[] = [], users: any[] = [], error: string | null = null;
   try {
     const meta = await partnerBdMeta(s.email);
     isBd = !!meta?.isBd;
+    isPartner = !!meta?.isPartner;
     myRole = meta?.role || "";
     if (isBd && meta) {
       network = await listPartnerNetwork(meta.id);
@@ -45,5 +46,5 @@ export default async function NetworkPage() {
   }
   // The name is only ever drawn as a node in the family tree, so the fallback has to read as a
   // person there — "there" was a greeting fallback on a page that has no greeting.
-  return <NetworkDashboard mode="bd" name={s.name || "You"} myRole={myRole} isBd={isBd} network={network} roles={roles} attachable={attachable} users={users} error={error} />;
+  return <NetworkDashboard mode="bd" name={s.name || "You"} myRole={myRole} isBd={isBd} isPartner={isPartner} network={network} roles={roles} attachable={attachable} users={users} error={error} />;
 }

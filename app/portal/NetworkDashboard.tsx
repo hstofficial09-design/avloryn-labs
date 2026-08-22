@@ -30,6 +30,8 @@ export default function NetworkDashboard(props: {
   myRole?: string;
   parents?: AssignableParent[];
   isBd?: boolean;
+  /** They ARE a network partner — so they cannot build a network, for a different reason. */
+  isPartner?: boolean;
   network?: NetworkPartner[];
   bds?: PartnerBd[];
   people?: PartnerPerson[];
@@ -40,7 +42,7 @@ export default function NetworkDashboard(props: {
   error?: string | null;
 }) {
   const router = useRouter();
-  const { mode, name, myRole, parents = [], isBd, network = [], people = [], roles = [], attachable = [], pending = [], users = [], error } = props;
+  const { mode, name, myRole, parents = [], isBd, isPartner, network = [], people = [], roles = [], attachable = [], pending = [], users = [], error } = props;
   const [busy, setBusy] = useState(false);
   // owner: which team member's card is open
   const [selId, setSelId] = useState<string>("");
@@ -130,8 +132,22 @@ export default function NetworkDashboard(props: {
           <div className="rounded-xl border border-[#eeddb0] bg-[#fdf5e3] text-[#946412] text-[13px] px-4 py-3">⚠ {error}</div>
         ) : mode === "bd" && !isBd ? (
           <div className="card-lux rounded-2xl px-5 py-6 text-[13.5px] text-muted-foreground">
-            This page opens up once your account is active and approved. Then anyone you bring in
-            as a network partner shows up here, along with the 2% you earn on their sales.
+            {/* Two very different reasons to land here, and telling a partner to wait for approval
+                when they are already approved would leave them waiting for something that is never
+                coming. */}
+            {isPartner ? (
+              <>
+                Building a network is for the Avloryn team. Your earnings come from your own
+                referrals instead — every document someone buys with your code, for as long as they
+                keep buying.{" "}
+                <a href="/portal/commissions" className="text-gold underline underline-offset-2">See your earnings →</a>
+              </>
+            ) : (
+              <>
+                This page opens up once your account is active and approved. Then anyone you bring in
+                as a network partner shows up here, along with the 2% you earn on their sales.
+              </>
+            )}
           </div>
         ) : mode === "bd" ? (
           <>

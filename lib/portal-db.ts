@@ -408,7 +408,7 @@ export async function listPartnerRolesPortal(): Promise<string[]> {
  */
 export async function partnerBdMeta(
   email: string,
-): Promise<{ id: string; isBd: boolean; role: string } | null> {
+): Promise<{ id: string; isBd: boolean; role: string; isPartner: boolean } | null> {
   return withClient(async (c) => {
     const e = await c.query(
       `SELECT id, role, emp_type, active, partner_approved FROM employees WHERE LOWER(email)=LOWER($1) LIMIT 1`,
@@ -418,7 +418,16 @@ export async function partnerBdMeta(
     const live = row.active === 1 || row.active === true || row.active === null;
     // partner_approved only gates people who ARE partners; staff don't have one to wait for.
     const awaitingApproval = row.emp_type === "partner" && row.partner_approved === 0;
-    return { id: row.id, isBd: live && !awaitingApproval, role: String(row.role || "") };
+    // A network partner may NOT build a network of their own.
+    //
+    // The commission engine pays exactly two levels: the seller's 10%, and 2% to whoever recruited
+    // them. There is no third. Letting a partner recruit would still book those two rows — so it
+    // would appear to work — while quietly creating a recruitment chain that was never designed,
+    // never priced against a ₹26/page product, and turns "sell to students" into "recruit people
+    // who recruit people". Easy to allow later; very hard to take back once partners have
+    // downlines. Staff (employees and interns) build networks; partners sell.
+    const isPartner = row.emp_type === "partner";
+    return { id: row.id, isBd: live && !awaitingApproval && !isPartner, role: String(row.role || ""), isPartner };
   });
 }
 
