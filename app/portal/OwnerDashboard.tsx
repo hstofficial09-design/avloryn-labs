@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { LogoMark } from "@/components/ui/logo";
+import { roleLabel } from "@/lib/role-label";
 
 type Code = { code: string; commission_pct: number; active: number; uses: number };
 type Emp = {
@@ -198,7 +199,7 @@ export default function OwnerDashboard({ employees, orders, deleted, names, trac
                       <tr key={e.id} className="border-t border-border">
                         <td className="px-4 py-3">
                           <button onClick={() => setDetail(e)} className="font-[600] text-left text-foreground hover:text-gold transition-colors">{e.name}</button>
-                          <div className="text-[10.5px] font-bold text-gold">{e.emp_type === "intern" ? `Intern${e.track ? " · " + e.track : ""}` : "Employee"}</div>
+                          <div className="text-[10.5px] font-bold text-gold">{roleLabel(e)}</div>
                           {!e.has_password
                             ? <button disabled={busy} onClick={() => setLogin(e.id, e.name)} className="mt-1 text-[10.5px] font-semibold text-gold underline underline-offset-2">Set login password →</button>
                             : <div className="text-[10px] text-faint mt-0.5">✓ can log in</div>}
@@ -283,7 +284,7 @@ export default function OwnerDashboard({ employees, orders, deleted, names, trac
                     {nonCommEmps.map((e) => (
                       <tr key={e.id} className="border-t border-border">
                         <td className="px-4 py-3"><button onClick={() => setDetail(e)} className="font-[600] text-left text-foreground hover:text-gold transition-colors">{e.name}</button></td>
-                        <td className="px-4 py-3">{e.emp_type === "intern" ? `Intern${e.track ? " · " + e.track : ""}` : "Employee"}</td>
+                        <td className="px-4 py-3">{roleLabel(e)}</td>
                         <td className="px-4 py-3">{!e.has_password ? <button disabled={busy} onClick={() => setLogin(e.id, e.name)} className="text-[11px] font-semibold text-gold underline underline-offset-2">Set password →</button> : <span className="text-[11px] text-faint">✓ can log in</span>}</td>
                       </tr>
                     ))}
@@ -364,7 +365,7 @@ function DetailModal({ e, onClose, onDelete, onSetLogin, busy, codeCell }:
         <div className="flex items-start justify-between gap-3 border-b border-border px-6 py-5">
           <div>
             <div className="font-serif text-[21px] font-[600] leading-tight">{e.name}</div>
-            <div className="text-[11.5px] font-bold text-gold mt-0.5">{e.emp_type === "intern" ? `Intern${e.track ? " · " + e.track : ""}` : "Employee"}{e.source ? ` · from ${e.source}` : ""}</div>
+            <div className="text-[11.5px] font-bold text-gold mt-0.5">{roleLabel(e)}{e.source ? ` · from ${e.source}` : ""}</div>
           </div>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-full bg-card ring-hairline text-muted-foreground hover:text-foreground" aria-label="Close">✕</button>
         </div>

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { LogoMark } from "@/components/ui/logo";
 import { PasswordInput } from "@/components/ui/password-input";
 import FamilyChart, { type TreeNode } from "./FamilyChart";
+import { roleLabel } from "@/lib/role-label";
 
 type Code = { code: string; commission_pct: number; active: number; uses: number };
 type PromoCode = { code: string; type: string; value: number; commission_pct: number; active: boolean; uses: number };
@@ -114,7 +115,7 @@ export default function EmployeeDashboard({ name, data, error, commissionRole, i
         ) : !isCommissionRole ? (
           <>
             <div className="flex flex-wrap items-center gap-6 card-lux rounded-2xl px-5 py-4 mb-5">
-              <div><div className="section-label">Role</div><div className="font-[560] mt-1">{emp.emp_type === "intern" ? `Intern${emp.track ? " · " + emp.track : ""}` : "Employee"}</div></div>
+              <div><div className="section-label">Role</div><div className="font-[560] mt-1">{roleLabel(emp)}</div></div>
               <div><div className="section-label">Company</div><div className="font-[560] mt-1">Avloryn Labs</div></div>
             </div>
             <div className="card-lux rounded-2xl px-5 py-5">
@@ -128,7 +129,7 @@ export default function EmployeeDashboard({ name, data, error, commissionRole, i
             {/* Who you are — the code used to be crammed in here too, and then repeated twice
                 below. It now lives in one place: the cards underneath. */}
             <div className="flex flex-wrap items-center gap-6 card-lux rounded-2xl px-5 py-4 mb-5">
-              <div><div className="section-label">Role</div><div className="font-[560] mt-1">{isPartner ? "Network Partner" : (emp.emp_type === "intern" ? `Intern${emp.track ? " · " + emp.track : ""}` : "Employee")}</div></div>
+              <div><div className="section-label">Role</div><div className="font-[560] mt-1">{roleLabel(emp)}</div></div>
               <div><div className="section-label">Your commission</div><div className="font-bold text-gold mt-1">{commissionPct}% of net sale</div></div>
               {isPartner && bdName && <div><div className="section-label">Your upline</div><div className="font-[560] mt-1">{bdName}</div></div>}
               <div><div className="section-label">Earned so far</div><div className="font-bold mt-1">{inr(s?.earned || 0)}</div></div>

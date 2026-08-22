@@ -245,6 +245,27 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     fail("R10 the refusal no longer tells a partner why:", "they are approved, so 'awaiting approval' is a lie");
 }
 
+// ── R11 · one place decides what to call somebody ─────────────────────────────────────────────
+// This label was hand-written in seven files, each its own chain of ternaries. When network
+// partners arrived exactly one of the seven learned about them, so a Campus Ambassador was shown
+// as "Employee" on the profile page, the hub and three of the owner's tables. A new kind of person
+// must be a change to one function, not a hunt through the app.
+{
+  const offenders = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${e.name}`;
+      if (e.isDirectory()) { if (!/node_modules|\.next/.test(e.name)) walk(rel); }
+      else if (/\.(tsx?|jsx?)$/.test(e.name) && rel !== "lib/role-label.ts") {
+        // The tell is branching on emp_type to produce a NAME — not merely reading the field.
+        if (/emp_type\s*===\s*["']intern["']\s*\?/.test(read(rel))) offenders.push(rel);
+      }
+    }
+  };
+  walk("app"); walk("lib");
+  for (const f of offenders) fail("R11 role label written by hand:", `${f} — use roleLabel() or a partner reads as "Employee"`);
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");

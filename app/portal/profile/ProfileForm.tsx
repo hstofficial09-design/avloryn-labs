@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogoMark } from "@/components/ui/logo";
+import { roleLabel } from "@/lib/role-label";
 
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
 const GOLD = "btn-gold rounded-full font-[560]";
@@ -46,7 +47,7 @@ export default function ProfileForm({ profile, isOwner }: { profile: any; isOwne
 
   useEffect(() => { setMustComplete(new URLSearchParams(window.location.search).get("complete") === "1"); }, []);
 
-  const role = profile.emp_type === "intern" ? `Intern${profile.track ? " · " + profile.track : ""}` : isOwner ? "Owner" : "Employee";
+  const role = roleLabel(profile, { isOwner });
 
   async function save(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);

@@ -9,6 +9,7 @@
 import { Pool, type PoolClient } from "pg";
 import { normaliseFields, defaultFields, type Field } from "@/lib/careers-fields";
 import { randomUUID } from "crypto";
+import { roleLabel } from "@/lib/role-label";
 
 let pool: Pool | null = null;
 let schemaReady = false;
@@ -187,6 +188,8 @@ export type EmployeeCode = { code: string; commission_pct: number; active: numbe
 export type Employee = {
   id: string; name: string; email: string | null; mobile: string | null;
   emp_type: string; track: string | null; commission_pct: number;
+  /** Network partners: their kind — Campus Ambassador, Influencer, Thesis Writing Agency. */
+  role?: string | null;
   active: number; source: string; has_password?: boolean;
   // onboarding profile
   dob?: string | null; address?: string | null; id_type?: string | null;
@@ -216,7 +219,9 @@ export type EmployeeSummary = Employee & {
 export async function getEmployeeByEmail(email: string) {
   return withClient(async (c) => {
     const r = await c.query(
-      `SELECT id,name,email,mobile,emp_type,track,commission_pct,active,source,
+      // `role` is what a network partner actually is — Campus Ambassador, Influencer, agency.
+      // Leaving it out is why their own dashboard could only ever call them "Network Partner".
+      `SELECT id,name,email,mobile,emp_type,track,role,commission_pct,active,source,
               (password_hash IS NOT NULL AND password_hash<>'') AS has_password, password_hash
        FROM employees WHERE LOWER(email)=LOWER($1) LIMIT 1`, [email]);
     return r.rows[0] || null;
@@ -464,7 +469,7 @@ export async function listAllPartnerPeople(): Promise<PartnerPerson[]> {
       const network = await networkOf(c, e.id);
       out.push({
         id: e.id, name: e.name,
-        role: e.role || (e.emp_type === "intern" ? "Intern" : "Employee"),
+        role: roleLabel(e, { withTrack: false }),
         code,
         direct_sales: r2(d.sales), direct_earned: r2(d.earned), direct_pending: r2(d.pending),
         override_earned: r2(ov.earned), override_pending: r2(ov.pending),

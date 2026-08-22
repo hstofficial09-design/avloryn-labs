@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/portal-auth";
 import { getEmployeeProfile, commissionTracksMap, trackHasCommission, partnerBdMeta } from "@/lib/portal-db";
 import PortalHub from "./PortalHub";
+import { roleLabel } from "@/lib/role-label";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,8 +33,7 @@ export default async function PortalPage() {
       // Partners always earn, whatever the staff track settings say.
       isCommissionRole = isPartner || trackHasCommission(prof?.track, map);
       name = prof?.name || name;
-      role = isPartner ? (prof?.role || "Network Partner")
-        : prof?.emp_type === "intern" ? `Intern${prof?.track ? " · " + prof.track : ""}` : "Employee";
+      role = roleLabel(prof);
       const meta = await partnerBdMeta(s.email).catch(() => null);
       isBd = !!meta?.isBd;
       // Nothing anywhere asks for a bank account or UPI, so the first anyone learns that a payout

@@ -10,6 +10,7 @@
 import { decideNewTime } from "../lib/booking/sync";
 import { taskStatus, workStats, reviewAverage, tenureScore, weekStartIST, tasksInWeek, type Task, type Review } from "../lib/portal-db";
 import { shouldAlert, type Tracked } from "../lib/monitor/state";
+import { roleLabel } from "../lib/role-label";
 
 let pass = 0;
 const fails: string[] = [];
@@ -129,6 +130,27 @@ console.log("\n── when the watchdog is allowed to interrupt you ──");
   // A check that stopped being able to run is itself a fault. Treating unknown as fine is how a
   // watchdog goes quiet at exactly the moment you needed it.
   ok(shouldAlert(t({ ok: null })).alert === true, "a check that could not run is treated as broken, never as fine");
+}
+
+console.log("\n── what we call somebody ──");
+{
+  // This label was hand-written in seven files. When network partners arrived, one of the seven
+  // learned about them and a Campus Ambassador was shown as "Employee" everywhere else.
+  ok(roleLabel({ emp_type: "partner", role: "Campus Ambassador" }) === "Campus Ambassador",
+     "a partner is called what they actually are, not 'Employee'");
+  ok(roleLabel({ emp_type: "partner", role: "" }) === "Network Partner",
+     "…and 'Network Partner' only when nothing was recorded");
+  ok(roleLabel({ emp_type: "partner", role: "Influencer", track: "Marketing" }) === "Influencer",
+     "a partner's kind wins over any track left on the row");
+  ok(roleLabel({ emp_type: "intern", track: "Business Development Intern" }) === "Intern · Business Development Intern",
+     "an intern shows their track");
+  ok(roleLabel({ emp_type: "intern", track: "X" }, { withTrack: false }) === "Intern",
+     "…unless the space is too tight for it");
+  ok(roleLabel({ emp_type: "employee" }) === "Employee", "everyone else is an employee");
+  ok(roleLabel({ emp_type: "partner", role: "Campus Ambassador" }, { isOwner: true }) === "Owner",
+     "the owner is the owner whatever the row says");
+  ok(roleLabel(null) === "Employee" && roleLabel(undefined) === "Employee",
+     "a missing row never renders as blank or 'undefined'");
 }
 
 console.log("\n── the week a task belongs to ──");
