@@ -911,27 +911,16 @@ export async function listTrackSettings(): Promise<{ track: string; commission_e
 export type RegType = { key: string; label: string; enabled: boolean; sort: number; terms: string | null; inUse?: number; roles?: number };
 
 /**
- * `partner` is NOT a registration kind and must never become one.
+ * Nothing is reserved.
  *
- * Network partners are recruited and approved through the network flow, not by filling in the
- * onboarding form — and emp_type "partner" carries real rules with it (their own dashboard, the
- * 2% override, no network of their own). Letting someone appear on the public form and self-select
- * into it would hand out those rules to whoever found the link.
+ * "Partner" and anything reading like it used to be refused here, on the grounds that emp_type
+ * "partner" carries rules with it — their own dashboard, no network of their own, a place in the
+ * owner's Network Partners table — and the onboarding form is public, so a self-selectable Partner
+ * would grant those without an approval step. The owner has decided the list is theirs to set;
+ * that reasoning is kept here rather than in a block, so whoever reads this next knows what adding
+ * such a kind actually does.
  */
-export const RESERVED_REG_KEYS = ["partner"];
-
-/**
- * Anything that READS as a partner, not just the exact key.
- *
- * Blocking only "partner" was not enough: "Network Partner" becomes the key `network_partner`,
- * sailed through, and appeared on the public form as an option — which is precisely the confusion
- * the reservation exists to prevent, whatever the key underneath happens to be.
- */
-export function isReservedRegKey(key: string): boolean {
-  const k = (key || "").trim().toLowerCase();
-  if (RESERVED_REG_KEYS.includes(k)) return true;
-  return /(^|_)partners?(_|$)/.test(k);
-}
+export const RESERVED_REG_KEYS: string[] = [];
 
 /** A label typed by a person → a stable key. "Consultant (part-time)" → "consultant_part_time". */
 export function regKeyFrom(label: string): string {
@@ -960,7 +949,7 @@ export async function listRegTypes(includeArchived = false): Promise<RegType[]> 
 
 export async function upsertRegType(t: { key: string; label: string; enabled: boolean; sort?: number; terms?: string | null }) {
   const key = t.key.trim().toLowerCase();
-  if (!key || isReservedRegKey(key)) throw new Error("That name is reserved");
+  if (!key) throw new Error("That name has nothing usable in it");
   return withClient((c) => c.query(
     `INSERT INTO reg_types (key,label,enabled,sort,terms) VALUES ($1,$2,$3,$4,$5)
      ON CONFLICT (key) DO UPDATE SET label=$2, enabled=$3, sort=$4, terms=$5, archived=FALSE`,
@@ -980,7 +969,6 @@ export async function upsertRegType(t: { key: string; label: string; enabled: bo
  */
 export async function removeRegType(key: string): Promise<{ removed: boolean; inUse: number }> {
   const k = key.trim().toLowerCase();
-  if (RESERVED_REG_KEYS.includes(k)) throw new Error("That kind cannot be removed");
   return (await withClient(async (c) => {
     const r = await c.query(
       `SELECT COUNT(*)::int n FROM employees WHERE emp_type=$1 AND deleted_at IS NULL`, [k]);

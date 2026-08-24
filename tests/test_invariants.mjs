@@ -321,19 +321,14 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     fail("R14 the form no longer renders the configured kinds:", "adding one would change nothing");
 
   // The submit route decides what lands in employees.emp_type, so it must check the value against
-  // what is actually offered rather than trusting whatever was posted.
+  // what is actually offered rather than trusting whatever was posted. (Nothing is reserved any
+  // more — the owner decides the list — but an arbitrary value posted straight at this public
+  // endpoint must still not be able to invent a kind that was never offered.)
   const submit = code("app/api/onboarding-form/route.ts");
   if (!/listRegTypes\s*\(/.test(submit))
     fail("R14 the submitted kind is no longer validated:", "any emp_type could be posted straight in");
-  if (!/isReservedRegKey\s*\(/.test(submit))
-    fail("R14 a reserved kind could be submitted:", "'partner' would grant partner rules from a public form");
 
   const db = code("lib/portal-db.ts");
-  if (!/isReservedRegKey/.test(db))
-    fail("R14 'partner' is no longer reserved:", "it could be added as a public registration kind");
-  // Matching the exact key was not enough — "Network Partner" became `network_partner` and got in.
-  if (!/partners\?/.test(db))
-    fail("R14 only the exact key 'partner' is blocked:", "'Network Partner' would slip through again");
   // Remove must mean what the button says. Always archiving made "Remove" behave as "Hide": the
   // row stayed in the list marked Hidden and never went away, which is not what was asked for.
   // Keeping it is only justified when somebody actually holds the key — otherwise their record

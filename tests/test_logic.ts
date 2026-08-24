@@ -12,7 +12,7 @@ import { hostOrder } from "../lib/booking/google";
 import { taskStatus, workStats, reviewAverage, tenureScore, weekStartIST, tasksInWeek, type Task, type Review } from "../lib/portal-db";
 import { shouldAlert, type Tracked } from "../lib/monitor/state";
 import { roleLabel } from "../lib/role-label";
-import { regKeyFrom, RESERVED_REG_KEYS, isReservedRegKey } from "../lib/portal-db";
+import { regKeyFrom } from "../lib/portal-db";
 import { shouldSignOut } from "../lib/session-ended";
 import { stillIgnored } from "../lib/monitor/state";
 
@@ -188,16 +188,10 @@ console.log("\n── adding a kind of person ──");
   ok(regKeyFrom("Part-time Writer") === "part_time_writer", "punctuation and spaces collapse");
   ok(regKeyFrom("  Volunteer  ") === "volunteer", "stray spacing does not become part of the key");
   ok(regKeyFrom("!!!") === "", "a name with nothing usable in it yields no key, rather than a junk one");
-  // emp_type "partner" carries real rules — their own dashboard, the 2% override, no network of
-  // their own. A kind on the PUBLIC form that grants those would hand them to anyone with the link.
-  ok(RESERVED_REG_KEYS.includes("partner"), "'partner' is reserved and can never be offered on the form");
-  ok(RESERVED_REG_KEYS.includes(regKeyFrom("Partner")), "…including when typed as a label");
-  // Blocking the exact key was not enough: "Network Partner" becomes `network_partner`, sailed
-  // through, and showed up as an option on the public form.
-  ok(isReservedRegKey(regKeyFrom("Network Partner")), "'Network Partner' is refused too, key or no key");
-  ok(isReservedRegKey("partners"), "…and the plural");
-  ok(!isReservedRegKey("partnership"), "but a word that merely contains it is fine");
-  ok(!isReservedRegKey("consultant") && !isReservedRegKey("volunteer"), "ordinary kinds are unaffected");
+  // Nothing is reserved any more — the owner decides what the form offers. What still matters is
+  // that a key is always derivable, since it is what lands in employees.emp_type.
+  ok(regKeyFrom("Network Partner") === "network_partner", "any label the owner types produces a usable key");
+  ok(regKeyFrom("Partner") === "partner", "…including one that carries partner behaviour, which is the owner's call");
 }
 
 console.log("\n── when a 401 means 'sign in again' ──");

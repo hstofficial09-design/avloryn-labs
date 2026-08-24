@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/portal-auth";
 import { listRoles, upsertRole, archiveRole, renameRole, setRoleDefaultTerms, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig,
-  listRegTypes, upsertRegType, removeRegType, regKeyFrom, RESERVED_REG_KEYS, isReservedRegKey, setRoleJoiningLetter } from "@/lib/portal-db";
+  listRegTypes, upsertRegType, removeRegType, regKeyFrom, setRoleJoiningLetter } from "@/lib/portal-db";
 import { defaultTermsText, standardNdaText, roleLabel, isHrRole, sensitiveClause, defaultJoiningLetterText, sampleDataFor } from "@/lib/intern-docs";
 import { bustFormConfigCache } from "@/app/api/onboarding-form/config/route";
 
@@ -105,11 +105,6 @@ export async function POST(req: Request) {
       // employees.emp_type for everyone who joined, and dashboards and documents read it.
       const key = String(t.key || "").trim().toLowerCase() || regKeyFrom(label);
       if (!key) return NextResponse.json({ error: "That name has no letters or numbers in it" }, { status: 400 });
-      if (isReservedRegKey(key)) {
-        return NextResponse.json(
-          { error: "“Partner” is set aside — network partners are added and approved from the network, not this form." },
-          { status: 400 });
-      }
       await upsertRegType({
         key, label, enabled: t.enabled !== false,
         sort: Number.isFinite(+t.sort) ? +t.sort : 100,
