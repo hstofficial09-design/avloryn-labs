@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/portal-auth";
 import { listRoles, upsertRole, archiveRole, renameRole, setRoleDefaultTerms, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig,
-  listRegTypes, upsertRegType, archiveRegType, regKeyFrom, RESERVED_REG_KEYS, isReservedRegKey, setRoleJoiningLetter } from "@/lib/portal-db";
+  listRegTypes, upsertRegType, removeRegType, regKeyFrom, RESERVED_REG_KEYS, isReservedRegKey, setRoleJoiningLetter } from "@/lib/portal-db";
 import { defaultTermsText, standardNdaText, roleLabel, isHrRole, sensitiveClause, defaultJoiningLetterText, sampleDataFor } from "@/lib/intern-docs";
 import { bustFormConfigCache } from "@/app/api/onboarding-form/config/route";
 
@@ -120,10 +120,10 @@ export async function POST(req: Request) {
     if (d.action === "reg-type-archive") {
       const key = String(d.key || "").trim().toLowerCase();
       if (!key) return NextResponse.json({ error: "Which kind?" }, { status: 400 });
-      // Kept, not deleted: people already carry this key, and a record pointing at a kind nothing
-      // can name reads as broken data.
-      await archiveRegType(key);
-      return NextResponse.json({ ok: true });
+      // Gone if nobody holds it; hidden and kept if somebody does, because their record would
+      // otherwise point at a kind nothing can name. The caller is told which happened.
+      const r = await removeRegType(key);
+      return NextResponse.json({ ok: true, ...r });
     }
 
     if (d.action === "role-default") {

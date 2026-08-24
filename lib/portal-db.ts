@@ -968,15 +968,30 @@ export async function upsertRegType(t: { key: string; label: string; enabled: bo
 }
 
 /**
- * Archive, never delete.
+ * Remove a kind — really remove it, unless somebody is holding it.
  *
- * People already carry this key in employees.emp_type. Removing the row would leave their record
- * pointing at a kind nothing can name any more, so it is hidden from the form and kept for them.
+ * The first version always archived, which meant "Remove" quietly behaved as "Hide": the row stayed
+ * in the list marked Hidden and never went away. The reason for archiving is real but narrow —
+ * people already carry this key in employees.emp_type, and deleting it would leave their record
+ * pointing at a kind nothing can name. That reason does not apply when nobody has ever joined as
+ * it, which is exactly the case for one added by mistake.
+ *
+ * So: in use → hidden and kept, and the caller is told. Unused → gone.
  */
-export async function archiveRegType(key: string) {
+export async function removeRegType(key: string): Promise<{ removed: boolean; inUse: number }> {
   const k = key.trim().toLowerCase();
   if (RESERVED_REG_KEYS.includes(k)) throw new Error("That kind cannot be removed");
-  return withClient((c) => c.query(`UPDATE reg_types SET archived=TRUE, enabled=FALSE WHERE key=$1`, [k]));
+  return (await withClient(async (c) => {
+    const r = await c.query(
+      `SELECT COUNT(*)::int n FROM employees WHERE emp_type=$1 AND deleted_at IS NULL`, [k]);
+    const inUse = +r.rows[0]?.n || 0;
+    if (inUse > 0) {
+      await c.query(`UPDATE reg_types SET archived=TRUE, enabled=FALSE WHERE key=$1`, [k]);
+      return { removed: false, inUse };
+    }
+    await c.query(`DELETE FROM reg_types WHERE key=$1`, [k]);
+    return { removed: true, inUse: 0 };
+  }))!;
 }
 
 // ── Full role config (onboarding form + legal) ───────────────────────────────

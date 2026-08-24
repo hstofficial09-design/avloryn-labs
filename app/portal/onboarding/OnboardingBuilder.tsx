@@ -98,11 +98,11 @@ function RolesTab({ roles, regTypes, nda, ndaDefault, ndaIsCustom, sensCl, reloa
     <div className="grid gap-4">
       <NdaCard nda={nda} ndaDefault={ndaDefault} ndaIsCustom={ndaIsCustom} sensCl={sensCl} open={showNda} setOpen={setShowNda} reload={reload} />
       <RegTypesCard types={regTypes} reload={reload} />
-      {roles.map((r) => <RoleCard key={r.track} role={r} regTypes={regTypes} reload={reload} />)}
       <form onSubmit={add} className={card + " flex items-center gap-2 flex-wrap"}>
         <input value={newRole} onChange={(e) => setNewRole(e.target.value)} placeholder="Add a new role (e.g. Design)" className={input + " sm:max-w-sm"} />
         <button type="submit" disabled={busy} className={GOLD + " px-5 py-2.5 text-[13px]"}>Add role</button>
       </form>
+      {roles.map((r) => <RoleCard key={r.track} role={r} regTypes={regTypes} reload={reload} />)}
     </div>
   );
 }
@@ -199,8 +199,13 @@ function RegTypesCard({ types, reload }: { types: RegType[]; reload: () => void 
     finally { setBusy(""); }
   }
   async function remove(t: RegType) {
-    if (!confirm(`Stop offering “${t.label}” on the form?\n\n${t.inUse ? `${t.inUse} person(s) already joined as this — they keep it. ` : ""}You can add it back later.`)) return;
-    setBusy(t.key);
+    // Two genuinely different outcomes, so the question has to be two different questions. Asking
+    // "remove?" and then quietly hiding it — which is what this did — is worse than either.
+    const msg = t.inUse
+      ? `Hide “${t.label}” from the form?\n\n${t.inUse} person(s) already joined as this, so it is kept on their records and cannot be deleted. Nobody new will be able to pick it.`
+      : `Delete “${t.label}”?\n\nNobody has joined as this, so it goes for good. You can add it again any time.`;
+    if (!confirm(msg)) return;
+    setBusy(t.key); setErr("");
     try { await api("reg-type-archive", { key: t.key }); reload(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Could not remove"); }
     finally { setBusy(""); }
@@ -262,8 +267,13 @@ function RegTypeRow({ t, busy, pill, onSave, onRemove }: {
             )}
             <button onClick={() => onSave({ enabled: !t.enabled })} disabled={busy}
               className={pill(t.enabled) + " !text-[11.5px]"}>{t.enabled ? "On the form" : "Hidden"}</button>
+            {/* Says what it will actually do. A kind somebody holds can only be hidden — deleting it
+                would leave their record pointing at a kind nothing can name. */}
             <button onClick={onRemove} disabled={busy}
-              className="text-[11.5px] text-[#b3341f] px-2 py-1 rounded-lg hover:bg-[#b3341f]/8">Remove</button>
+              title={t.inUse ? `${t.inUse} person(s) joined as this — it can be hidden, not deleted` : "Nobody has joined as this — it will be deleted"}
+              className="text-[11.5px] text-[#b3341f] px-2 py-1 rounded-lg hover:bg-[#b3341f]/8">
+              {t.inUse ? "Hide" : "Delete"}
+            </button>
           </div>
   );
 }

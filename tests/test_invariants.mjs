@@ -334,10 +334,14 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   // Matching the exact key was not enough — "Network Partner" became `network_partner` and got in.
   if (!/partners\?/.test(db))
     fail("R14 only the exact key 'partner' is blocked:", "'Network Partner' would slip through again");
-  // Archive, never delete: people already carry the key in employees.emp_type, and a record
-  // pointing at a kind nothing can name reads as broken data.
-  if (/DELETE FROM reg_types/.test(db))
-    fail("R14 a registration kind can be deleted:", "everyone who joined as it would be orphaned");
+  // Remove must mean what the button says. Always archiving made "Remove" behave as "Hide": the
+  // row stayed in the list marked Hidden and never went away, which is not what was asked for.
+  // Keeping it is only justified when somebody actually holds the key — otherwise their record
+  // would point at a kind nothing can name. So: in use → hidden and kept; unused → gone.
+  if (!/DELETE FROM reg_types/.test(db))
+    fail("R14 a kind nobody holds cannot be deleted:", "'Remove' would quietly only hide it again");
+  if (!/emp_type=\$1[\s\S]{0,300}archived=TRUE/.test(db))
+    fail("R14 a kind somebody holds is no longer protected:", "deleting it would orphan their record");
 }
 
 // ── R15 · the database connection budget is shared, and small ────────────────────────────────
