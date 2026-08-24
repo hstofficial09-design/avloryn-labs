@@ -382,6 +382,41 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   }
 }
 
+// ── R17 · the form belongs to the kind, and so does the document ──────────────────────────────
+// One shared form asked an employee for their college and how many months they were staying, and
+// called everything an internship. Worse, the built-in agreement is an internship agreement in
+// SUBSTANCE — "unpaid internship", "no employer-employee relationship is created" — so handing it
+// to an employee is not clumsy wording, it is the wrong document saying close to the opposite of
+// what was meant, and they sign it.
+{
+  const form = code("app/onboarding-form/intern-form.tsx");
+  // Checked on the ASSIGNMENT, not the name: the first version of this rule accepted `effFields`
+  // existing anywhere, so pointing it back at the shared config still passed.
+  if (!/effFields\s*=\s*[^;\n]*\bkind\b/.test(form))
+    fail("R17 the form no longer follows the chosen kind:", "everyone is asked the same thing again");
+  if (!/effCustom\s*=\s*[^;\n]*\bkind\b/.test(form))
+    fail("R17 the questions no longer follow the chosen kind:", "app/onboarding-form/intern-form.tsx");
+  if (/Section title="Internship"/.test(form))
+    fail("R17 the form calls every kind an internship:", "an employee reads intern wording throughout");
+  if (!/NOUN/.test(form))
+    fail("R17 document wording no longer follows the kind:", "app/onboarding-form/intern-form.tsx");
+
+  // The PDF must try the role, then the KIND, before the built-in template.
+  const pdf = code("app/api/onboarding-form/route.ts");
+  if (!/kindCfg\?\.terms/.test(pdf))
+    fail("R17 the kind's own agreement is skipped:", "a non-intern would be given the internship agreement");
+  if (!/kindCfg\?\.joining/.test(pdf))
+    fail("R17 the kind's own joining letter is skipped:", "app/api/onboarding-form/route.ts");
+
+  // A role created inside a kind's tab must land in THAT kind, not silently become an intern one.
+  const builder = code("app/portal/onboarding/OnboardingBuilder.tsx");
+  if (!/default_emp_type:\s*kind\.key/.test(builder))
+    fail("R17 a new role does not join the kind it was added under:", "it would default to intern");
+  // A role whose kind no longer exists must still be reachable, or it vanishes from every tab.
+  if (!/orphanRoles/.test(builder))
+    fail("R17 a role with no valid kind would be invisible:", "nothing would list it");
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");

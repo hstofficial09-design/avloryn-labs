@@ -18,6 +18,15 @@ type RoleOpt = {
 
 const ID_TYPES = ["PAN card", "College / Student ID", "Driving Licence", "Voter ID", "Passport"];
 
+/** A kind of person who can register, with its OWN form and its own word for its documents. */
+type RegKind = {
+  key: string; label: string;
+  /** "Internship", "Employment", "Consulting" — used wherever the documents name themselves. */
+  noun: string;
+  fields: Record<string, { visible?: boolean; required?: boolean }>;
+  custom: { label: string; type: string; required: boolean }[];
+};
+
 function fileToDataURL(file: File): Promise<string> {
   return new Promise((res, rej) => {
     const r = new FileReader();
@@ -85,7 +94,7 @@ export default function InternForm() {
   const [ndaText, setNdaText] = useState<string | null>(null);
   // "I am registering as", as the owner configured it. Seeded with Intern so the form is usable
   // for the moment before the config lands, and replaced the instant it does.
-  const [regTypes, setRegTypes] = useState<{ key: string; label: string }[]>([{ key: "intern", label: "Intern" }]);
+  const [regTypes, setRegTypes] = useState<RegKind[]>([{ key: "intern", label: "Intern", noun: "Internship", fields: {}, custom: [] }]);
   useEffect(() => {
     fetch("/api/onboarding-form/config").then((r) => r.json()).then((d) => {
       if (Array.isArray(d.roles) && d.roles.length) {
@@ -98,13 +107,25 @@ export default function InternForm() {
         // so a kind the owner turns off can never leave someone submitting a dead value.
         setF((cur) => (d.regTypes.some((t: any) => t.key === cur.regType) ? cur : { ...cur, regType: d.regTypes[0].key }));
       }
+      // Fields and questions belong to the kind now; the shared ones are only the seed used
+      // before a kind is chosen (and the server already folded them in as the fallback).
       if (d.fields && typeof d.fields === "object") setFieldsCfg(d.fields);
       if (Array.isArray(d.custom)) setCustomQ(d.custom.filter((q: any) => q?.label));
       if (typeof d.nda === "string" && d.nda.trim()) setNdaText(d.nda);
     }).catch(() => {});
   }, []);
-  const fVis = (k: string) => fieldsCfg[k]?.visible !== false;      // default shown
-  const fReq = (k: string) => fieldsCfg[k]?.required !== false;     // default required (owner can relax)
+  /** The kind being registered, with its own form and wording. */
+  const kind = useMemo(
+    () => regTypes.find((t) => t.key === f.regType) || regTypes[0] || null,
+    [regTypes, f.regType]);
+  /** What this kind's documents are called — "Internship", "Employment", "Consulting". */
+  const NOUN = kind?.noun || "Internship";
+  // Whatever the chosen kind asks for, falling back to the shared set before one is chosen.
+  const effFields = kind?.fields && Object.keys(kind.fields).length ? kind.fields : fieldsCfg;
+  const effCustom = kind?.custom?.length ? kind.custom : customQ;
+
+  const fVis = (k: string) => effFields[k]?.visible !== false;      // default shown
+  const fReq = (k: string) => effFields[k]?.required !== false;     // default required (owner can relax)
   const star = (k: string) => (fReq(k) ? " *" : "");
   const [photo, setPhoto] = useState<FilePayload>();
   const [idDoc, setIdDoc] = useState<FilePayload>();
@@ -203,7 +224,7 @@ export default function InternForm() {
     if (!f.fullName || !f.dob || !f.email || !f.startDate) { setErr("Please fill all required fields."); return; }
     if (fVis("mobile") && fReq("mobile") && !f.mobile) { setErr("Please add your mobile number."); return; }
     if (fVis("address") && fReq("address") && !f.address) { setErr("Please add your address."); return; }
-    for (const q of customQ) if (q.required && !(customAns[q.label] || "").trim()) { setErr(`Please answer: ${q.label}`); return; }
+    for (const q of effCustom) if (q.required && !(customAns[q.label] || "").trim()) { setErr(`Please answer: ${q.label}`); return; }
     if (!photo) { setErr("Please upload your photo."); return; }
     if (fVis("govId") && fReq("govId") && !idDoc) { setErr("Please upload a photo ID."); return; }
     if (fVis("student")) {
@@ -221,7 +242,7 @@ export default function InternForm() {
         body: JSON.stringify({
           data: { ...f, startDate: fmtDate(f.startDate), dob: fmtDate(f.dob) },
           isStudent: f.isStudent, consent, signature,
-          custom: customQ.map((q) => ({ q: q.label, a: (customAns[q.label] || "").trim() })).filter((x) => x.a),
+          custom: effCustom.map((q) => ({ q: q.label, a: (customAns[q.label] || "").trim() })).filter((x) => x.a),
           files: { photo, idDoc, studentDoc: f.isStudent ? studentDoc : undefined },
         }),
       });
@@ -259,7 +280,7 @@ export default function InternForm() {
         </div>
       </div>
       <p className="text-sm text-muted-foreground mb-8 leading-relaxed">
-        Welcome! You&apos;ve been selected to intern with <b>Avloryn Labs</b> — the team building <b>LivoDraft</b>.
+        Welcome! You&apos;ve been selected to join <b>Avloryn Labs</b> — the team building <b>LivoDraft</b>.
         Please complete your details below and sign your agreements to get started. This page is for selected candidates only.
       </p>
 
@@ -335,10 +356,10 @@ export default function InternForm() {
         )}
 
         {/* Custom questions from the owner's Onboarding Form settings */}
-        {customQ.length > 0 && (
+        {effCustom.length > 0 && (
           <Section title="A few more questions">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {customQ.map((q, i) => (
+              {effCustom.map((q, i) => (
                 <Field key={i} label={q.label + (q.required ? " *" : "")}>
                   <input type={q.type === "date" ? "date" : q.type === "number" ? "number" : "text"} className={inputCls} value={customAns[q.label] || ""} onChange={(e) => setCustomAns((a) => ({ ...a, [q.label]: e.target.value }))} />
                 </Field>
@@ -348,7 +369,8 @@ export default function InternForm() {
         )}
 
         {/* Internship */}
-        <Section title="Internship">
+        {/* Titled after the kind — this section said "Internship" to an employee. */}
+        <Section title={NOUN}>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Field label="Track *">
               <select className={inputCls} value={f.role} onChange={(e) => { const r = e.target.value; up("role", r); if (isHrRole(r)) up("duration", "2"); }}>
@@ -369,12 +391,12 @@ export default function InternForm() {
               </select>
             </Field>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-2">Your start date is prefilled to today — change it if you&apos;re joining later. {isHrRole(f.role) ? "On successful completion of your internship you'll receive an Internship Completion Certificate." : "Please note: a minimum of 3 months is required to be eligible for the completion certificate."}</p>
+          <p className="text-[11px] text-muted-foreground mt-2">Your start date is prefilled to today — change it if you&apos;re joining later. {isHrRole(f.role) ? `On successful completion you'll receive a Completion Certificate.` : `Please note: a minimum of 3 months is required to be eligible for the completion certificate.`}</p>
         </Section>
 
         {/* Agreements */}
         <Section title="Agreements">
-          <p className="text-xs text-muted-foreground mb-2">Please read the Internship Agreement and NDA below, then sign once — your signature applies to both.</p>
+          <p className="text-xs text-muted-foreground mb-2">Please read the {NOUN} Agreement and NDA below, then sign once — your signature applies to both.</p>
           <div className="max-h-64 overflow-y-auto rounded-xl neu-inset p-4 text-[12px] leading-relaxed text-foreground/80 space-y-3">
             <AgreementText title={ia.title} intro={ia.intro} clauses={ia.clauses} />
             <AgreementText title={nda.title} intro={nda.intro} clauses={nda.clauses} />
@@ -391,7 +413,7 @@ export default function InternForm() {
 
           <label className="mt-4 flex items-start gap-2 text-[13px]">
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5" />
-            <span>I confirm the information provided is correct, and I accept the Internship Agreement and NDA. I consent to Avloryn Labs securely storing these details for records and verification.</span>
+            <span>I confirm the information provided is correct, and I accept the {NOUN} Agreement and NDA. I consent to Avloryn Labs securely storing these details for records and verification.</span>
           </label>
         </Section>
 

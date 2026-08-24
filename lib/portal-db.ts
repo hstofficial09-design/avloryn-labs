@@ -113,6 +113,25 @@ async function ensureSchema(c: PoolClient) {
     terms TEXT,
     archived BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT now())`);
+  // Everything the form asks, per kind. One shared set meant an Employee was asked for their
+  // college and how many months they were staying, and read "Internship" throughout — the form
+  // still assumed everyone was an intern.
+  //
+  // NULL means "not set for this kind" and falls back to the shared config, so nothing changes for
+  // anyone until the owner actually sets something.
+  await c.query(`ALTER TABLE reg_types ADD COLUMN IF NOT EXISTS fields JSONB`);
+  await c.query(`ALTER TABLE reg_types ADD COLUMN IF NOT EXISTS custom JSONB`);
+  // The word the documents use — "Internship", "Employment", "Consulting". NULL derives it from
+  // the label, so an owner who never touches it still gets sensible wording.
+  await c.query(`ALTER TABLE reg_types ADD COLUMN IF NOT EXISTS doc_noun TEXT`);
+  // The kind's OWN default agreement and joining letter, inherited by its roles.
+  //
+  // This is not word-swapping. The built-in template is an internship agreement in substance —
+  // "unpaid internship", "no employer-employee relationship is created" — so handing it to an
+  // employee is not clumsy wording, it is the wrong document, saying close to the opposite of
+  // what was intended. A kind that is not intern-shaped needs its own text, written once here and
+  // inherited by every role under it.
+  await c.query(`ALTER TABLE reg_types ADD COLUMN IF NOT EXISTS joining TEXT`);
   // Seeds match what the form already offered, so nothing shifts on the day this lands. Employee
   // arrives enabled — it was only ever "coming soon" because nothing rendered it.
   for (const [k, l, srt] of [["intern", "Intern", 10], ["employee", "Employee", 20]] as const) {
@@ -908,7 +927,32 @@ export async function listTrackSettings(): Promise<{ track: string; commission_e
 }
 
 // ── Registration kinds ("I am registering as") ───────────────────────────────
-export type RegType = { key: string; label: string; enabled: boolean; sort: number; terms: string | null; inUse?: number; roles?: number };
+export type RegType = {
+  key: string; label: string; enabled: boolean; sort: number; terms: string | null;
+  inUse?: number; roles?: number;
+  /** Per-kind form config; null = fall back to the shared one. */
+  fields?: any | null;
+  custom?: any[] | null;
+  /** The word used in this kind's documents; null = derived from the label. */
+  doc_noun?: string | null;
+  /** The kind's own default agreement + joining letter, inherited by its roles. */
+  joining?: string | null;
+};
+
+/**
+ * "Intern" → "Internship", "Employee" → "Employment", anything else → itself.
+ *
+ * Documents read "your Internship Agreement" and "on completion of your internship" whoever was
+ * joining. The noun has to follow the kind, and the two common ones do not simply take the label.
+ */
+export function docNounFor(t: { label: string; doc_noun?: string | null }): string {
+  const set = (t.doc_noun || "").trim();
+  if (set) return set;
+  const l = (t.label || "").trim();
+  if (/^intern$/i.test(l)) return "Internship";
+  if (/^employee$/i.test(l)) return "Employment";
+  return l || "Engagement";
+}
 
 /**
  * Nothing is reserved.
@@ -930,7 +974,7 @@ export function regKeyFrom(label: string): string {
 export async function listRegTypes(includeArchived = false): Promise<RegType[]> {
   return (await withClient(async (c) => {
     const r = await c.query(
-      `SELECT rt.key, rt.label, rt.enabled, rt.sort, rt.terms,
+      `SELECT rt.key, rt.label, rt.enabled, rt.sort, rt.terms, rt.fields, rt.custom, rt.doc_noun, rt.joining,
               (SELECT COUNT(*)::int FROM employees e WHERE e.emp_type = rt.key AND e.deleted_at IS NULL) AS in_use,
               -- How many roles are set up for this kind. A kind with none is offered on the form
               -- but leads to an empty track list, so the owner needs to see that where they can
@@ -943,8 +987,22 @@ export async function listRegTypes(includeArchived = false): Promise<RegType[]> 
     return r.rows.map((x: any) => ({
       key: x.key, label: x.label, enabled: x.enabled !== false, sort: +x.sort || 0,
       terms: x.terms || null, inUse: +x.in_use || 0, roles: +x.roles || 0,
+      fields: x.fields ?? null, custom: x.custom ?? null, doc_noun: x.doc_noun || null,
+      joining: x.joining || null,
     }));
   })) || [];
+}
+
+/** Save one kind's own form config. Passing null for a piece puts it back on the shared default. */
+export async function setRegTypeForm(key: string, patch: { fields?: any; custom?: any[] | null; doc_noun?: string | null; terms?: string | null; joining?: string | null }) {
+  const k = key.trim().toLowerCase();
+  return withClient(async (c) => {
+    if ("fields" in patch) await c.query(`UPDATE reg_types SET fields=$2 WHERE key=$1`, [k, patch.fields ?? null]);
+    if ("custom" in patch) await c.query(`UPDATE reg_types SET custom=$2 WHERE key=$1`, [k, patch.custom ? JSON.stringify(patch.custom) : null]);
+    if ("doc_noun" in patch) await c.query(`UPDATE reg_types SET doc_noun=$2 WHERE key=$1`, [k, (patch.doc_noun || "").trim() || null]);
+    if ("terms" in patch) await c.query(`UPDATE reg_types SET terms=$2 WHERE key=$1`, [k, ((patch as any).terms || "").trim() || null]);
+    if ("joining" in patch) await c.query(`UPDATE reg_types SET joining=$2 WHERE key=$1`, [k, ((patch as any).joining || "").trim() || null]);
+  });
 }
 
 export async function upsertRegType(t: { key: string; label: string; enabled: boolean; sort?: number; terms?: string | null }) {

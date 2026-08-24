@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/portal-auth";
 import { listRoles, upsertRole, archiveRole, renameRole, setRoleDefaultTerms, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig,
-  listRegTypes, upsertRegType, removeRegType, regKeyFrom, setRoleJoiningLetter } from "@/lib/portal-db";
+  listRegTypes, upsertRegType, removeRegType, regKeyFrom, setRoleJoiningLetter, setRegTypeForm, docNounFor } from "@/lib/portal-db";
 import { defaultTermsText, standardNdaText, roleLabel, isHrRole, sensitiveClause, defaultJoiningLetterText, sampleDataFor } from "@/lib/intern-docs";
 import { bustFormConfigCache } from "@/app/api/onboarding-form/config/route";
 
@@ -42,7 +42,9 @@ export async function GET() {
   // own saved baseline if they set one, else the standard template.
   const ndaText = legal?.nda || standardNdaText();
   return NextResponse.json({
-    roles: withDefaults, regTypes, form, legal, ndaText,
+    roles: withDefaults,
+    regTypes: regTypes.map((t) => ({ ...t, noun: docNounFor(t) })),
+    form, legal, ndaText,
     ndaDefault: legal?.ndaDefault || standardNdaText(),
     ndaIsCustom: !!legal?.nda,
     ndaDefaultIsCustom: !!legal?.ndaDefault,
@@ -112,6 +114,29 @@ export async function POST(req: Request) {
       });
       return NextResponse.json({ ok: true, key });
     }
+    // Everything a kind decides for itself: which fields its form asks, its own questions, the
+    // word its documents use, and the agreement + joining letter its roles inherit.
+    if (d.action === "reg-type-form") {
+      const key = String(d.key || "").trim().toLowerCase();
+      if (!key) return NextResponse.json({ error: "Which kind?" }, { status: 400 });
+      const patch: any = {};
+      if ("fields" in d) patch.fields = d.fields && typeof d.fields === "object" ? d.fields : null;
+      if ("custom" in d) patch.custom = Array.isArray(d.custom) ? d.custom.filter((q: any) => q?.label?.trim()) : null;
+      if ("doc_noun" in d) patch.doc_noun = typeof d.doc_noun === "string" ? d.doc_noun : null;
+      for (const f of ["terms", "joining"] as const) {
+        if (f in d) {
+          const v = typeof d[f] === "string" ? d[f] : "";
+          // Refuse an over-long save rather than silently cutting a legal document in half.
+          if (v.length > TERMS_MAX) {
+            return NextResponse.json({ error: `That text is too long (${v.length.toLocaleString()} characters). The limit is ${TERMS_MAX.toLocaleString()}.` }, { status: 400 });
+          }
+          patch[f] = v;
+        }
+      }
+      await setRegTypeForm(key, patch);
+      return NextResponse.json({ ok: true });
+    }
+
     if (d.action === "reg-type-archive") {
       const key = String(d.key || "").trim().toLowerCase();
       if (!key) return NextResponse.json({ error: "Which kind?" }, { status: 400 });

@@ -31,10 +31,18 @@ async function api(action: string, body: any) {
   return d;
 }
 
-type RegType = { key: string; label: string; enabled: boolean; sort: number; terms: string | null; inUse?: number; roles?: number };
+type RegType = {
+  key: string; label: string; enabled: boolean; sort: number;
+  /** The kind's own default agreement + joining letter, inherited by its roles. */
+  terms: string | null; joining?: string | null;
+  /** Its own form; null = fall back to the shared one. */
+  fields?: Record<string, FieldCfg> | null; custom?: Custom[] | null;
+  /** The word its documents use; null = derived from the label. */
+  doc_noun?: string | null; noun?: string;
+  inUse?: number; roles?: number;
+};
 
 export default function OnboardingBuilder() {
-  const [tab, setTab] = useState<"roles" | "fields">("roles");
   const [roles, setRoles] = useState<Role[]>([]);
   const [regTypes, setRegTypes] = useState<RegType[]>([]);
   const [form, setForm] = useState<Form>({});
@@ -43,22 +51,32 @@ export default function OnboardingBuilder() {
   const [ndaIsCustom, setNdaIsCustom] = useState(false);
   const [sensCl, setSensCl] = useState<{ h?: string; t: string } | null>(null);
   const [err, setErr] = useState("");
-  // FieldsTab seeds its state ONCE from `form`. Rendering it before the config arrives would
-  // seed it with defaults, and a save would then overwrite the real settings — so gate on this.
   const [loaded, setLoaded] = useState(false);
+  // Which kind's tab is open. Everything below belongs to it.
+  const [openKind, setOpenKind] = useState<string>("");
+
   const load = useCallback(async () => {
     try {
       const r = await fetch("/api/portal/onboarding-config"); const d = await r.json();
       setRoles(d.roles || []); setRegTypes(d.regTypes || []); setForm(d.form || {}); setNda(d.ndaText || "");
       setNdaDefault(d.ndaDefault || ""); setNdaIsCustom(!!d.ndaIsCustom); setSensCl(d.sensitiveClause || null);
       setLoaded(true);
-    }
-    catch (e) { setErr(msg(e)); }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not load"); setLoaded(true); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!regTypes.length) return;
+    setOpenKind((k) => (regTypes.some((t) => t.key === k) ? k : regTypes[0].key));
+  }, [regTypes]);
+
+  const rolesFor = (key: string) => roles.filter((r) => (r.default_emp_type || "") === key);
+  // A role whose kind no longer exists would appear under no tab at all — silently invisible.
+  // It gets a tab of its own so it can be moved somewhere real.
+  const orphanRoles = roles.filter((r) => !regTypes.some((t) => t.key === (r.default_emp_type || "")));
+  const kind = regTypes.find((t) => t.key === openKind) || null;
 
   return (
-    <div className="max-w-[840px] mx-auto px-4 sm:px-6 py-8">
+    <div className="max-w-[900px] mx-auto px-4 sm:px-6 py-8">
       <header className="flex items-center justify-between gap-3 flex-wrap mb-7">
         <div className="flex items-center gap-3">
           <LogoMark size={30} />
@@ -67,48 +85,333 @@ export default function OnboardingBuilder() {
         <a href="/portal" className={GHOST + " text-[12.5px] px-3.5 py-1.5"}>← Home</a>
       </header>
 
-      <h1 className="font-serif text-[27px] font-[600] tracking-[-0.01em] mb-1.5">Onboarding Form</h1>
-      <p className="text-[13px] text-muted-foreground mb-6 max-w-[60ch]">Control everything new hires see and agree to — roles, pay, form fields, and each role&rsquo;s terms. The NDA is the same standard for every role.</p>
+      <h1 className="font-serif text-[30px] font-[600] mb-1">Onboarding Form</h1>
+      <p className="text-[13px] text-muted-foreground mb-6 max-w-[62ch]">
+        Everything a new person sees and signs. Each kind of person has its own form, its own
+        questions and its own documents — set them under their tab. The NDA is the one thing
+        everybody signs the same.
+      </p>
 
-      {err && <div className="text-[13px] text-[#b3341f] bg-[#fdeeea] border border-[#f3cfc6] rounded-xl px-3 py-2 mb-5">{err} <button onClick={() => setErr("")} className="ml-2 underline">dismiss</button></div>}
+      {err && <div className="rounded-xl border border-[#eeddb0] bg-[#fdf5e3] text-[#946412] text-[13px] px-4 py-3 mb-4">⚠ {err}</div>}
 
-      <div className="flex gap-2 mb-6">
-        {(["roles", "fields"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`rounded-full px-4 py-2 text-[12.5px] font-[560] capitalize ${tab === t ? "btn-gold" : "neu-chip text-foreground/70"}`}>{t === "roles" ? "Roles & terms" : "Form fields"}</button>
-        ))}
-      </div>
+      {!loaded ? (
+        <div className={card + " text-[13px] text-muted-foreground"}>Loading your settings…</div>
+      ) : (
+        <div className="grid gap-4">
+          <NdaCard nda={nda} ndaDefault={ndaDefault} ndaIsCustom={ndaIsCustom} sensCl={sensCl} reload={load} />
 
-      {!loaded
-        ? <div className="card-lux rounded-3xl p-6 text-[13px] text-muted-foreground">Loading your settings…</div>
-        : tab === "roles" ? <RolesTab roles={roles} regTypes={regTypes} nda={nda} ndaDefault={ndaDefault} ndaIsCustom={ndaIsCustom} sensCl={sensCl} reload={load} /> : <FieldsTab form={form} reload={load} />}
+          {/* One tab per kind. The count is the point — "Employee (0)" says at a glance that
+              nobody choosing it has anything to pick. */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {regTypes.map((t) => {
+              const on = t.key === openKind;
+              return (
+                <button key={t.key} onClick={() => setOpenKind(t.key)}
+                  title={t.enabled ? undefined : "Hidden from the form"}
+                  className={`rounded-full px-4 py-2 text-[12.5px] font-[560] ${on ? "btn-gold" : "neu-chip text-foreground/70"} ${t.enabled ? "" : "opacity-55 line-through decoration-1"}`}>
+                  {t.label} ({rolesFor(t.key).length})
+                </button>
+              );
+            })}
+            {orphanRoles.length > 0 && (
+              <button onClick={() => setOpenKind("__orphans")}
+                title="These roles point at a kind that no longer exists"
+                className={`rounded-full px-4 py-2 text-[12.5px] font-[560] ${openKind === "__orphans" ? "btn-gold" : "neu-chip text-[#b3341f]"}`}>
+                Unassigned ({orphanRoles.length})
+              </button>
+            )}
+            <AddKind reload={load} onAdded={setOpenKind} />
+          </div>
+
+          {openKind === "__orphans" ? (
+            <div className="grid gap-4">
+              <div className={card}>
+                <div className="font-serif text-[16px] font-[600]">Not under any kind</div>
+                <p className="text-[12px] text-muted-foreground mt-1">
+                  These point at a kind that no longer exists, so nobody can reach them on the form.
+                  Move each one to a kind that does.
+                </p>
+              </div>
+              {orphanRoles.map((r) => <RoleCard key={r.track} role={r} regTypes={regTypes} reload={load} />)}
+            </div>
+          ) : kind ? (
+            <KindPanel key={kind.key} kind={kind} sharedForm={form} roles={rolesFor(kind.key)} regTypes={regTypes} reload={load} />
+          ) : (
+            <div className={card + " text-[13px] text-muted-foreground"}>Add a kind of person to begin.</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-/* ─────────── Roles & terms ─────────── */
-function RolesTab({ roles, regTypes, nda, ndaDefault, ndaIsCustom, sensCl, reload }: { roles: Role[]; regTypes: RegType[]; nda: string; ndaDefault: string; ndaIsCustom: boolean; sensCl: { h?: string; t: string } | null; reload: () => void }) {
-  const [newRole, setNewRole] = useState("");
+/** The "+ Add kind" control that sits at the end of the tab strip. */
+function AddKind({ reload, onAdded }: { reload: () => void; onAdded: (key: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
-  const [showNda, setShowNda] = useState(false);
+  const [err, setErr] = useState("");
   async function add(e: React.FormEvent) {
-    e.preventDefault(); if (!newRole.trim()) return; setBusy(true);
-    try { await api("role", { role: { track: newRole.trim(), commission_enabled: true } }); setNewRole(""); reload(); } finally { setBusy(false); }
+    e.preventDefault();
+    const label = name.trim(); if (!label) return;
+    setBusy(true); setErr("");
+    try {
+      const d = await api("reg-type", { regType: { label, enabled: true, sort: 100 } });
+      setName(""); setOpen(false); reload(); if (d?.key) onAdded(d.key);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not add"); }
+    finally { setBusy(false); }
   }
+  if (!open) return <button onClick={() => setOpen(true)} className="rounded-full px-4 py-2 text-[12.5px] font-[560] neu-chip text-gold">+ Add kind</button>;
+  return (
+    <form onSubmit={add} className="flex items-center gap-2">
+      <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Consultant"
+        onKeyDown={(e) => { if (e.key === "Escape") { setOpen(false); setName(""); } }}
+        className={input + " !py-1.5 max-w-[210px]"} />
+      <button type="submit" disabled={busy} className={GOLD + " px-4 py-2 text-[12.5px]"}>Add</button>
+      {err && <span className="text-[11.5px] text-[#b3341f]">{err}</span>}
+    </form>
+  );
+}
+
+/* ─────────── One kind of person: its form, its documents, its roles ─────────── */
+/**
+ * Everything one kind of person decides for itself.
+ *
+ * The form used to ask everybody the same thing and call it an internship, so an employee was
+ * asked for their college and how many months they were staying, and signed something titled
+ * "Internship Agreement". Each kind now carries its own form, its own questions, its own wording
+ * and its own documents, and its roles live under it instead of in one flat pile.
+ */
+function KindPanel({ kind, sharedForm, roles, regTypes, reload }: {
+  kind: RegType & { noun?: string }; sharedForm: Form; roles: Role[]; regTypes: RegType[]; reload: () => void;
+}) {
+  const [newRole, setNewRole] = useState("");
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const [label, setLabel] = useState(kind.label);
+  const [noun, setNoun] = useState(kind.doc_noun || "");
+  useEffect(() => { setLabel(kind.label); setNoun(kind.doc_noun || ""); }, [kind.key, kind.label, kind.doc_noun]);
+
+  async function saveKind(patch: Partial<RegType>) {
+    setBusy("kind"); setErr("");
+    try { await api("reg-type", { regType: { ...kind, ...patch } }); reload(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Save failed"); }
+    finally { setBusy(""); }
+  }
+  async function saveForm(patch: any) {
+    setBusy("form"); setErr("");
+    try { await api("reg-type-form", { key: kind.key, ...patch }); reload(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Save failed"); }
+    finally { setBusy(""); }
+  }
+  async function addRole(e: React.FormEvent) {
+    e.preventDefault();
+    const track = newRole.trim(); if (!track) return;
+    setBusy("role"); setErr("");
+    try {
+      // Created straight into THIS kind. Adding used to leave the kind unset, so every new role
+      // silently became an intern one and had to be moved by hand.
+      await api("role", { role: { track, commission_enabled: true, default_emp_type: kind.key } });
+      setNewRole(""); reload();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not add"); }
+    finally { setBusy(""); }
+  }
+  async function removeKind() {
+    const msg = kind.inUse
+      ? `Hide “${kind.label}” from the form?\n\n${kind.inUse} person(s) already joined as this, so it is kept on their records and cannot be deleted.`
+      : `Delete “${kind.label}”?\n\nNobody has joined as this, so it goes for good.`;
+    if (!confirm(msg)) return;
+    setBusy("kind");
+    try { await api("reg-type-archive", { key: kind.key }); reload(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Could not remove"); }
+    finally { setBusy(""); }
+  }
+
+  const pill = (on: boolean) => `rounded-full px-3 py-1 text-[11.5px] font-[600] ${on ? "btn-gold" : "bg-card ring-hairline text-muted-foreground"}`;
+  const commit = () => { const v = label.trim(); if (v && v !== kind.label) saveKind({ label: v }); else setLabel(kind.label); };
+  // The built-in agreement is an INTERNSHIP agreement in substance. Handing it to any other kind
+  // is not clumsy wording — it is the wrong document, and they would sign it.
+  const usesInternDefault = !kind.terms && !roles.some((r) => (r.terms || "").trim());
+  const notIntern = !/^intern$/i.test(kind.label);
+
   return (
     <div className="grid gap-4">
-      <NdaCard nda={nda} ndaDefault={ndaDefault} ndaIsCustom={ndaIsCustom} sensCl={sensCl} open={showNda} setOpen={setShowNda} reload={reload} />
-      <RegTypesCard types={regTypes} reload={reload} />
-      <form onSubmit={add} className={card + " flex items-center gap-2 flex-wrap"}>
-        <input value={newRole} onChange={(e) => setNewRole(e.target.value)} placeholder="Add a new role (e.g. Design)" className={input + " sm:max-w-sm"} />
-        <button type="submit" disabled={busy} className={GOLD + " px-5 py-2.5 text-[13px]"}>Add role</button>
-      </form>
+      <div className={card}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input value={label} onChange={(e) => setLabel(e.target.value)} onBlur={commit}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setLabel(kind.label); }}
+            className={input + " !py-1.5 flex-1 min-w-[160px] font-[600]"} />
+          <span className="text-[11px] text-faint font-mono">{kind.key}</span>
+          {!!kind.inUse && <span className="text-[11px] text-faint">{kind.inUse} joined</span>}
+          <button onClick={() => saveKind({ enabled: !kind.enabled })} disabled={!!busy} className={pill(kind.enabled) + " !text-[11.5px]"}>
+            {kind.enabled ? "On the form" : "Hidden"}
+          </button>
+          <button onClick={removeKind} disabled={!!busy}
+            title={kind.inUse ? `${kind.inUse} person(s) joined as this — it can be hidden, not deleted` : "Nobody has joined as this — it will be deleted"}
+            className="text-[11.5px] text-[#b3341f] px-2 py-1 rounded-lg hover:bg-[#b3341f]/8">{kind.inUse ? "Hide" : "Delete"}</button>
+        </div>
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          <label className="text-[12px] text-muted-foreground">Documents call this</label>
+          <input value={noun} onChange={(e) => setNoun(e.target.value)}
+            onBlur={() => { if ((noun || "").trim() !== (kind.doc_noun || "")) saveForm({ doc_noun: noun }); }}
+            placeholder={kind.noun || "Internship"} className={input + " !py-1.5 max-w-[220px]"} />
+          <span className="text-[11.5px] text-faint">e.g. “{kind.noun || "Internship"} Agreement”, “your {(kind.noun || "Internship").toLowerCase()}”</span>
+        </div>
+        {err && <div className="text-[12px] text-[#b3341f] mt-2">{err}</div>}
+      </div>
+
+      {notIntern && usesInternDefault && (
+        <div className="rounded-2xl px-4 py-3 text-[12.5px]" style={{ background: "rgba(179,52,31,0.06)", boxShadow: "inset 0 0 0 1px rgba(179,52,31,0.35)", color: "#8a2b1a" }}>
+          <b>No agreement written for {kind.label} yet.</b> Anyone joining as this will be given the
+          built-in <i>internship</i> agreement — which says the engagement is unpaid and that no
+          employer–employee relationship is created. Write the right one below before enabling this
+          on the form.
+        </div>
+      )}
+
+      <KindDocs kind={kind} busy={busy === "form"} onSave={saveForm} />
+      <KindForm kind={kind} sharedForm={sharedForm} busy={busy === "form"} onSave={saveForm} />
+
+      <div className={card}>
+        <div className="font-serif text-[16px] font-[600] mb-1">Roles</div>
+        <p className="text-[12px] text-muted-foreground mb-3">
+          What someone registering as {kind.label} can pick as their track.
+        </p>
+        <form onSubmit={addRole} className="flex items-center gap-2 flex-wrap">
+          <input value={newRole} onChange={(e) => setNewRole(e.target.value)}
+            placeholder={`Add a role for ${kind.label} (e.g. Design)`} className={input + " sm:max-w-sm"} />
+          <button type="submit" disabled={busy === "role"} className={GOLD + " px-5 py-2.5 text-[13px]"}>Add role</button>
+        </form>
+        {!roles.length && (
+          <div className="text-[12.5px] text-[#b3341f] mt-3">
+            No roles yet — anyone choosing {kind.label} on the form gets an empty list and cannot finish.
+          </div>
+        )}
+      </div>
+
       {roles.map((r) => <RoleCard key={r.track} role={r} regTypes={regTypes} reload={reload} />)}
     </div>
   );
 }
 
-function NdaCard({ nda, ndaDefault, ndaIsCustom, sensCl, open, setOpen, reload }:
-  { nda: string; ndaDefault: string; ndaIsCustom: boolean; sensCl: { h?: string; t: string } | null; open: boolean; setOpen: (v: boolean) => void; reload: () => void }) {
+/** The kind's own agreement + joining letter, inherited by every role under it. */
+function KindDocs({ kind, busy, onSave }: { kind: RegType; busy: boolean; onSave: (patch: any) => void }) {
+  const [terms, setTerms] = useState(kind.terms || "");
+  const [joining, setJoining] = useState(kind.joining || "");
+  const [open, setOpen] = useState(false);
+  useEffect(() => { setTerms(kind.terms || ""); setJoining(kind.joining || ""); }, [kind.key, kind.terms, kind.joining]);
+  const label = "block text-[12px] font-medium text-foreground/70 mb-1.5";
+  return (
+    <div className={card}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div className="font-serif text-[16px] font-[600]">Default documents for {kind.label}</div>
+          <p className="text-[12px] text-muted-foreground mt-0.5">
+            Every role under {kind.label} uses these unless it has its own. Leave blank to fall back
+            to the built-in template.
+          </p>
+        </div>
+        <button onClick={() => setOpen(!open)} className={GHOST + " text-[12px] px-3.5 py-1.5 shrink-0"}>{open ? "Hide" : "Edit"}</button>
+      </div>
+      {open && (
+        <div className="mt-4 grid gap-4">
+          <div>
+            <label className={label}>Agreement <span className="text-faint font-normal">(what they sign; [brackets] fill per hire)</span></label>
+            <RichTextEditor value={terms} onChange={setTerms} rows={12}
+              preview={(src) => <JobDescriptionPreview source={src} />}
+              hint={<>The first line is the title. A blank line starts a new clause.</>} />
+          </div>
+          <div>
+            <label className={label}>Joining letter <span className="text-faint font-normal">(first line is the title; lines starting with • become the bullets)</span></label>
+            <RichTextEditor value={joining} onChange={setJoining} rows={9}
+              preview={(src) => <JobDescriptionPreview source={src} />}
+              hint={<>[Full Name], [Start Date] and the rest fill in for each hire.</>} />
+          </div>
+          <div>
+            <button onClick={() => onSave({ terms, joining })} disabled={busy} className={GOLD + " px-5 py-2.5 text-[13px] disabled:opacity-60"}>
+              {busy ? "Saving…" : `Save ${kind.label} documents`}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Which fields and questions THIS kind's form asks. */
+function KindForm({ kind, sharedForm, busy, onSave }: { kind: RegType; sharedForm: Form; busy: boolean; onSave: (patch: any) => void }) {
+  // A kind that has never been touched shows the shared settings, and saving adopts them as its
+  // own — so the first edit is a starting point rather than a blank slate.
+  const seed = kind.fields && Object.keys(kind.fields).length ? kind.fields : (sharedForm.fields || {});
+  const [fields, setFields] = useState<Record<string, FieldCfg>>(() => {
+    const base: Record<string, FieldCfg> = {};
+    for (const f of OPTIONAL) base[f.key] = seed[f.key] || { visible: true, required: true };
+    return base;
+  });
+  const [custom, setCustom] = useState<Custom[]>(kind.custom?.length ? kind.custom : (sharedForm.custom || []));
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    const s2 = kind.fields && Object.keys(kind.fields).length ? kind.fields : (sharedForm.fields || {});
+    const base: Record<string, FieldCfg> = {};
+    for (const f of OPTIONAL) base[f.key] = s2[f.key] || { visible: true, required: true };
+    setFields(base);
+    setCustom(kind.custom?.length ? kind.custom : (sharedForm.custom || []));
+  }, [kind.key]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setField = (k: string, patch: Partial<FieldCfg>) => setFields((f) => ({ ...f, [k]: { ...f[k], ...patch } }));
+  const pill = (on: boolean) => `rounded-full px-3 py-1 text-[11.5px] font-[600] ${on ? "btn-gold" : "bg-card ring-hairline text-muted-foreground"}`;
+  const own = !!(kind.fields && Object.keys(kind.fields).length);
+
+  return (
+    <div className={card}>
+      <div className="font-serif text-[16px] font-[600] mb-1">What {kind.label} is asked</div>
+      <p className="text-[12px] text-muted-foreground mb-4">
+        {own ? `${kind.label} has its own form.` : `Showing the shared settings — saving makes them ${kind.label}'s own.`}
+        {" "}Name, email, date of birth, photo and signature are always asked; they are needed for the login and the documents.
+      </p>
+      <div className="grid gap-2.5 mb-5">
+        {OPTIONAL.map((f) => {
+          const cfg = fields[f.key];
+          return (
+            <div key={f.key} className="flex items-center justify-between gap-3 neu-inset rounded-xl px-3.5 py-2.5 flex-wrap">
+              <span className="text-[13px] font-[560]">{f.label}</span>
+              <div className="flex gap-2">
+                <button onClick={() => setField(f.key, { visible: !cfg.visible })} className={pill(cfg.visible)}>{cfg.visible ? "Shown" : "Hidden"}</button>
+                <button onClick={() => setField(f.key, { required: !cfg.required })} disabled={!cfg.visible} className={pill(cfg.required) + (cfg.visible ? "" : " opacity-40")}>{cfg.required ? "Required" : "Optional"}</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="font-serif text-[15px] font-[600] mb-1">Questions for {kind.label}</div>
+      <p className="text-[12px] text-muted-foreground mb-3">Kept with their record; not part of the legal documents.</p>
+      <div className="grid gap-2 mb-4">
+        {custom.map((q, i) => (
+          <div key={i} className="flex items-center gap-2 flex-wrap">
+            <input value={q.label} onChange={(e) => setCustom((c) => c.map((x, idx) => idx === i ? { ...x, label: e.target.value } : x))} placeholder="Question" className={input + " flex-1 min-w-[180px]"} />
+            <select value={q.type} onChange={(e) => setCustom((c) => c.map((x, idx) => idx === i ? { ...x, type: e.target.value } : x))} className="neu-inset rounded-lg px-2.5 py-2 text-[13px]"><option value="text">Text</option><option value="date">Date</option><option value="number">Number</option></select>
+            <label className="flex items-center gap-1 text-[12px]"><input type="checkbox" checked={q.required} onChange={(e) => setCustom((c) => c.map((x, idx) => idx === i ? { ...x, required: e.target.checked } : x))} className="accent-[#c8a24a]" />req</label>
+            <button onClick={() => setCustom((c) => c.filter((_, idx) => idx !== i))} className="text-[#b3341f] text-[16px] px-1">×</button>
+          </div>
+        ))}
+        <button onClick={() => setCustom((c) => [...c, { label: "", type: "text", required: false }])} className={GHOST + " text-[12.5px] px-4 py-2 w-fit"}>+ add question</button>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button disabled={busy}
+          onClick={() => { onSave({ fields, custom: custom.filter((c) => c.label.trim()) }); setSaved(true); setTimeout(() => setSaved(false), 1500); }}
+          className={GOLD + " px-5 py-2.5 text-[13px] disabled:opacity-60"}>{busy ? "Saving…" : `Save ${kind.label} form`}</button>
+        {saved && <span className="text-[12.5px] text-[#1e7a44]">Saved ✓</span>}
+      </div>
+    </div>
+  );
+}
+
+function NdaCard({ nda, ndaDefault, ndaIsCustom, sensCl, reload }:
+  { nda: string; ndaDefault: string; ndaIsCustom: boolean; sensCl: { h?: string; t: string } | null; reload: () => void }) {
+  // Owns whether it is expanded now that there is no parent tab to hold it.
+  const [open, setOpen] = useState(false);
   const [text, setText] = useState(nda);
   const [busy, setBusy] = useState(false); const [defBusy, setDefBusy] = useState(false);
   const [saved, setSaved] = useState(false); const [defOk, setDefOk] = useState(false);
@@ -444,70 +747,3 @@ function RoleCard({ role, regTypes, reload }: { role: Role; regTypes: RegType[];
 }
 
 /* ─────────── Form fields ─────────── */
-function FieldsTab({ form, reload }: { form: Form; reload: () => void }) {
-  const [fields, setFields] = useState<Record<string, FieldCfg>>(() => {
-    const base: Record<string, FieldCfg> = {};
-    for (const f of OPTIONAL) base[f.key] = form.fields?.[f.key] || { visible: true, required: true };
-    return base;
-  });
-  const [custom, setCustom] = useState<Custom[]>(form.custom || []);
-  const [busy, setBusy] = useState(false); const [saved, setSaved] = useState(false);
-  const setField = (k: string, patch: Partial<FieldCfg>) => setFields((f) => ({ ...f, [k]: { ...f[k], ...patch } }));
-  const addCustom = () => setCustom((c) => [...c, { label: "", type: "text", required: false }]);
-  const updCustom = (i: number, patch: Partial<Custom>) => setCustom((c) => c.map((x, idx) => idx === i ? { ...x, ...patch } : x));
-  const delCustom = (i: number) => setCustom((c) => c.filter((_, idx) => idx !== i));
-  async function save() {
-    setBusy(true);
-    try { await api("form", { config: { fields, custom: custom.filter((c) => c.label.trim()) } }); setSaved(true); setTimeout(() => setSaved(false), 1500); reload(); } finally { setBusy(false); }
-  }
-  const pill = (on: boolean) => `rounded-full px-3 py-1 text-[11.5px] font-[600] ${on ? "btn-gold" : "bg-card ring-hairline text-muted-foreground"}`;
-
-  return (
-    <div className="grid gap-4">
-      <div className={card}>
-        <h3 className="font-serif text-[17px] font-[600] mb-1">Always asked</h3>
-        <p className="text-[12.5px] text-muted-foreground mb-3">These are required for login and the legal documents — can&rsquo;t be removed.</p>
-        <div className="flex gap-2 flex-wrap">{CORE.map((c) => <span key={c} className="neu-chip rounded-full px-3 py-1.5 text-[12px] font-[560]">{c}</span>)}</div>
-      </div>
-
-      <div className={card}>
-        <h3 className="font-serif text-[17px] font-[600] mb-4">Optional fields</h3>
-        <div className="grid gap-2.5">
-          {OPTIONAL.map((f) => {
-            const cfg = fields[f.key];
-            return (
-              <div key={f.key} className="flex items-center justify-between gap-3 neu-inset rounded-xl px-3.5 py-2.5 flex-wrap">
-                <span className="text-[13px] font-[560]">{f.label}</span>
-                <div className="flex gap-2">
-                  <button onClick={() => setField(f.key, { visible: !cfg.visible })} className={pill(cfg.visible)}>{cfg.visible ? "Shown" : "Hidden"}</button>
-                  <button onClick={() => setField(f.key, { required: !cfg.required })} disabled={!cfg.visible} className={pill(cfg.required) + (cfg.visible ? "" : " opacity-40")}>{cfg.required ? "Required" : "Optional"}</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className={card}>
-        <h3 className="font-serif text-[17px] font-[600] mb-1">Custom questions</h3>
-        <p className="text-[12.5px] text-muted-foreground mb-4">Extra questions for new hires (stored with their record; not part of the legal documents).</p>
-        <div className="grid gap-2">
-          {custom.map((q, i) => (
-            <div key={i} className="flex items-center gap-2 flex-wrap">
-              <input value={q.label} onChange={(e) => updCustom(i, { label: e.target.value })} placeholder="Question" className={input + " flex-1 min-w-[180px]"} />
-              <select value={q.type} onChange={(e) => updCustom(i, { type: e.target.value })} className="neu-inset rounded-lg px-2.5 py-2 text-[13px]"><option value="text">Text</option><option value="date">Date</option><option value="number">Number</option></select>
-              <label className="flex items-center gap-1 text-[12px]"><input type="checkbox" checked={q.required} onChange={(e) => updCustom(i, { required: e.target.checked })} className="accent-[#c8a24a]" />req</label>
-              <button onClick={() => delCustom(i)} className="text-[#b3341f] text-[16px] px-1">×</button>
-            </div>
-          ))}
-          <button onClick={addCustom} className={GHOST + " text-[12.5px] px-4 py-2 w-fit"}>+ add question</button>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <button onClick={save} disabled={busy} className={GOLD + " px-5 py-2.5 text-[13px] disabled:opacity-60"}>{busy ? "Saving…" : "Save form settings"}</button>
-        {saved && <span className="text-[12.5px] text-[#1e7a44]">Saved ✓</span>}
-      </div>
-    </div>
-  );
-}

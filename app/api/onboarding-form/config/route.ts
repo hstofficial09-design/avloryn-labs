@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listRoles, getFormConfig, getLegalConfig, listRegTypes } from "@/lib/portal-db";
+import { listRoles, getFormConfig, getLegalConfig, listRegTypes, docNounFor } from "@/lib/portal-db";
 import { roleLabel } from "@/lib/intern-docs";
 
 export const runtime = "nodejs";
@@ -32,9 +32,19 @@ export async function GET() {
   try {
     const [roles, form, legal, regTypes] = await Promise.all([listRoles(), getFormConfig(), getLegalConfig(), listRegTypes()]);
     const body = {
-      // What "I am registering as" offers. Enabled ones only — an archived kind still names the
-      // people who joined under it, but nobody new may pick it.
-      regTypes: regTypes.filter((t) => t.enabled).map((t) => ({ key: t.key, label: t.label })),
+      // What "I am registering as" offers, each carrying its OWN form. Enabled ones only — an
+      // archived kind still names the people who joined under it, but nobody new may pick it.
+      //
+      // The shared config is the fallback, not the rule: a kind the owner has never customised
+      // behaves exactly as the form always did, so this changes nothing until they change it.
+      regTypes: regTypes.filter((t) => t.enabled).map((t) => ({
+        key: t.key,
+        label: t.label,
+        // The word its documents use — "Internship Agreement", "Employment Agreement".
+        noun: docNounFor(t),
+        fields: t.fields ?? form?.fields ?? {},
+        custom: Array.isArray(t.custom) ? t.custom : (Array.isArray(form?.custom) ? form.custom : []),
+      })),
       roles: roles.map((r) => ({
         value: r.track,
         label: roleLabel(r.track), // "M&C" → "Marketing & Community"; full names pass through

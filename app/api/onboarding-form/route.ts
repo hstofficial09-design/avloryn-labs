@@ -459,9 +459,18 @@ export async function POST(req: Request) {
     let roleCfg: any = null;
     try { const rs = await listRoles(); roleCfg = rs.find((r) => r.track === d.role || r.track === roleLabel(d.role)) || null; } catch { /* fall back to default */ }
     if (roleCfg?.paid) { d.paid = true; d.salary = roleCfg.salary; d.salaryPeriod = roleCfg.salary_period; }
-    const ia = (roleCfg?.terms && String(roleCfg.terms).trim())
-      ? parseTermsToContent(String(roleCfg.terms), d)
-      : internshipAgreement(d);
+    // Which agreement gets signed: this role's own text, then the KIND's default, and only then
+    // the built-in template.
+    //
+    // The kind's default matters because the built-in one is an internship agreement in substance
+    // — "unpaid internship", "no employer-employee relationship is created". Handing it to an
+    // employee is not clumsy wording, it is the wrong document saying close to the opposite of
+    // what was meant, and they would sign it.
+    const kindCfg = (await listRegTypes(true).catch(() => [])).find((t) => t.key === regTypeKey) || null;
+    const agreementText = (roleCfg?.terms && String(roleCfg.terms).trim())
+      || (kindCfg?.terms && String(kindCfg.terms).trim())
+      || null;
+    const ia = agreementText ? parseTermsToContent(agreementText, d) : internshipAgreement(d);
     // A role marked "Handles sensitive data" signs an extra NDA clause.
     d.sensitive = !!roleCfg?.sensitive;
     let legal: any = null;
@@ -506,9 +515,10 @@ export async function POST(req: Request) {
     nd.header();
     // The owner's letter for this role when they have written one, else the built-in template.
     // Same source as the editor shows, so what is signed is what was previewed.
-    const jl = (roleCfg?.joining_letter && String(roleCfg.joining_letter).trim())
-      ? parseJoiningLetter(String(roleCfg.joining_letter), d)
-      : parseJoiningLetter(defaultJoiningLetterText(d, regType), d);
+    const letterText = (roleCfg?.joining_letter && String(roleCfg.joining_letter).trim())
+      || (kindCfg?.joining && String(kindCfg.joining).trim())
+      || defaultJoiningLetterText(d, regType);
+    const jl = parseJoiningLetter(letterText, d);
     nd.title(jl.title);
     nd.para(new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }), { size: 10, color: MUTED, gap: 10 });
     for (const p of jl.paragraphs) nd.para(p, { gap: 8 });
