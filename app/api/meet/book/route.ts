@@ -142,7 +142,7 @@ export async function POST(req: Request) {
   let onGoogle: string[] = [];
   try {
     const { meetLink: ml, events } = await createMeetingForMembers({
-      memberIds: hostOrder, googleCopyMemberIds, clientEmail: email,
+      memberIds: hostOrder, googleCopyMemberIds, memberEmails, clientEmail: email,
       summary: `${mt.name} — ${name}`, description: baseDesc, startISO, endISO,
     });
     meetLink = ml;

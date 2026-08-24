@@ -120,7 +120,7 @@ export async function PATCH(req: Request) {
 
     let meetLink: string | null = null, eventsJson: string | null = null, zohoJson: string | null = null;
     try {
-      const { meetLink: ml, events } = await createMeetingForMembers({ memberIds: hostOrder, clientEmail: b.client_email, summary: `${title} — ${b.client_name}`, description: baseDesc, startISO: b.start_utc, endISO: b.end_utc });
+      const { meetLink: ml, events } = await createMeetingForMembers({ memberIds: hostOrder, memberEmails, clientEmail: b.client_email, summary: `${title} — ${b.client_name}`, description: baseDesc, startISO: b.start_utc, endISO: b.end_utc });
       meetLink = ml; if (events.length) eventsJson = JSON.stringify(events);
     } catch { /* keep going */ }
     try { const z = await createZohoForMembers({ memberIds: b.member_ids, summary: `${title} — ${b.client_name}`, description: baseDesc, startISO: b.start_utc, endISO: b.end_utc, meetLink }); if (z.length) zohoJson = JSON.stringify(z); } catch { /* ignore */ }

@@ -229,6 +229,24 @@ export type MemberEvent = { memberId: string; eventId: string };
  * other members get the same meeting written directly to their calendar with the Meet link.
  * Returns the Meet link + one {memberId,eventId} per calendar written (host first).
  */
+/**
+ * The order in which members are tried as host.
+ *
+ * The host's Google event is what creates the Meet link, so someone whose calendar lives in Zoho
+ * is a poor first choice and is tried last. But a CHOSEN organizer outranks that completely.
+ *
+ * Exported so the rule can be proven directly: "make me the organizer" was silently losing here.
+ * The choice was moved to the front, then the Zoho-last preference pushed it straight back — and
+ * the owner works in Zoho, so the person who picked themselves was always the one demoted.
+ */
+export function hostOrder(memberIds: string[], zohoIds: Set<string>, organizerId?: string | null): string[] {
+  const zohoLast = (ids: string[]) => [...ids.filter((id) => !zohoIds.has(id)), ...ids.filter((id) => zohoIds.has(id))];
+  if (organizerId && memberIds.includes(organizerId)) {
+    return [organizerId, ...zohoLast(memberIds.filter((id) => id !== organizerId))];
+  }
+  return zohoLast(memberIds);
+}
+
 export async function createMeetingForMembers(opts: {
   memberIds: string[];
   clientEmail: string;
@@ -244,6 +262,15 @@ export async function createMeetingForMembers(opts: {
    * link and invites the guest, so it always exists.
    */
   googleCopyMemberIds?: string[];
+  /**
+   * The team's own email addresses.
+   *
+   * They must be ATTENDEES on the host's event, not merely holders of a copy of it. Google admits
+   * an event's attendees into its Meet straight away and makes everyone else knock — so with only
+   * the guest listed, the outside guest walked in while the team stood outside asking to be let
+   * into their own meeting.
+   */
+  memberEmails?: string[];
 }): Promise<{ meetLink: string | null; events: MemberEvent[]; hostId: string | null }> {
   const events: MemberEvent[] = [];
   const start = { dateTime: opts.startISO, timeZone: "UTC" };
@@ -267,12 +294,19 @@ export async function createMeetingForMembers(opts: {
       const res = await cal.events.insert({
         calendarId: m.calendarId,
         conferenceDataVersion: 1,
-        sendUpdates: "all",
+        // Only people outside the organisation are emailed by Google. The team get our own invite
+        // and their own calendar copy already; a third message for the same meeting is noise.
+        sendUpdates: "externalOnly",
         requestBody: {
           summary: opts.summary,
           description: opts.description,
           start, end,
-          attendees: opts.clientEmail ? [{ email: opts.clientEmail }] : undefined,
+          // The team are attendees (already accepted — they are not being asked), the guest is
+          // invited. Everyone on this list is admitted to the Meet without knocking.
+          attendees: [
+            ...(opts.memberEmails || []).filter(Boolean).map((email) => ({ email, responseStatus: "accepted" })),
+            ...(opts.clientEmail ? [{ email: opts.clientEmail }] : []),
+          ],
           conferenceData: { createRequest: { requestId: randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } } },
         },
       });

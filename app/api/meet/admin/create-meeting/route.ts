@@ -3,7 +3,7 @@ import { randomBytes } from "crypto";
 import { Resend } from "resend";
 import { canSchedule } from "@/lib/booking/admin";
 import { listMembers, createBooking, titleAnswer, membersWithZoho } from "@/lib/booking/db";
-import { createMeetingForMembers } from "@/lib/booking/google";
+import { createMeetingForMembers, hostOrder } from "@/lib/booking/google";
 import { createZohoForMembers } from "@/lib/booking/zoho";
 import { findClashes, clashMessage } from "@/lib/booking/clash";
 import { buildICS } from "@/lib/booking/ics";
@@ -66,13 +66,13 @@ export async function POST(req: Request) {
   const zohoIds = await membersWithZoho(memberIds);
   // Host the Meet on someone who does NOT use Zoho where possible — their Google event is then
   // their own single copy instead of a second copy of a Zoho one.
-  const hostOrder = [...memberIds.filter((id) => !zohoIds.has(id)), ...memberIds.filter((id) => zohoIds.has(id))];
+  const hostOrderIds = hostOrder(memberIds, zohoIds, organizerId);
   const googleCopyMemberIds = memberIds.filter((id) => !zohoIds.has(id));
 
   let meetLink: string | null = null, eventsJson: string | null = null, zohoJson: string | null = null;
   let onGoogle: string[] = [];
   try {
-    const { meetLink: ml, events } = await createMeetingForMembers({ memberIds: hostOrder, googleCopyMemberIds, clientEmail: guest, summary: title, description: baseDesc, startISO, endISO });
+    const { meetLink: ml, events } = await createMeetingForMembers({ memberIds: hostOrderIds, googleCopyMemberIds, memberEmails, clientEmail: guest, summary: title, description: baseDesc, startISO, endISO });
     meetLink = ml; if (events.length) eventsJson = JSON.stringify(events);
     onGoogle = events.map((e) => e.memberId);
   } catch (e) {
