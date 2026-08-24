@@ -420,8 +420,12 @@ export async function POST(req: Request) {
     .map((q) => ({ q: String(q.label).trim(), a: posted.get(String(q.label).trim()) || "" }))
     .filter((x) => x.a);
 
+  // The three that cannot be switched off, then whatever this kind still requires. Checked here
+  // as well as in the browser: the switches are the owner's rules, and rules that only exist in
+  // the page are not rules.
   if (!d.fullName || !EMAIL_RE.test(d.email) || !signature || !consent
-    || (need("mobile") && !d.mobile) || (need("address") && !d.address) || (need("govId") && !d.idType)) {
+    || (need("mobile") && !d.mobile) || (need("address") && !d.address) || (need("govId") && !d.idType)
+    || (need("dob") && !dob) || (need("startDate") && !d.startDate) || (need("role") && !d.role)) {
     return NextResponse.json({ ok: false, error: "Please complete all required fields, sign, and accept the terms." }, { status: 400 });
   }
   for (const q of configured) {

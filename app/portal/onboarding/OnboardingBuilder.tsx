@@ -18,13 +18,29 @@ const card = "card-lux rounded-3xl p-6 sm:p-7";
 const input = "w-full text-[14px] neu-inset text-foreground placeholder:text-faint rounded-[12px] px-3.5 py-2.5 outline-none focus:ring-2 focus:ring-gold/25";
 const label = "block text-[12px] font-medium text-foreground/70 mb-1.5";
 const msg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong");
-const CORE = ["Full name", "Email", "Date of birth", "Role", "Duration", "Start date"];
+/**
+ * The only three that genuinely cannot be turned off, and why.
+ *
+ * Everything else is the owner's to decide. These three are not a preference: the email IS the
+ * login, so without it there is no account and no portal; the name is what every document is
+ * addressed to and what the record is filed under; and the signature is the entire point of a
+ * signed agreement — without it nothing has been agreed to.
+ */
+const CORE: { label: string; why: string }[] = [
+  { label: "Full name", why: "every document is addressed to it" },
+  { label: "Email", why: "it is their login" },
+  { label: "Signature", why: "nothing is signed without it" },
+];
 const OPTIONAL = [
   { key: "mobile", label: "Mobile number" },
   { key: "address", label: "Address" },
   { key: "govId", label: "Government ID" },
   { key: "duration", label: "Duration (how long they are joining for)" },
   { key: "student", label: "Student info (college / ID)" },
+  { key: "dob", label: "Date of birth" },
+  { key: "photo", label: "Photo (passport-style)" },
+  { key: "startDate", label: "Start date" },
+  { key: "role", label: "Track / role" },
 ];
 
 async function api(action: string, body: any) {
@@ -368,10 +384,26 @@ function KindForm({ kind, sharedForm, busy, onSave }: { kind: RegType; sharedFor
   return (
     <div className={card}>
       <div className="font-serif text-[16px] font-[600] mb-1">What {kind.label} is asked</div>
-      <p className="text-[12px] text-muted-foreground mb-4">
+      <p className="text-[12px] text-muted-foreground mb-3">
         {own ? `${kind.label} has its own form.` : `Showing the shared settings — saving makes them ${kind.label}'s own.`}
-        {" "}Name, email, date of birth, photo and signature are always asked; they are needed for the login and the documents.
       </p>
+
+      {/* Spelled out rather than summarised. Collapsing this into a sentence quietly dropped the
+          track and the start date, so two things every person is asked appeared nowhere at all. */}
+      <div className="mb-4">
+        <div className="section-label mb-1.5">Always asked</div>
+        <div className="flex gap-1.5 flex-wrap">
+          {CORE.map((c) => (
+            <span key={c.label} title={c.why} className="neu-chip rounded-full px-2.5 py-1 text-[11.5px] font-[560]">{c.label}</span>
+          ))}
+        </div>
+        <p className="text-[11px] text-faint mt-1.5">
+          Only these three: the email is their login, the name is what every document is addressed
+          to, and without a signature nothing has been signed. Everything else is yours to decide.
+        </p>
+      </div>
+
+      <div className="section-label mb-2">Your choice</div>
       <div className="grid gap-2.5 mb-5">
         {OPTIONAL.map((f) => {
           const cfg = fields[f.key];

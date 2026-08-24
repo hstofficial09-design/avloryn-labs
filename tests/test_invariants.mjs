@@ -442,6 +442,19 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   const docs = code("lib/intern-docs.ts");
   if (!/d\.scope/.test(docs))
     fail("R17 Responsibilities never reaches the agreement:", "the editor promises it is shown there");
+
+  // The editor's list of switchable fields must match what the form actually gates. Summarising
+  // this by hand is how the track and the start date came to appear nowhere at all, while Duration
+  // was listed both as always-asked and as optional — the owner cannot configure what they cannot
+  // see, and cannot trust a list that disagrees with the form.
+  const gated = [...form.matchAll(/fVis\(\s*["'](\w+)["']\s*\)/g)].map((m) => m[1]);
+  const listed = [...builder.matchAll(/\{\s*key:\s*["'](\w+)["'],\s*label:/g)].map((m) => m[1]);
+  for (const k of new Set(gated)) {
+    if (!listed.includes(k)) fail("R17 a field the form can hide is not in the editor:", `"${k}" — nobody can switch it`);
+  }
+  for (const k of listed) {
+    if (!gated.includes(k)) fail("R17 the editor offers a switch the form ignores:", `"${k}" — turning it off would do nothing`);
+  }
 }
 
 console.log(`[invariants] scanned ${API.length} API routes`);

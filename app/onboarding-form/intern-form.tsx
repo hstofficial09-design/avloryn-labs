@@ -240,11 +240,15 @@ export default function InternForm() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
-    if (!f.fullName || !f.dob || !f.email || !f.startDate) { setErr("Please fill all required fields."); return; }
+    // Only the three that cannot be switched off are unconditional here; everything else asks the
+    // kind's own settings, so turning a field off actually lets someone finish without it.
+    if (!f.fullName || !f.email) { setErr("Please fill all required fields."); return; }
+    if (fVis("dob") && fReq("dob") && !f.dob) { setErr("Please add your date of birth."); return; }
+    if (fVis("startDate") && fReq("startDate") && !f.startDate) { setErr("Please add your start date."); return; }
     if (fVis("mobile") && fReq("mobile") && !f.mobile) { setErr("Please add your mobile number."); return; }
     if (fVis("address") && fReq("address") && !f.address) { setErr("Please add your address."); return; }
     for (const q of effCustom) if (q.required && !(customAns[q.label] || "").trim()) { setErr(`Please answer: ${q.label}`); return; }
-    if (!photo) { setErr("Please upload your photo."); return; }
+    if (fVis("photo") && fReq("photo") && !photo) { setErr("Please upload your photo."); return; }
     if (fVis("govId") && fReq("govId") && !idDoc) { setErr("Please upload a photo ID."); return; }
     if (fVis("student")) {
       if (f.isStudent === null) { setErr("Please tell us whether you are a current student."); return; }
@@ -326,14 +330,14 @@ export default function InternForm() {
         <Section title="Your details">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Full name *"><input className={inputCls} value={f.fullName} onChange={(e) => up("fullName", e.target.value)} /></Field>
-            <Field label="Date of birth *"><input type="date" className={inputCls} value={f.dob} onChange={(e) => up("dob", e.target.value)} /></Field>
+            {fVis("dob") && <Field label={"Date of birth" + star("dob")}><input type="date" className={inputCls} value={f.dob} onChange={(e) => up("dob", e.target.value)} /></Field>}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {fVis("mobile") && <Field label={"Mobile" + star("mobile")}><input className={inputCls} value={f.mobile} onChange={(e) => up("mobile", e.target.value)} /></Field>}
             <Field label="Email *"><input type="email" className={inputCls} value={f.email} onChange={(e) => up("email", e.target.value)} /></Field>
           </div>
           {fVis("address") && <Field label={"Address" + star("address")}><textarea className={inputCls} rows={2} value={f.address} onChange={(e) => up("address", e.target.value)} /></Field>}
-          <Field label="Photo (passport-style) *"><input type="file" accept="image/*,application/pdf" className={fileCls} onChange={async (e) => setPhoto(await processFile(e.target.files![0]))} /></Field>
+          {fVis("photo") && <Field label={"Photo (passport-style)" + star("photo")}><input type="file" accept="image/*,application/pdf" className={fileCls} onChange={async (e) => setPhoto(await processFile(e.target.files![0]))} /></Field>}
         </Section>
 
         {/* Identity */}
@@ -391,17 +395,21 @@ export default function InternForm() {
         {/* Titled after the kind — this section said "Internship" to an employee. */}
         <Section title={NOUN}>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Field label="Track *">
-              <select className={inputCls} value={f.role} onChange={(e) => up("role", e.target.value)}>
-                {rolesForKind.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              {!rolesForKind.length && (
-                <div className="text-[11.5px] text-[#b3341f] mt-1">
-                  No tracks are set up for this yet — please pick another option above.
-                </div>
-              )}
-            </Field>
-            <Field label="Start date *"><input type="date" className={inputCls} value={f.startDate} onChange={(e) => up("startDate", e.target.value)} /></Field>
+            {/* A kind that has no tracks — a network partner, say — can turn this off entirely
+                rather than showing an empty list nobody can get past. */}
+            {fVis("role") && (
+              <Field label={"Track" + star("role")}>
+                <select className={inputCls} value={f.role} onChange={(e) => up("role", e.target.value)}>
+                  {rolesForKind.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                {!rolesForKind.length && (
+                  <div className="text-[11.5px] text-[#b3341f] mt-1">
+                    No tracks are set up for this yet — please pick another option above.
+                  </div>
+                )}
+              </Field>
+            )}
+            {fVis("startDate") && <Field label={"Start date" + star("startDate")}><input type="date" className={inputCls} value={f.startDate} onChange={(e) => up("startDate", e.target.value)} /></Field>}
             {/* Only what this role actually offers. A role with a single length shows it and
                 nothing else, rather than inviting a choice that is not really there. */}
             {fVis("duration") && (
