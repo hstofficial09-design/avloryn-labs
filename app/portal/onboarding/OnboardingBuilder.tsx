@@ -5,7 +5,9 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { JobDescriptionPreview } from "@/components/careers/jd";
 
 type Role = { track: string; commission_enabled: boolean; paid: boolean; salary: number | null; salary_period: string | null; scope: string | null; terms: string | null; sensitive: boolean; default_emp_type: string; defaultTerms?: string; defaultIsCustom?: boolean;
-  joiningText?: string; joiningDefault?: string; joiningIsCustom?: boolean };
+  joiningText?: string; joiningDefault?: string; joiningIsCustom?: boolean;
+  /** "2" fixes it, "3,6" offers a choice, blank = the standard options. */
+  duration?: string | null };
 type FieldCfg = { visible: boolean; required: boolean };
 type Custom = { label: string; type: string; required: boolean };
 type Form = { fields?: Record<string, FieldCfg>; custom?: Custom[] };
@@ -21,6 +23,7 @@ const OPTIONAL = [
   { key: "mobile", label: "Mobile number" },
   { key: "address", label: "Address" },
   { key: "govId", label: "Government ID" },
+  { key: "duration", label: "Duration (how long they are joining for)" },
   { key: "student", label: "Student info (college / ID)" },
 ];
 
@@ -646,42 +649,58 @@ function RoleCard({ role, regTypes, reload }: { role: Role; regTypes: RegType[];
             <button onClick={() => { setNewName(r.track); setRenaming(true); }} className="text-[11.5px] font-semibold text-gold hover:underline">Rename</button>
           </div>
         )}
-        <button onClick={remove} className="text-[12px] font-semibold text-[#b3341f] hover:underline">Remove role</button>
+        <div className="flex items-center gap-3">
+          {/* The tab already says which kind this is under, so the old pill row only repeated it.
+              Moving one is rare but must stay possible — it is the only way to rescue a role whose
+              kind no longer exists. */}
+          <select value={r.default_emp_type || ""} onChange={(e) => set("default_emp_type", e.target.value)}
+            title="Move this role to another kind"
+            className="neu-inset rounded-lg px-2.5 py-1.5 text-[11.5px] text-muted-foreground">
+            {!regTypes.some((t) => t.key === r.default_emp_type) && <option value={r.default_emp_type || ""}>— not set —</option>}
+            {regTypes.map((t) => <option key={t.key} value={t.key}>Under {t.label}</option>)}
+          </select>
+          <button onClick={remove} className="text-[12px] font-semibold text-[#b3341f] hover:underline">Remove role</button>
+        </div>
       </div>
 
       <div className="grid sm:grid-cols-2 gap-4 mb-4">
         <div>
-          <div className={label}>Commission model</div>
-          <div className="flex gap-2">
-            <button onClick={() => set("commission_enabled", true)} className={pill(r.commission_enabled)}>Commission ON</button>
-            <button onClick={() => set("commission_enabled", false)} className={pill(!r.commission_enabled)}>No commission</button>
-          </div>
-        </div>
-        <div>
-          <div className={label}>Type</div>
-          {/* Every kind the owner has set up, not the two that used to be written in here. */}
-          <div className="flex gap-2 flex-wrap">
-            {(regTypes.length ? regTypes : [{ key: "intern", label: "Intern" } as RegType]).map((t) => (
-              <button key={t.key} onClick={() => set("default_emp_type", t.key)}
-                className={pill(r.default_emp_type === t.key)}>{t.label}</button>
-            ))}
-          </div>
-        </div>
-        <div>
+          {/* Pay answers the whole question in one place. "Commission based" is what every intern
+              role actually is — no salary, earning through their referral code — and it used to
+              take two separate controls to say so, which could disagree with each other. */}
           <div className={label}>Pay</div>
           <div className="flex gap-2 flex-wrap items-center">
-            <button onClick={() => set("paid", false)} className={pill(!r.paid)}>Unpaid</button>
+            <button onClick={() => { set("paid", false); set("commission_enabled", false); }}
+              className={pill(!r.paid && !r.commission_enabled)}>Unpaid</button>
+            <button onClick={() => { set("paid", false); set("commission_enabled", true); }}
+              className={pill(!r.paid && r.commission_enabled)}>Commission based</button>
             <button onClick={() => set("paid", true)} className={pill(r.paid)}>Paid</button>
-            {r.paid && (
-              <>
-                <input type="number" min={0} value={r.salary ?? ""} onChange={(e) => set("salary", e.target.value ? +e.target.value : null)} placeholder="Salary ₹" className="neu-inset rounded-lg px-2.5 py-1.5 text-[13px] w-[110px]" />
-                <select value={r.salary_period || "monthly"} onChange={(e) => set("salary_period", e.target.value)} className="neu-inset rounded-lg px-2.5 py-1.5 text-[13px]">
-                  <option value="monthly">/ month</option><option value="yearly">/ year</option>
-                </select>
-              </>
-            )}
           </div>
+          {r.paid && (
+            <div className="flex gap-2 flex-wrap items-center mt-2">
+              <input type="number" min={0} value={r.salary ?? ""} onChange={(e) => set("salary", e.target.value ? +e.target.value : null)} placeholder="Salary ₹" className="neu-inset rounded-lg px-2.5 py-1.5 text-[13px] w-[110px]" />
+              <select value={r.salary_period || "monthly"} onChange={(e) => set("salary_period", e.target.value)} className="neu-inset rounded-lg px-2.5 py-1.5 text-[13px]">
+                <option value="monthly">/ month</option><option value="yearly">/ year</option>
+              </select>
+              <label className="flex items-center gap-1.5 text-[12px] cursor-pointer">
+                <input type="checkbox" checked={r.commission_enabled} onChange={(e) => set("commission_enabled", e.target.checked)} className="accent-[#c8a24a]" />
+                also earns commission
+              </label>
+            </div>
+          )}
         </div>
+        <div>
+          {/* The "Type" pills used to live here, repeating what the tab above already says. Moving
+              a role between kinds is now the quiet control in the header — still possible, and the
+              only way to rescue one whose kind has gone. */}
+          <div className={label}>Duration <span className="text-faint font-normal">(months)</span></div>
+          <input value={r.duration || ""} onChange={(e) => set("duration", e.target.value.replace(/[^0-9,]/g, ""))}
+            placeholder="blank = let them choose (2 / 3 / 6)" className={input + " !py-2"} />
+          <p className="text-[11px] text-faint mt-1">
+            One number fixes it — “2” and nobody can pick anything else. Several offer a choice — “3,6”.
+          </p>
+        </div>
+
         <label className="flex items-center gap-2 text-[13px] cursor-pointer self-end">
           <input type="checkbox" checked={r.sensitive} onChange={(e) => set("sensitive", e.target.checked)} className="accent-[#c8a24a]" />
           Handles sensitive data <span className="text-faint text-[11.5px]">(extra NDA clause)</span>

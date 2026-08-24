@@ -14,6 +14,8 @@ type RoleOpt = {
   terms?: string | null;
   /** Role handles sensitive data — the NDA gains an extra clause. */
   sensitive?: boolean;
+  /** "2" fixes the length, "3,6" offers a choice, blank = the standard options. */
+  duration?: string | null;
 };
 
 const ID_TYPES = ["PAN card", "College / Student ID", "Driving Licence", "Voter ID", "Passport"];
@@ -187,6 +189,23 @@ export default function InternForm() {
     () => roleOpts.filter((r) => !r.emp_type || r.emp_type === f.regType),
     [roleOpts, f.regType]);
   const roleCfg = useMemo(() => roleOpts.find((r) => r.value === f.role) || null, [roleOpts, f.role]);
+
+  /**
+   * How long this role runs, decided by the role itself.
+   *
+   * HR's two months used to be written into the form as a special case — a rule about one role
+   * living in the wrong place, where no other role could ever have one. It comes from the role's
+   * own setting now: one value fixes the length, several offer a choice, blank keeps the standard
+   * options.
+   */
+  const durationOpts = useMemo(() => {
+    const set = String(roleCfg?.duration || "").split(",").map((x) => x.trim()).filter(Boolean);
+    return set.length ? set : ["2", "3", "6"];
+  }, [roleCfg]);
+  // Picking a role whose length is fixed must not leave the previous role's answer behind.
+  useEffect(() => {
+    if (!durationOpts.includes(f.duration)) up("duration", durationOpts[0]);
+  }, [durationOpts]);   // eslint-disable-line react-hooks/exhaustive-deps
   // Switching kind must not leave the previous kind's role selected underneath.
   useEffect(() => {
     if (!rolesForKind.length) return;
@@ -373,7 +392,7 @@ export default function InternForm() {
         <Section title={NOUN}>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Field label="Track *">
-              <select className={inputCls} value={f.role} onChange={(e) => { const r = e.target.value; up("role", r); if (isHrRole(r)) up("duration", "2"); }}>
+              <select className={inputCls} value={f.role} onChange={(e) => up("role", e.target.value)}>
                 {rolesForKind.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               {!rolesForKind.length && (
@@ -383,13 +402,19 @@ export default function InternForm() {
               )}
             </Field>
             <Field label="Start date *"><input type="date" className={inputCls} value={f.startDate} onChange={(e) => up("startDate", e.target.value)} /></Field>
-            <Field label="Duration *">
-              <select className={inputCls} value={f.duration} onChange={(e) => up("duration", e.target.value)}>
-                <option value="2">2 months</option>
-                <option value="3">3 months</option>
-                <option value="6">6 months</option>
-              </select>
-            </Field>
+            {/* Only what this role actually offers. A role with a single length shows it and
+                nothing else, rather than inviting a choice that is not really there. */}
+            {fVis("duration") && (
+              <Field label="Duration *">
+                {durationOpts.length === 1 ? (
+                  <input readOnly value={`${durationOpts[0]} months`} className={inputCls + " opacity-70"} />
+                ) : (
+                  <select className={inputCls} value={f.duration} onChange={(e) => up("duration", e.target.value)}>
+                    {durationOpts.map((d) => <option key={d} value={d}>{d} months</option>)}
+                  </select>
+                )}
+              </Field>
+            )}
           </div>
           <p className="text-[11px] text-muted-foreground mt-2">Your start date is prefilled to today — change it if you&apos;re joining later. {isHrRole(f.role) ? `On successful completion you'll receive a Completion Certificate.` : `Please note: a minimum of 3 months is required to be eligible for the completion certificate.`}</p>
         </Section>

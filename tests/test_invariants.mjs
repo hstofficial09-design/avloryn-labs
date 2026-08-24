@@ -415,6 +415,19 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   // A role whose kind no longer exists must still be reachable, or it vanishes from every tab.
   if (!/orphanRoles/.test(builder))
     fail("R17 a role with no valid kind would be invisible:", "nothing would list it");
+
+  // How long a role runs belongs to the ROLE. HR's two months was written into the form as a
+  // special case — a rule about one role living in the wrong place, where no other role could
+  // ever have one and changing it meant changing code.
+  if (/isHrRole\([^)]*\)[\s\S]{0,60}up\("duration"/.test(form))
+    fail("R17 one role's length is hard-coded in the form again:", "no other role can have one");
+  if (!/roleCfg\?\.duration/.test(form))
+    fail("R17 the form ignores the role's own length:", "every role would offer the same options");
+
+  // Moving a role between kinds must stay possible — it is the only way to rescue one whose kind
+  // has gone, and the Unassigned tab would otherwise be a dead end.
+  if (!/default_emp_type[\s\S]{0,200}regTypes\.map/.test(builder))
+    fail("R17 a role can no longer be moved between kinds:", "an unassigned role would be stuck");
 }
 
 console.log(`[invariants] scanned ${API.length} API routes`);

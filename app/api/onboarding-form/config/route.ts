@@ -54,6 +54,8 @@ export async function GET() {
         salary_period: r.salary_period,
         terms: r.terms || null,
         sensitive: r.sensitive,
+        // How long this role runs, so the form can offer exactly that.
+        duration: r.duration || null,
       })),
       // The NDA the hire will actually sign (owner-edited when set), so the form shows it.
       nda: legal?.nda || null,

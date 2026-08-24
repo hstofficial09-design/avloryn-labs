@@ -85,6 +85,8 @@ export async function POST(req: Request) {
         // Whatever kind the owner configured. Forcing it back to intern|employee here is what
         // made the two hard-coded pills the only real options, however many kinds existed.
         default_emp_type: String(r.default_emp_type || "intern").trim().toLowerCase() || "intern",
+        // "2" fixes it, "3,6" offers a choice, blank keeps the standard options.
+        duration: typeof r.duration === "string" ? r.duration.replace(/[^0-9,]/g, "").slice(0, 40) : null,
       });
       return NextResponse.json({ ok: true });
     }
