@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useEffect } from "react";
 import { LogoMark } from "@/components/ui/logo";
-import { internshipAgreement, ndaAgreement, parseTermsToContent, withSensitiveClause, isHrRole, ROLE_LABEL, type InternData } from "@/lib/intern-docs";
+import { internshipAgreement, ndaAgreement, parseTermsToContent, withSensitiveClause, ROLE_LABEL, type InternData } from "@/lib/intern-docs";
 
 type FilePayload = { kind: string; b64: string } | undefined;
 
@@ -416,7 +416,7 @@ export default function InternForm() {
               </Field>
             )}
           </div>
-          <p className="text-[11px] text-muted-foreground mt-2">Your start date is prefilled to today — change it if you&apos;re joining later. {isHrRole(f.role) ? `On successful completion you'll receive a Completion Certificate.` : `Please note: a minimum of 3 months is required to be eligible for the completion certificate.`}</p>
+          <p className="text-[11px] text-muted-foreground mt-2">Your start date is prefilled to today — change it if you&apos;re joining later. </p>
         </Section>
 
         {/* Agreements */}

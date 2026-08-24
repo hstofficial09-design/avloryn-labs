@@ -29,7 +29,7 @@ export async function GET() {
   const withDefaults = roles.map((r) => ({
     ...r,
     defaultTerms: r.default_terms
-      || defaultTermsText(roleLabel(r.track), isHrRole(r.track) || r.sensitive, r.paid, r.salary, r.salary_period),
+      || defaultTermsText(roleLabel(r.track), isHrRole(r.track) || r.sensitive, r.paid, r.salary, r.salary_period, r.scope),
     defaultIsCustom: !!r.default_terms,
     // The joining letter, alongside the agreement — the editor needs both the current text and
     // what "Reset to default" would restore.

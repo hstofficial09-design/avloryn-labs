@@ -459,6 +459,9 @@ export async function POST(req: Request) {
     let roleCfg: any = null;
     try { const rs = await listRoles(); roleCfg = rs.find((r) => r.track === d.role || r.track === roleLabel(d.role)) || null; } catch { /* fall back to default */ }
     if (roleCfg?.paid) { d.paid = true; d.salary = roleCfg.salary; d.salaryPeriod = roleCfg.salary_period; }
+    // What the role does, as written against it. Offered in the editor as "shown in the agreement"
+    // and, until now, read by nothing.
+    d.scope = roleCfg?.scope || null;
     // Which agreement gets signed: this role's own text, then the KIND's default, and only then
     // the built-in template.
     //
@@ -524,11 +527,10 @@ export async function POST(req: Request) {
     for (const p of jl.paragraphs) nd.para(p, { gap: 8 });
     for (const b of jl.bullets) nd.para("•  " + b, { size: 10.5, gap: 3 });
     nd.y -= 6;
-    nd.para(isHrRole(d.role)
-      ? "On successful completion of your internship, you will receive an Internship Completion Certificate. Outstanding performers will also receive a Letter of Recommendation, a LinkedIn recommendation, and first preference for future paid roles."
-      : "On successful completion (a minimum of 3 months is required), you will receive an Internship Completion Certificate. An intern who leaves before completing 3 months is not eligible for a certificate or any other benefit. Standout performers will also receive a Letter of Recommendation and first preference for future paid roles.",
-      { gap: 8 });
-    nd.para("This offer is subject to your signed Internship Agreement and NDA (attached).", { gap: 14 });
+    // Nothing is printed here any more. These closing lines used to be appended AFTER the owner's
+    // letter, so an Employment letter still ended with intern wording that could not be edited
+    // away. They are part of the letter's own text now.
+    for (const p2 of jl.closing) nd.para(p2, { gap: 8 });
     nd.para("Warm regards,", { gap: 6 });
     // Both designated partners sign, side by side. An LLP acts through its designated partners,
     // so an offer carrying both is signed by the firm rather than by one person in it.

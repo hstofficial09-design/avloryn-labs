@@ -428,6 +428,20 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   // has gone, and the Unassigned tab would otherwise be a dead end.
   if (!/default_emp_type[\s\S]{0,200}regTypes\.map/.test(builder))
     fail("R17 a role can no longer be moved between kinds:", "an unassigned role would be stuck");
+
+  // Nothing may be stapled onto the letter after the owner's own text. Those closing lines used to
+  // be printed by the PDF, so a carefully written Employment letter still ended with "on
+  // completion of your internship…" and no amount of editing could remove it.
+  if (/nd\.para\(\s*isHrRole/.test(pdf))
+    fail("R17 intern wording is appended to every joining letter again:", "it cannot be edited away");
+  if (!/jl\.closing/.test(pdf))
+    fail("R17 the letter's own closing lines are not printed:", "the end of every letter would vanish");
+
+  // "Responsibilities" was offered in the editor as "shown in the agreement", saved, length-checked
+  // — and read by nothing. Whoever filled it in was writing into a void.
+  const docs = code("lib/intern-docs.ts");
+  if (!/d\.scope/.test(docs))
+    fail("R17 Responsibilities never reaches the agreement:", "the editor promises it is shown there");
 }
 
 console.log(`[invariants] scanned ${API.length} API routes`);

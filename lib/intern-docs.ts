@@ -34,6 +34,13 @@ export type InternData = {
   studentId?: string;
   signedAt: string; // ISO/display timestamp
   place?: string;
+  /**
+   * What this role actually does, as the owner wrote it against the role.
+   *
+   * The editor has offered this for a long time, labelled "shown in the agreement" — and it was
+   * saved, length-checked, and then read by nothing. Whoever filled it in was writing into a void.
+   */
+  scope?: string | null;
   paid?: boolean;
   salary?: number | null;
   salaryPeriod?: string | null; // 'monthly' | 'yearly'
@@ -91,7 +98,8 @@ export function internshipAgreement(d: InternData): {
     clauses: [
       {
         h: "1. Role & Duration",
-        t: `The Intern joins as a ${roleTitle(d.role)}, working remotely, for ${d.duration} months starting ${d.startDate}. The internship is deliverable-based — no fixed daily hours are mandated.`,
+        t: `The Intern joins as a ${roleTitle(d.role)}, working remotely, for ${d.duration} months starting ${d.startDate}. The internship is deliverable-based — no fixed daily hours are mandated.`
+          + ((d.scope || "").trim() ? ` Responsibilities: ${(d.scope || "").trim().replace(/\s+/g, " ")}` : ""),
       },
       {
         h: "2. Nature of Internship",
@@ -269,26 +277,42 @@ export function joiningLetter(d: InternData): {
  */
 export function defaultJoiningLetterText(d: InternData, kindLabel = "Internship"): string {
   const jl = joiningLetter(d);
-  const title = kindLabel.toLowerCase().includes("intern") ? "Internship Joining Letter" : `${kindLabel} Joining Letter`;
-  return [title, ...jl.paragraphs, ...jl.bullets.map((b) => "• " + b)].join("\n\n");
+  const intern = kindLabel.toLowerCase().includes("intern");
+  const title = intern ? "Internship Joining Letter" : `${kindLabel} Joining Letter`;
+  // The closing paragraphs used to be printed by the PDF itself, AFTER whatever the owner had
+  // written — so a carefully written Employment letter still ended with "on completion of your
+  // internship you will receive an Internship Completion Certificate". They belong to the letter,
+  // where they can be read and changed like every other line of it.
+  const closing = intern
+    ? (isHrRole(d.role)
+        ? "On successful completion of your internship, you will receive an Internship Completion Certificate. Outstanding performers will also receive a Letter of Recommendation, a LinkedIn recommendation, and first preference for future paid roles."
+        : "On successful completion (a minimum of 3 months is required), you will receive an Internship Completion Certificate. An intern who leaves before completing 3 months is not eligible for a certificate or any other benefit. Standout performers will also receive a Letter of Recommendation and first preference for future paid roles.")
+    : `On successful completion you will receive a Certificate of ${kindLabel}.`;
+  return [
+    title, ...jl.paragraphs, ...jl.bullets.map((b) => "• " + b),
+    closing,
+    `This offer is subject to your signed ${kindLabel} Agreement and NDA (attached).`,
+  ].join("\n\n");
 }
 
 /** Text (owner-edited or default) → the pieces the PDF draws. */
-export function parseJoiningLetter(text: string, d: InternData): { title: string; paragraphs: string[]; bullets: string[] } {
+export function parseJoiningLetter(text: string, d: InternData): { title: string; paragraphs: string[]; bullets: string[]; closing: string[] } {
   const filled = fillPlaceholders(text, d).replace(/\r/g, "").trim();
   const blocks = filled.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
   const title = blocks.shift() || "Joining Letter";
-  const paragraphs: string[] = [];
+  const paragraphs: string[] = [];   // before the list
   const bullets: string[] = [];
+  const closing: string[] = [];      // after it
+  let seenBullet = false;
   for (const b of blocks) {
     // A block may itself be a run of bullet lines, so split before deciding.
     for (const line of b.split("\n").map((l) => l.trim()).filter(Boolean)) {
-      if (/^[•\-*]\s*/.test(line)) bullets.push(line.replace(/^[•\-*]\s*/, ""));
-      else if (bullets.length) bullets.push(line);   // a wrapped bullet, not a new paragraph
+      if (/^[•\-*]\s*/.test(line)) { bullets.push(line.replace(/^[•\-*]\s*/, "")); seenBullet = true; }
+      else if (seenBullet) closing.push(line);   // anything after the list closes the letter
       else paragraphs.push(line);
     }
   }
-  return { title, paragraphs, bullets };
+  return { title, paragraphs, bullets, closing };
 }
 
 export const DOC_META = { COMPANY, FOUNDER, REGD_OFFICE, REGD_OFFICE_LINES, LLPIN, LIMITED_LIABILITY, SIGNATORIES };
@@ -308,10 +332,10 @@ function toText(doc: { title: string; intro: string; clauses: Clause[] }): strin
   return `${doc.title}\n\n${doc.intro}\n\n` + doc.clauses.map((c) => (c.h ? `${c.h}\n` : "") + c.t).join("\n\n");
 }
 /** The current Internship-Agreement / terms text for a role (bracketed placeholders auto-fill per hire). */
-export function defaultTermsText(roleLabel: string, isHR: boolean, paid = false, salary: number | null = null, salaryPeriod: string | null = null): string {
+export function defaultTermsText(roleLabel: string, isHR: boolean, paid = false, salary: number | null = null, salaryPeriod: string | null = null, scope: string | null = null): string {
   const code: Role = isHR ? "HR" : "M&C";
   const s = sampleData(code);
-  s.paid = paid; s.salary = salary; s.salaryPeriod = salaryPeriod;
+  s.paid = paid; s.salary = salary; s.salaryPeriod = salaryPeriod; s.scope = scope;
   let t = toText(internshipAgreement(s));
   if (!isHR && roleLabel && roleLabel !== ROLE_LABEL["M&C"]) t = t.split(ROLE_LABEL["M&C"]).join(roleLabel);
   return t;
