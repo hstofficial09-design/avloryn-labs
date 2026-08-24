@@ -358,6 +358,10 @@ export function fillPlaceholders(text: string, d: InternData): string {
     .split("[Address]").join(d.address)
     .split("[ID]").join(d.idType)
     .split("[Date]").join(d.signedAt)
+    // What the role actually does, as written against it in the editor. Without this, the
+    // Responsibilities field only reached the built-in template — so a kind with its own agreement
+    // could never say what its roles do, and one agreement could not serve two different roles.
+    .split("[Responsibilities]").join((d.scope || "").trim() || "as agreed with the Company")
     .split("[Company]").join(COMPANY);
 }
 /** Parse an owner-edited terms text back into title + intro + clauses for the PDF. */
