@@ -266,6 +266,45 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   for (const f of offenders) fail("R11 role label written by hand:", `${f} — use roleLabel() or a partner reads as "Employee"`);
 }
 
+// ── R12 · an expired session must say so, not answer "Not authorized" forever ────────────────
+// A portal session lasts seven days and nothing stops a page being open when it runs out. From
+// then on every call 401s while the page still looks signed in, so buttons silently refuse and it
+// reads as a broken feature — which is exactly how "Add day off" presented. One interceptor covers
+// every screen; per-call handling would be forgotten by the next thing anyone writes.
+// The DECISION is proven behaviourally in test_logic.ts (shouldSignOut); this only checks the
+// interceptor is still mounted and still asks it — a grep for "401" would be satisfied by the
+// number sitting in a comment.
+{
+  const g = code("components/portal/session-guard.tsx");
+  if (!/shouldSignOut\s*\([^)]*\)/.test(g))
+    fail("R12 the 401 interceptor no longer asks whether the session ended:", "components/portal/session-guard.tsx");
+  if (!/window\.fetch\s*=/.test(g))
+    fail("R12 the fetch interceptor is gone:", "each screen would have to remember 401 on its own");
+  if (!/sessionEnded\s*\(/.test(g))
+    fail("R12 nothing tells the person to sign in again:", "every button silently refuses");
+}
+
+// ── R13 · ignoring a finding hides THAT finding, never a new one ──────────────────────────────
+// "Ignore" exists so accepted findings stop taking up attention. The danger is obvious: ignore
+// "Bhavya has no calendar" and quietly never hear "Bhavya AND two others have no calendar".
+// The rule itself is proven behaviourally in test_logic.ts (stillIgnored); this checks both places
+// that decide visibility actually go through it rather than re-implementing the comparison.
+{
+  const st = code("lib/monitor/state.ts");
+  // Both places that decide whether something is still ignored must go through it. Counting uses
+  // is not enough: drop one and the total still looks healthy, which is how this rule first passed
+  // against code where reconcile had quietly gone back to its own comparison.
+  for (const [fn, re] of [["reconcile", /export async function reconcile[\s\S]*?\n}/],
+                          ["readState", /export async function readState[\s\S]*?\n}/]]) {
+    const body = re.exec(st)?.[0] || "";
+    if (!body) { fail("R13 function vanished:", fn); continue; }
+    if (!/stillIgnored\s*\(/.test(body))
+      fail("R13 ignore visibility decided by hand:", `${fn}() must use stillIgnored — a NEW fault could hide behind an old decision`);
+  }
+  if (!/if \(t\.muted\) return \{ alert: false/.test(st))
+    fail("R13 an ignored finding still emails:", "the button would do nothing anyone can feel");
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");

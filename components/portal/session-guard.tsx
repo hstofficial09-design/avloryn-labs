@@ -1,5 +1,6 @@
 "use client";
 import { useEffect } from "react";
+import { sessionEnded, shouldSignOut } from "@/lib/session-ended";
 
 // Auto sign-out for the Partner Portal.
 //  • Not "remember me": sign out after 30 min of inactivity, and re-validate on a
@@ -16,6 +17,27 @@ function cookie(name: string): string | null {
 }
 
 export default function SessionGuard() {
+  // A session lasts seven days, and nothing stops you having a portal page open when it runs out.
+  // From that moment every request comes back 401 "Not authorized" while the page carries on
+  // looking perfectly signed in — so buttons silently refuse and it reads as a broken feature or a
+  // permissions bug. (This is exactly what "Add day off" did.) One interceptor here covers every
+  // call from every portal screen, including ones written later, instead of each fetch remembering
+  // to handle it. 403 is left alone on purpose: that means "signed in, but not yours", which is a
+  // real answer worth showing rather than a reason to throw someone out.
+  useEffect(() => {
+    if (window.location.pathname.startsWith("/portal/login")) return;
+    const original = window.fetch;
+    window.fetch = async (...args) => {
+      const res = await original(...args);
+      try {
+        const url = typeof args[0] === "string" ? args[0] : (args[0] as Request)?.url || "";
+        if (shouldSignOut(res.status, url)) sessionEnded();
+      } catch { /* never let the guard break a request */ }
+      return res;
+    };
+    return () => { window.fetch = original; };
+  }, []);
+
   useEffect(() => {
     // Never guard the login page itself.
     if (window.location.pathname.startsWith("/portal/login")) return;

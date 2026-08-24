@@ -11,6 +11,8 @@ import { decideNewTime } from "../lib/booking/sync";
 import { taskStatus, workStats, reviewAverage, tenureScore, weekStartIST, tasksInWeek, type Task, type Review } from "../lib/portal-db";
 import { shouldAlert, type Tracked } from "../lib/monitor/state";
 import { roleLabel } from "../lib/role-label";
+import { shouldSignOut } from "../lib/session-ended";
+import { stillIgnored } from "../lib/monitor/state";
 
 let pass = 0;
 const fails: string[] = [];
@@ -151,6 +153,37 @@ console.log("\n── what we call somebody ──");
      "the owner is the owner whatever the row says");
   ok(roleLabel(null) === "Employee" && roleLabel(undefined) === "Employee",
      "a missing row never renders as blank or 'undefined'");
+}
+
+console.log("\n── when a 401 means 'sign in again' ──");
+{
+  // A session lasts seven days and nothing stops a page being open when it runs out. From then on
+  // every call 401s while the page still looks signed in — buttons silently refuse and it reads as
+  // a broken feature. That is exactly how "Add day off" presented itself.
+  ok(shouldSignOut(401, "/api/meet/admin/blackouts") === true, "a 401 on a scheduling call means the session ended");
+  ok(shouldSignOut(401, "/api/portal/tasks") === true, "…and on a portal call");
+  ok(shouldSignOut(403, "/api/portal/monitor") === false,
+     "a 403 must NOT sign anyone out — 'not yours' is not 'not signed in'");
+  ok(shouldSignOut(200, "/api/portal/tasks") === false, "a good response is left alone");
+  ok(shouldSignOut(401, "/api/portal/login") === false,
+     "a failed sign-in is an answer, not a reason to bounce off the login page");
+  ok(shouldSignOut(401, "https://api.stripe.com/v1/x") === false,
+     "someone else's 401 says nothing about this session");
+  ok(shouldSignOut(401, "not a url at all") === false, "an unparseable url never signs anyone out");
+}
+
+console.log("\n── ignoring a finding hides THAT finding, never a new one ──");
+{
+  // The whole risk of an Ignore button: set aside "Bhavya has no calendar" and quietly never hear
+  // "Bhavya AND two others have no calendar".
+  const was = "Bhavya Sharma — bookable but nothing lands in their diary";
+  const now = "Bhavya Sharma, Tavishi Bansal — bookable but nothing lands in their diary";
+  ok(stillIgnored("2026-08-24T00:00:00Z", was, was, true) === true, "the same finding stays ignored");
+  ok(stillIgnored("2026-08-24T00:00:00Z", was, now, true) === false,
+     "a CHANGED finding comes straight back — a new fault must not hide behind an old decision");
+  ok(stillIgnored("2026-08-24T00:00:00Z", was, was, false) === false,
+     "once it passes the ignore is spent, so the next break is heard");
+  ok(stillIgnored(null, was, was, true) === false, "nothing ignored means nothing hidden");
 }
 
 console.log("\n── the week a task belongs to ──");

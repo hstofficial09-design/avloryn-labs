@@ -44,6 +44,9 @@ export type StoredState = {
   last_alert_at: string | null;
   ack_at: string | null;
   ack_by: string | null;
+  /** Deliberately set aside — a known, accepted state that should stop taking up attention. */
+  muted_at: string | null;
+  muted_by: string | null;
 };
 
 export type Tracked = CheckResult & StoredState & {
@@ -51,7 +54,34 @@ export type Tracked = CheckResult & StoredState & {
   brokenHours: number | null;
   /** Somebody has said they are dealing with it — stays visible, stops shouting. */
   acknowledged: boolean;
+  /**
+   * Set aside on purpose. Unlike acknowledging, this drops it out of the main list — for findings
+   * that are true but accepted (someone who genuinely has no calendar and does not need one).
+   * It is never deleted: it stays in a collapsed list with an undo, and comes BACK on its own the
+   * moment the thing changes, because "I do not care about this today" must not mean "never tell
+   * me about this again".
+   */
+  muted: boolean;
 };
+
+/**
+ * Is this finding still the one that was set aside?
+ *
+ * Pure so it can be proven directly. The danger "Ignore" introduces is precise: ignore "Bhavya has
+ * no calendar" and quietly never hear "Bhavya AND two others have no calendar". So the ignore is
+ * pinned to the exact wording it was given for, and a recovery clears it — otherwise a decision
+ * made once would silence the next genuine break of the same check forever.
+ */
+export function stillIgnored(
+  mutedAt: string | Date | null | undefined,
+  mutedDetail: string | null | undefined,
+  detail: string,
+  failing: boolean,
+): boolean {
+  if (!mutedAt) return false;
+  if (!failing) return false;                 // it passed — the next break must be heard
+  return (mutedDetail ?? null) === detail;    // the finding itself changed → back it comes
+}
 
 let ready = false;
 async function ensure(c: PoolClient) {
@@ -65,6 +95,10 @@ async function ensure(c: PoolClient) {
     last_alert_at TIMESTAMPTZ,
     ack_at TIMESTAMPTZ, ack_by TEXT,
     updated_at TIMESTAMPTZ DEFAULT now())`);
+  // Added after the table shipped, so it has to be a migration rather than part of CREATE.
+  await c.query(`ALTER TABLE monitor_state ADD COLUMN IF NOT EXISTS muted_at TIMESTAMPTZ`);
+  await c.query(`ALTER TABLE monitor_state ADD COLUMN IF NOT EXISTS muted_by TEXT`);
+  await c.query(`ALTER TABLE monitor_state ADD COLUMN IF NOT EXISTS muted_detail TEXT`);
   await c.query(`CREATE TABLE IF NOT EXISTS monitor_beats (
     name TEXT PRIMARY KEY, at TIMESTAMPTZ NOT NULL, note TEXT)`);
   ready = true;
@@ -131,7 +165,7 @@ export function beatChecks(beats: { name: string; at: string }[]): CheckResult[]
 export async function reconcile(results: CheckResult[]): Promise<Tracked[]> {
   const merged = await withClient(async (c) => {
     const prev = new Map<string, StoredState>(
-      (await c.query(`SELECT id, first_failed_at, last_ok_at, last_alert_at, ack_at, ack_by FROM monitor_state`))
+      (await c.query(`SELECT id, first_failed_at, last_ok_at, last_alert_at, ack_at, ack_by, muted_at, muted_by, muted_detail FROM monitor_state`))
         .rows.map((r) => [r.id, r as StoredState]),
     );
     const now = new Date();
@@ -148,14 +182,23 @@ export async function reconcile(results: CheckResult[]): Promise<Tracked[]> {
       // than staying quiet because somebody ticked it off weeks ago.
       const ackAt = failing ? (p?.ack_at ? new Date(p.ack_at) : null) : null;
       const ackBy = failing ? p?.ack_by ?? null : null;
+      // Ignoring is pinned to the finding you actually read. If the detail changes — a second
+      // person's calendar breaks, a different name appears — that is news, so it un-ignores itself
+      // rather than hiding a new fault behind an old decision. Recovering clears it too.
+      const detail = r.detail.slice(0, 500);
+      const stillSame = stillIgnored(p?.muted_at, (p as any)?.muted_detail, detail, failing);
+      const mutedAt = stillSame ? new Date(p!.muted_at as string) : null;
+      const mutedBy = mutedAt ? (p as any).muted_by ?? null : null;
 
       await c.query(
-        `INSERT INTO monitor_state (id, ok, app, title, severity, detail, first_failed_at, last_ok_at, last_alert_at, ack_at, ack_by, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())
+        `INSERT INTO monitor_state (id, ok, app, title, severity, detail, first_failed_at, last_ok_at, last_alert_at, ack_at, ack_by, muted_at, muted_by, muted_detail, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
          ON CONFLICT (id) DO UPDATE SET ok=$2, app=$3, title=$4, severity=$5, detail=$6,
-           first_failed_at=$7, last_ok_at=$8, ack_at=$10, ack_by=$11, updated_at=now()`,
-        [r.id, r.ok, r.app, r.title, r.severity, r.detail.slice(0, 500),
-         firstFailed, lastOk, p?.last_alert_at ?? null, ackAt, ackBy],
+           first_failed_at=$7, last_ok_at=$8, ack_at=$10, ack_by=$11,
+           muted_at=$12, muted_by=$13, muted_detail=$14, updated_at=now()`,
+        [r.id, r.ok, r.app, r.title, r.severity, detail,
+         firstFailed, lastOk, p?.last_alert_at ?? null, ackAt, ackBy,
+         mutedAt, mutedBy, mutedAt ? detail : null],
       );
 
       out.push({
@@ -167,6 +210,9 @@ export async function reconcile(results: CheckResult[]): Promise<Tracked[]> {
         ack_by: ackBy,
         brokenHours: firstFailed ? (now.getTime() - firstFailed.getTime()) / 3_600_000 : null,
         acknowledged: !!ackAt,
+        muted_at: mutedAt ? mutedAt.toISOString() : null,
+        muted_by: mutedBy,
+        muted: !!mutedAt,
       });
     }
     return out;
@@ -174,7 +220,7 @@ export async function reconcile(results: CheckResult[]): Promise<Tracked[]> {
   // No database means no memory — still report this run's results so the alert can go out.
   return merged || results.map((r) => ({
     ...r, first_failed_at: null, last_ok_at: null, last_alert_at: null, ack_at: null, ack_by: null,
-    brokenHours: null, acknowledged: false,
+    muted_at: null, muted_by: null, brokenHours: null, acknowledged: false, muted: false,
   }));
 }
 
@@ -189,6 +235,9 @@ export async function reconcile(results: CheckResult[]): Promise<Tracked[]> {
  */
 export function shouldAlert(t: Tracked): { alert: boolean; stage: number } {
   if (t.ok === true) return { alert: false, stage: -1 };
+  // Set aside on purpose. It stays on the dashboard in the ignored list, but it has been read and
+  // decided on, so it does not get to interrupt anyone again until the finding itself changes.
+  if (t.muted) return { alert: false, stage: -1 };
   if (t.acknowledged) return { alert: false, stage: -1 };
   if (!t.last_alert_at) return { alert: true, stage: 0 };              // first time we have seen it
   const hoursBroken = t.brokenHours ?? 0;
@@ -223,11 +272,33 @@ export async function unacknowledge(id: string) {
   });
 }
 
+/**
+ * "I know, and I am fine with it" — the finding is true but accepted, so stop it taking up room.
+ *
+ * Not a delete and not a permanent off switch. The exact wording being ignored is stored alongside,
+ * so if the finding changes at all it comes straight back: ignoring "Bhavya has no calendar" must
+ * never also hide "Bhavya AND two others have no calendar". It also returns on its own once the
+ * check passes again, so the next genuine break is heard.
+ */
+export async function mute(id: string, who: string) {
+  await withClient(async (c) => {
+    await c.query(
+      `UPDATE monitor_state SET muted_at = now(), muted_by = $2, muted_detail = detail WHERE id = $1`,
+      [id, who]);
+  });
+}
+
+export async function unmute(id: string) {
+  await withClient(async (c) => {
+    await c.query(`UPDATE monitor_state SET muted_at = NULL, muted_by = NULL, muted_detail = NULL WHERE id = $1`, [id]);
+  });
+}
+
 /** What the portal banner reads — the last known state, without re-running anything. */
 export async function readState(): Promise<Tracked[]> {
   return (await withClient(async (c) => {
     const r = await c.query(
-      `SELECT id, ok, app, title, severity, detail, first_failed_at, last_ok_at, last_alert_at, ack_at, ack_by
+      `SELECT id, ok, app, title, severity, detail, first_failed_at, last_ok_at, last_alert_at, ack_at, ack_by, muted_at, muted_by, muted_detail
          FROM monitor_state ORDER BY (ok IS NOT TRUE) DESC, severity, app, title`);
     const now = Date.now();
     return r.rows.map((x): Tracked => ({
@@ -238,8 +309,12 @@ export async function readState(): Promise<Tracked[]> {
       last_alert_at: x.last_alert_at ? new Date(x.last_alert_at).toISOString() : null,
       ack_at: x.ack_at ? new Date(x.ack_at).toISOString() : null,
       ack_by: x.ack_by,
+      // Same rule as reconcile: an ignore is pinned to the wording it was given for.
+      muted_at: stillIgnored(x.muted_at, x.muted_detail, x.detail || "", x.ok !== true) ? new Date(x.muted_at).toISOString() : null,
+      muted_by: stillIgnored(x.muted_at, x.muted_detail, x.detail || "", x.ok !== true) ? x.muted_by : null,
       brokenHours: x.first_failed_at ? (now - new Date(x.first_failed_at).getTime()) / 3_600_000 : null,
       acknowledged: !!x.ack_at,
+      muted: stillIgnored(x.muted_at, x.muted_detail, x.detail || "", x.ok !== true),
     }));
   })) || [];
 }

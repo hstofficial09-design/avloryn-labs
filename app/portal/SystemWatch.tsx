@@ -17,11 +17,13 @@ type Check = {
   id: string; app: string; title: string; ok: boolean | null;
   severity: "critical" | "warn"; detail: string;
   brokenHours: number | null; acknowledged: boolean; ack_by: string | null;
+  muted: boolean; muted_by: string | null;
 };
 type Data = {
   canAct: boolean; lastRun: string | null; stale: boolean; staleMin: number | null;
-  counts: { total: number; critical: number; warn: number; acknowledged: number };
+  counts: { total: number; critical: number; warn: number; acknowledged: number; ignored: number };
   failing: Check[];
+  ignored: Check[];
 };
 
 const ago = (min: number | null) =>
@@ -61,11 +63,12 @@ export default function SystemWatch() {
 
   const live = d.failing.filter((c) => !c.acknowledged);
   const known = d.failing.filter((c) => c.acknowledged);
+  const ignored = d.ignored || [];
   const worst = live.some((c) => c.severity === "critical");
 
   // Everything healthy and the watch itself is running: one quiet line. It is there to prove the
   // watchdog is alive — an all-clear that never changes is indistinguishable from a dead one.
-  if (!d.failing.length && !d.stale) {
+  if (!d.failing.length && !ignored.length && !d.stale) {
     return (
       <div className="mb-5 flex items-center gap-2 text-[12px] text-faint">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#2e7d5b]" />
@@ -94,7 +97,9 @@ export default function SystemWatch() {
               ? "The system watch has stopped running"
               : live.length
                 ? `${live.length} thing${live.length === 1 ? "" : "s"} need${live.length === 1 ? "s" : ""} attention`
-                : `${known.length} known issue${known.length === 1 ? "" : "s"} being dealt with`}
+                : known.length
+                  ? `${known.length} known issue${known.length === 1 ? "" : "s"} being dealt with`
+                  : `${ignored.length} ignored issue${ignored.length === 1 ? "" : "s"}`}
           </div>
           <div className="text-[12.5px] text-faint mt-1">
             {d.stale
@@ -103,7 +108,7 @@ export default function SystemWatch() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {d.failing.length > 0 && (
+          {(d.failing.length > 0 || ignored.length > 0) && (
             <button onClick={() => setOpen((v) => !v)}
               className="rounded-full ring-hairline bg-card hover:bg-muted px-3 py-1.5 text-[12px] font-[540]">
               {open ? "Hide" : "Details"}
@@ -139,17 +144,51 @@ export default function SystemWatch() {
                   </div>
                 </div>
                 {d.canAct && (
-                  <button onClick={() => act(c.acknowledged ? "unack" : "ack", c.id)} disabled={busy === c.id}
-                    className="rounded-full ring-hairline bg-card hover:bg-muted px-2.5 py-1 text-[11.5px] font-[540] shrink-0 disabled:opacity-50">
-                    {busy === c.id ? "…" : c.acknowledged ? "Not handled" : "I'm on it"}
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button onClick={() => act(c.acknowledged ? "unack" : "ack", c.id)} disabled={busy === c.id}
+                      className="rounded-full ring-hairline bg-card hover:bg-muted px-2.5 py-1 text-[11.5px] font-[540] disabled:opacity-50">
+                      {busy === c.id ? "…" : c.acknowledged ? "Not handled" : "I'm on it"}
+                    </button>
+                    {/* For a finding that is true but accepted — someone who genuinely does not
+                        need a calendar. Sets it aside rather than deleting it. */}
+                    <button onClick={() => act("mute", c.id)} disabled={busy === c.id}
+                      title="Set this aside — it stops appearing here and stops emailing, and comes back if it changes or recovers"
+                      className="rounded-full ring-hairline bg-card hover:bg-muted px-2.5 py-1 text-[11.5px] font-[540] text-faint disabled:opacity-50">
+                      Ignore
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
           ))}
           {d.canAct && live.length > 0 && (
             <div className="text-[11.5px] text-faint px-1">
-              &ldquo;I&rsquo;m on it&rdquo; stops the reminder emails for that one. It stays here until it actually passes again.
+              &ldquo;I&rsquo;m on it&rdquo; stops the reminder emails but keeps it listed until it actually passes.
+              &ldquo;Ignore&rdquo; sets it aside entirely — it returns on its own if the finding changes or recovers.
+            </div>
+          )}
+
+          {ignored.length > 0 && (
+            <div className="pt-2 mt-1" style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}>
+              <div className="text-[11.5px] text-faint px-1 mb-2">
+                Ignored ({ignored.length}) — still failing, deliberately set aside.
+              </div>
+              {ignored.map((c) => (
+                <div key={c.id} className="flex items-start gap-2 px-1 py-1.5 flex-wrap">
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="text-[12px] text-faint">
+                      <b className="font-[600]">{c.app}</b> · {c.title}
+                      <span className="block break-words">{c.detail}</span>
+                    </div>
+                  </div>
+                  {d.canAct && (
+                    <button onClick={() => act("unmute", c.id)} disabled={busy === c.id}
+                      className="rounded-full ring-hairline bg-card hover:bg-muted px-2.5 py-1 text-[11.5px] font-[540] shrink-0 disabled:opacity-50">
+                      {busy === c.id ? "…" : "Un-ignore"}
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>

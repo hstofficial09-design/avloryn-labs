@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LogoMark } from "@/components/ui/logo";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { JobDescriptionPreview } from "@/components/careers/jd";
+import { guard } from "@/lib/session-ended";
 
 type Member = { id: string; name: string; email: string; timezone: string; active: boolean; is_organizer: boolean; googleConnected: boolean; googleNeedsReconnect?: boolean; googleEmail: string | null; zohoConnected: boolean; zohoNeedsReconnect?: boolean; zohoEmail: string | null; connectLink: string | null; zohoConnectLink: string | null };
 type Question = { id?: string; label: string; required: boolean; type?: string; options?: string[] };
@@ -25,7 +26,7 @@ const btnNeu = "btn-neu rounded-full px-4 py-2 text-[12.5px] font-semibold";
 const msg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong");
 
 async function api(path: string, method = "GET", body?: unknown) {
-  const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+  const r = await guard(await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined }));
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || "Request failed");
   return d;
