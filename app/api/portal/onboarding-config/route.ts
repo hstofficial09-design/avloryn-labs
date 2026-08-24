@@ -3,6 +3,7 @@ import { getSession } from "@/lib/portal-auth";
 import { listRoles, upsertRole, archiveRole, renameRole, setRoleDefaultTerms, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig,
   listRegTypes, upsertRegType, archiveRegType, regKeyFrom, RESERVED_REG_KEYS } from "@/lib/portal-db";
 import { defaultTermsText, standardNdaText, roleLabel, isHrRole, sensitiveClause } from "@/lib/intern-docs";
+import { bustFormConfigCache } from "@/app/api/onboarding-form/config/route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +45,9 @@ export async function POST(req: Request) {
   const s = await getSession();
   if (!s || s.role !== "owner") return deny();
   const d = await req.json().catch(() => ({}));
+  // Every action here changes what the public form shows, so drop the cached copy immediately —
+  // an owner must never save a change and then be shown the old one.
+  bustFormConfigCache();
 
   try {
     if (d.action === "role") {

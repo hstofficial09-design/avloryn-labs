@@ -337,6 +337,22 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     fail("R14 a registration kind can be deleted:", "everyone who joined as it would be orphaned");
 }
 
+// ── R15 · the database connection budget is shared, and small ────────────────────────────────
+// The pooler runs in session mode with room for 15 clients TOTAL, and LivoDraft's Flask app talks
+// to the same database through it. Raising this pool to 12 exhausted the pooler outright —
+// "(EMAXCONNSESSION) max clients reached in session mode" — which from the outside does not look
+// like a limit, it looks like the site hanging.
+{
+  const db = code("lib/portal-db.ts");
+  const max = /max:\s*(\d+)/.exec(db);
+  if (!max) fail("R15 the pool size is no longer set:", "pg defaults to 10, which is over budget here");
+  else if (+max[1] > 6) fail("R15 pool max is too large:", `${max[1]} — the pooler allows 15 clients TOTAL and LivoDraft shares them`);
+  // Warm connections are what made pages fast; more connections were not.
+  if (!/keepAlive:\s*true/.test(db)) fail("R15 connections are no longer kept warm:", "each read pays a >1s handshake again");
+  // A pool with no connect timeout waits forever when the pooler is full — the hang, not an error.
+  if (!/connectionTimeoutMillis/.test(db)) fail("R15 no connection timeout:", "a full pooler would hang the page instead of failing");
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");

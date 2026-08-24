@@ -5,6 +5,19 @@ import { roleLabel } from "@/lib/intern-docs";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Cached for a few seconds.
+ *
+ * This is four database reads, and the database is ~180ms away — so it cost about a second every
+ * time. It used to be hit only when somebody opened the public form; it is now read on portal
+ * pages too, which made that second land on ordinary navigation. The content changes only when the
+ * owner saves in /portal/onboarding, and that clears this immediately (bustFormConfigCache), so
+ * the window only ever affects a change made from somewhere else.
+ */
+let cache: { at: number; body: any } | null = null;
+const TTL_MS = 30_000;
+export function bustFormConfigCache() { cache = null; }
+
 // Public (no auth) — drives the onboarding form: which roles, which fields, custom questions,
 // and each role's AGREEMENT TERMS.
 //
@@ -15,9 +28,10 @@ export const dynamic = "force-dynamic";
 // `sensitive` and the NDA ride along for the same reason — they change the document the hire
 // signs. Still withheld: commission_enabled/scope and every other internal setting.
 export async function GET() {
+  if (cache && Date.now() - cache.at < TTL_MS) return NextResponse.json(cache.body);
   try {
     const [roles, form, legal, regTypes] = await Promise.all([listRoles(), getFormConfig(), getLegalConfig(), listRegTypes()]);
-    return NextResponse.json({
+    const body = {
       // What "I am registering as" offers. Enabled ones only — an archived kind still names the
       // people who joined under it, but nobody new may pick it.
       regTypes: regTypes.filter((t) => t.enabled).map((t) => ({ key: t.key, label: t.label })),
@@ -35,7 +49,9 @@ export async function GET() {
       nda: legal?.nda || null,
       fields: form?.fields || {},
       custom: Array.isArray(form?.custom) ? form.custom : [],
-    });
+    };
+    cache = { at: Date.now(), body };
+    return NextResponse.json(body);
   } catch {
     return NextResponse.json({ regTypes: [], roles: [], fields: {}, custom: [], nda: null });
   }

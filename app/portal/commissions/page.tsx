@@ -20,13 +20,21 @@ export default async function CommissionsPage() {
     let employees: any[] = [], orders: any[] = [], deleted: any[] = [], names: Record<string, string> = {}, trackMap: Record<string, boolean> = {}, error: string | null = null;
     let gmv = 0;
     try {
-      await purgeExpiredEmployees().catch(() => 0);
-      employees = await listEmployeesWithSummary();
-      orders = await listCommissionOrders();
-      deleted = await listDeletedEmployees();
-      names = await allEmployeeNames();
-      trackMap = await commissionTracksMap();
-      gmv = await companyGmv().catch(() => 0);
+      // Six independent reads. Waiting for each before starting the next meant paying the round
+      // trip to the database six times over — about a second and a half of staring at nothing, on
+      // a page opened constantly. Nothing here depends on anything else here, so they go together.
+      //
+      // The yearly purge of long-deleted records is housekeeping, not part of this page: it runs
+      // alongside and its result is not read. Waiting on it only ever made the page slower.
+      purgeExpiredEmployees().catch(() => 0);
+      [employees, orders, deleted, names, trackMap, gmv] = await Promise.all([
+        listEmployeesWithSummary(),
+        listCommissionOrders(),
+        listDeletedEmployees(),
+        allEmployeeNames(),
+        commissionTracksMap(),
+        companyGmv().catch(() => 0),
+      ]);
     } catch (e: any) {
       error = e?.message || "Could not reach the commissions database.";
     }

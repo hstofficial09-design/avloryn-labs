@@ -29,12 +29,16 @@ export default async function PortalPage() {
     // one in, so gating on it would lock them out of their own earnings on first sign-in.
     if (prof && !prof.dob && !isPartner) { needsProfile = true; }
     else {
-      const map = await commissionTracksMap();
+      // These two do not depend on each other; one after the other was two round trips to a
+      // database that is a fifth of a second away.
+      const [map, meta] = await Promise.all([
+        commissionTracksMap(),
+        partnerBdMeta(s.email).catch(() => null),
+      ]);
       // Partners always earn, whatever the staff track settings say.
       isCommissionRole = isPartner || trackHasCommission(prof?.track, map);
       name = prof?.name || name;
       role = roleLabel(prof);
-      const meta = await partnerBdMeta(s.email).catch(() => null);
       isBd = !!meta?.isBd;
       // Nothing anywhere asks for a bank account or UPI, so the first anyone learns that a payout
       // cannot be made is when the owner tries to make it. Ask before there is money waiting.

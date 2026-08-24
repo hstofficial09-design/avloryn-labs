@@ -22,8 +22,31 @@ export function getPool(): Pool | null {
   pool = new Pool({
     connectionString: url,
     ssl: local ? false : { rejectUnauthorized: false },
-    max: 4,
+    // The database is ~180ms away and opening a fresh connection to it costs well over a second.
+    // With nothing keeping connections warm, a page making several reads at once had to open new
+    // ones for them — so asking for four things in parallel took LONGER than asking one at a time
+    // (1398ms vs 719ms, measured). Keeping them alive is what fixed that, not having lots of them.
+    //
+    // ⚠ The ceiling is NOT ours to spend. The pooler runs in session mode with room for 15 clients
+    // TOTAL, and LivoDraft's Flask app talks to the same database through it. Asking for 12 here
+    // exhausted it outright:
+    //     (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to
+    //     pool_size: 15
+    // — which does not look like a limit from the outside, it looks like the site hanging. Six is
+    // enough for the widest page (six reads at once) and leaves the rest for LivoDraft.
+    max: 6,
+    keepAlive: true,
+    idleTimeoutMillis: 300_000,
+    // Fail rather than hang if the database is unreachable — a page that eventually errors is far
+    // better than one that spins forever.
+    connectionTimeoutMillis: 10_000,
   });
+  pool.on("error", (e) => console.error("[db] idle client error", e.message));
+  // Open a few connections in the background straight away, so the cost of the handshake lands on
+  // the deploy rather than on whoever happens to load the first page after it.
+  for (let i = 0; i < 4; i++) {
+    pool.connect().then((c) => c.release()).catch(() => { /* it will be retried on real use */ });
+  }
   return pool;
 }
 
