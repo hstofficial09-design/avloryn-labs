@@ -325,12 +325,15 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   const submit = code("app/api/onboarding-form/route.ts");
   if (!/listRegTypes\s*\(/.test(submit))
     fail("R14 the submitted kind is no longer validated:", "any emp_type could be posted straight in");
-  if (!/RESERVED_REG_KEYS/.test(submit))
+  if (!/isReservedRegKey\s*\(/.test(submit))
     fail("R14 a reserved kind could be submitted:", "'partner' would grant partner rules from a public form");
 
   const db = code("lib/portal-db.ts");
-  if (!/RESERVED_REG_KEYS[\s\S]{0,400}partner/.test(db))
+  if (!/isReservedRegKey/.test(db))
     fail("R14 'partner' is no longer reserved:", "it could be added as a public registration kind");
+  // Matching the exact key was not enough — "Network Partner" became `network_partner` and got in.
+  if (!/partners\?/.test(db))
+    fail("R14 only the exact key 'partner' is blocked:", "'Network Partner' would slip through again");
   // Archive, never delete: people already carry the key in employees.emp_type, and a record
   // pointing at a kind nothing can name reads as broken data.
   if (/DELETE FROM reg_types/.test(db))
@@ -351,6 +354,33 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   if (!/keepAlive:\s*true/.test(db)) fail("R15 connections are no longer kept warm:", "each read pays a >1s handshake again");
   // A pool with no connect timeout waits forever when the pooler is full — the hang, not an error.
   if (!/connectionTimeoutMillis/.test(db)) fail("R15 no connection timeout:", "a full pooler would hang the page instead of failing");
+}
+
+// ── R16 · the team are in their own meeting, and the guest is not more welcome than they are ──
+// Every member held a COPY of the meeting rather than being on it. Google admits an event's
+// attendees into its Meet straight away and makes everyone else knock — so the outside guest, who
+// was the only attendee, walked in, while the team stood outside asking to join their own meeting.
+{
+  const g = code("lib/booking/google.ts");
+  if (!/memberEmails/.test(g))
+    fail("R16 the team are no longer attendees:", "they will have to ask to be let into their own meeting");
+  if (!/responseStatus:\s*["']accepted["']/.test(g))
+    fail("R16 the team are invited rather than included:", "they are not being asked, they are attending");
+  // Only outsiders should get Google's own invite: the team already get ours and their own copy.
+  if (!/sendUpdates:\s*["']externalOnly["']/.test(g))
+    fail("R16 everyone is emailed by Google too:", "the team get the same meeting three times");
+  // Every path that creates a meeting has to pass them, not just the one that was reported.
+  // Checked INSIDE the call, not anywhere in the file: `memberEmails` is a local variable in each
+  // of these routes anyway, so a rule that greps the whole file passes even when the argument has
+  // been dropped — which is how the first version of this rule missed exactly that.
+  for (const f of ["app/api/meet/book/route.ts", "app/api/meet/admin/create-meeting/route.ts",
+                   "app/api/meet/admin/bookings/route.ts"]) {
+    const src = code(f);
+    const call = /createMeetingForMembers\(\{([\s\S]*?)\}\)/.exec(src);
+    if (!call) continue;
+    if (!/\bmemberEmails\b/.test(call[1]))
+      fail("R16 a meeting path leaves the team out:", `${f} — they would have to knock to join`);
+  }
 }
 
 console.log(`[invariants] scanned ${API.length} API routes`);

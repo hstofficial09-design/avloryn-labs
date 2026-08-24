@@ -4,7 +4,8 @@ import { LogoMark } from "@/components/ui/logo";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { JobDescriptionPreview } from "@/components/careers/jd";
 
-type Role = { track: string; commission_enabled: boolean; paid: boolean; salary: number | null; salary_period: string | null; scope: string | null; terms: string | null; sensitive: boolean; default_emp_type: string; defaultTerms?: string; defaultIsCustom?: boolean };
+type Role = { track: string; commission_enabled: boolean; paid: boolean; salary: number | null; salary_period: string | null; scope: string | null; terms: string | null; sensitive: boolean; default_emp_type: string; defaultTerms?: string; defaultIsCustom?: boolean;
+  joiningText?: string; joiningDefault?: string; joiningIsCustom?: boolean };
 type FieldCfg = { visible: boolean; required: boolean };
 type Custom = { label: string; type: string; required: boolean };
 type Form = { fields?: Record<string, FieldCfg>; custom?: Custom[] };
@@ -30,7 +31,7 @@ async function api(action: string, body: any) {
   return d;
 }
 
-type RegType = { key: string; label: string; enabled: boolean; sort: number; terms: string | null; inUse?: number };
+type RegType = { key: string; label: string; enabled: boolean; sort: number; terms: string | null; inUse?: number; roles?: number };
 
 export default function OnboardingBuilder() {
   const [tab, setTab] = useState<"roles" | "fields">("roles");
@@ -214,16 +215,8 @@ function RegTypesCard({ types, reload }: { types: RegType[]; reload: () => void 
       </p>
       <div className="grid gap-2">
         {types.map((t) => (
-          <div key={t.key} className="flex items-center gap-2 flex-wrap rounded-xl ring-hairline bg-card px-3 py-2">
-            <input value={t.label} onChange={(e) => save(t, { label: e.target.value })}
-              className={input + " flex-1 min-w-[160px] !py-1.5"} />
-            <span className="text-[11px] text-faint font-mono">{t.key}</span>
-            {!!t.inUse && <span className="text-[11px] text-faint">{t.inUse} joined</span>}
-            <button onClick={() => save(t, { enabled: !t.enabled })} disabled={busy === t.key}
-              className={pill(t.enabled) + " !text-[11.5px]"}>{t.enabled ? "On the form" : "Hidden"}</button>
-            <button onClick={() => remove(t)} disabled={busy === t.key}
-              className="text-[11.5px] text-[#b3341f] px-2 py-1 rounded-lg hover:bg-[#b3341f]/8">Remove</button>
-          </div>
+          <RegTypeRow key={t.key} t={t} busy={busy === t.key} pill={pill}
+            onSave={(patch) => save(t, patch)} onRemove={() => remove(t)} />
         ))}
         {!types.length && <div className="text-[12.5px] text-faint">None yet — add one below.</div>}
       </div>
@@ -237,9 +230,57 @@ function RegTypesCard({ types, reload }: { types: RegType[]; reload: () => void 
   );
 }
 
+/**
+ * One row, with the name held locally while it is being typed.
+ *
+ * Saving on every keystroke meant a database write and a full reload per letter — and the database
+ * is ~180ms away, so typing or backspacing crawled: several presses before one character appeared.
+ * The name is local until you finish (blur or Enter), and only a real change is sent.
+ */
+function RegTypeRow({ t, busy, pill, onSave, onRemove }: {
+  t: RegType; busy: boolean; pill: (on: boolean) => string;
+  onSave: (patch: Partial<RegType>) => void; onRemove: () => void;
+}) {
+  const [label, setLabel] = useState(t.label);
+  // Follow an update that came from elsewhere (a reload), but never fight what is being typed.
+  useEffect(() => { setLabel(t.label); }, [t.label]);
+  const commit = () => { const v = label.trim(); if (v && v !== t.label) onSave({ label: v }); else setLabel(t.label); };
+  return (
+          <div className="flex items-center gap-2 flex-wrap rounded-xl ring-hairline bg-card px-3 py-2">
+            <input value={label} onChange={(e) => setLabel(e.target.value)} onBlur={commit}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+                                  if (e.key === "Escape") setLabel(t.label); }}
+              className={input + " flex-1 min-w-[160px] !py-1.5"} />
+            <span className="text-[11px] text-faint font-mono">{t.key}</span>
+            {!!t.inUse && <span className="text-[11px] text-faint">{t.inUse} joined</span>}
+            {/* Offered on the form but with no role to pick — the person gets an empty list and
+                cannot finish. Said here, where it can be fixed. */}
+            {t.enabled && !t.roles && (
+              <span className="text-[11px] font-[600] text-[#b3341f]" title="Set a role's Type to this below, or hide this kind">
+                no roles yet
+              </span>
+            )}
+            <button onClick={() => onSave({ enabled: !t.enabled })} disabled={busy}
+              className={pill(t.enabled) + " !text-[11.5px]"}>{t.enabled ? "On the form" : "Hidden"}</button>
+            <button onClick={onRemove} disabled={busy}
+              className="text-[11.5px] text-[#b3341f] px-2 py-1 rounded-lg hover:bg-[#b3341f]/8">Remove</button>
+          </div>
+  );
+}
+
 function RoleCard({ role, regTypes, reload }: { role: Role; regTypes: RegType[]; reload: () => void }) {
   // Pre-fill terms with the CURRENT terms so the owner sees + edits what already exists.
   const [r, setR] = useState<Role>({ ...role, terms: role.terms ?? role.defaultTerms ?? "" });
+  // The joining letter is saved on its own action, so it is held apart from the rest of the form.
+  const [joining, setJoining] = useState<string>(role.joiningText ?? "");
+  const [jBusy, setJBusy] = useState(""); const [jOk, setJOk] = useState("");
+  async function saveJoining(alsoDefault = false) {
+    setJBusy(alsoDefault ? "def" : "save"); setJOk("");
+    try {
+      await api(alsoDefault ? "joining-default" : "joining", { track: r.track, text: joining });
+      setJOk(alsoDefault ? "Saved as default ✓" : "Saved ✓"); setTimeout(() => setJOk(""), 2000); reload();
+    } finally { setJBusy(""); }
+  }
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -338,6 +379,34 @@ function RoleCard({ role, regTypes, reload }: { role: Role; regTypes: RegType[];
         <label className={label}>Responsibilities <span className="text-faint font-normal">(shown in the agreement; blank = standard)</span></label>
         <textarea value={r.scope || ""} onChange={(e) => set("scope", e.target.value)} rows={2} className={input + " resize-none"} placeholder="e.g. Assist with content, campaigns and community…" />
       </div>
+      {/* Each role gets its own joining letter. It used to come from one fixed template that said
+          "Internship Joining Letter" and "Unpaid, deliverable-based" whoever was joining, so an
+          Employee was sent an intern's letter. */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between gap-x-4 flex-wrap">
+          <label className={label}>Joining letter for this role <span className="text-faint font-normal">([brackets] auto-fill per hire — first line is the title, lines starting with • become the bullet list)</span></label>
+          <div className="flex items-center gap-3 mb-1.5">
+            <button type="button" onClick={() => saveJoining(false)} disabled={!!jBusy}
+              className="text-[11.5px] font-semibold text-gold hover:underline disabled:opacity-40 disabled:no-underline">
+              {jBusy === "save" ? "Saving…" : jOk === "Saved ✓" ? jOk : "Save letter"}
+            </button>
+            <button type="button" onClick={() => saveJoining(true)} disabled={!!jBusy || !joining.trim()}
+              className="text-[11.5px] font-semibold text-gold hover:underline disabled:opacity-40 disabled:no-underline">
+              {jBusy === "def" ? "Saving…" : jOk === "Saved as default ✓" ? jOk : "Set as default"}
+            </button>
+            {role.joiningDefault && (
+              <button type="button" onClick={() => setJoining(role.joiningDefault!)}
+                className="text-[11.5px] font-semibold text-muted-foreground hover:underline">Reset to default</button>
+            )}
+          </div>
+        </div>
+        <RichTextEditor
+          value={joining} onChange={setJoining} rows={10}
+          preview={(src) => <JobDescriptionPreview source={src} />}
+          hint={<>The first line is the letter&rsquo;s title. Blank lines separate paragraphs; a line beginning with • is a bullet. [Full Name], [Start Date] and the rest fill in for each hire.</>}
+        />
+      </div>
+
       <div className="mb-4">
         <div className="flex items-center justify-between gap-x-4 flex-wrap">
           <label className={label}>Terms &amp; Conditions for this role <span className="text-faint font-normal">(edit freely; [brackets] auto-fill per hire — reset restores {role.defaultIsCustom ? "your saved default" : "the standard template"})</span></label>

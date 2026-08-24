@@ -259,9 +259,48 @@ export function joiningLetter(d: InternData): {
   };
 }
 
+/**
+ * The joining letter as EDITABLE TEXT, and the reverse: text back into a letter.
+ *
+ * `joiningLetter` above builds one from a fixed template that says "Internship Joining Letter" and
+ * "Unpaid, deliverable-based" whoever is joining — so an Employee received an intern's letter, and
+ * a Consultant would have too. The owner edits this per role now, exactly as they already edit the
+ * agreement, and the bracketed fields fill in per hire.
+ */
+export function defaultJoiningLetterText(d: InternData, kindLabel = "Internship"): string {
+  const jl = joiningLetter(d);
+  const title = kindLabel.toLowerCase().includes("intern") ? "Internship Joining Letter" : `${kindLabel} Joining Letter`;
+  return [title, ...jl.paragraphs, ...jl.bullets.map((b) => "• " + b)].join("\n\n");
+}
+
+/** Text (owner-edited or default) → the pieces the PDF draws. */
+export function parseJoiningLetter(text: string, d: InternData): { title: string; paragraphs: string[]; bullets: string[] } {
+  const filled = fillPlaceholders(text, d).replace(/\r/g, "").trim();
+  const blocks = filled.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+  const title = blocks.shift() || "Joining Letter";
+  const paragraphs: string[] = [];
+  const bullets: string[] = [];
+  for (const b of blocks) {
+    // A block may itself be a run of bullet lines, so split before deciding.
+    for (const line of b.split("\n").map((l) => l.trim()).filter(Boolean)) {
+      if (/^[•\-*]\s*/.test(line)) bullets.push(line.replace(/^[•\-*]\s*/, ""));
+      else if (bullets.length) bullets.push(line);   // a wrapped bullet, not a new paragraph
+      else paragraphs.push(line);
+    }
+  }
+  return { title, paragraphs, bullets };
+}
+
 export const DOC_META = { COMPANY, FOUNDER, REGD_OFFICE, REGD_OFFICE_LINES, LLPIN, LIMITED_LIABILITY, SIGNATORIES };
 
 // ── Read-only text of the CURRENT NDA + terms, for the Onboarding Form editor ──
+/** A stand-in hire for previewing a role's documents in the editor (placeholders, not real data). */
+export function sampleDataFor(track: string): InternData {
+  const s = sampleData(isHrRole(track) ? "HR" : "M&C");
+  s.role = (track as Role) || s.role;
+  return s;
+}
+
 function sampleData(roleCode: Role): InternData {
   return { fullName: "[Full Name]", mobile: "[Mobile]", email: "[Email]", address: "[Address]", role: roleCode, startDate: "[Start Date]", duration: "[Duration]", idType: "[ID]", isStudent: false, signedAt: "[Date]" };
 }

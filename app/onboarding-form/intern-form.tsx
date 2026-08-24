@@ -152,7 +152,25 @@ export default function InternForm() {
   }, []);
 
   // The selected role's owner-configured settings (terms, pay) — drives the agreement below.
+  /**
+   * Only the roles that belong to the kind being registered.
+   *
+   * Every role carries the kind it is for (its "Type" in /portal/onboarding). Showing all of them
+   * regardless meant someone registering as an Employee could pick an intern track and be sent an
+   * internship agreement — the wrong document, signed.
+   *
+   * A role with no kind recorded is shown to everyone rather than hidden from everyone: an owner
+   * who has not set them all up yet must not end up with an empty list.
+   */
+  const rolesForKind = useMemo(
+    () => roleOpts.filter((r) => !r.emp_type || r.emp_type === f.regType),
+    [roleOpts, f.regType]);
   const roleCfg = useMemo(() => roleOpts.find((r) => r.value === f.role) || null, [roleOpts, f.role]);
+  // Switching kind must not leave the previous kind's role selected underneath.
+  useEffect(() => {
+    if (!rolesForKind.length) return;
+    if (!rolesForKind.some((r) => r.value === f.role)) up("role", rolesForKind[0].value);
+  }, [rolesForKind]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const previewData: InternData = useMemo(() => ({
     ...f, role: f.role, startDate: fmtDate(f.startDate) || "[Start Date]",
@@ -334,8 +352,13 @@ export default function InternForm() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Field label="Track *">
               <select className={inputCls} value={f.role} onChange={(e) => { const r = e.target.value; up("role", r); if (isHrRole(r)) up("duration", "2"); }}>
-                {roleOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {rolesForKind.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+              {!rolesForKind.length && (
+                <div className="text-[11.5px] text-[#b3341f] mt-1">
+                  No tracks are set up for this yet — please pick another option above.
+                </div>
+              )}
             </Field>
             <Field label="Start date *"><input type="date" className={inputCls} value={f.startDate} onChange={(e) => up("startDate", e.target.value)} /></Field>
             <Field label="Duration *">

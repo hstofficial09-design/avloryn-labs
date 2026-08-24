@@ -14,6 +14,8 @@ import {
   internshipAgreement,
   ndaAgreement,
   joiningLetter,
+  defaultJoiningLetterText,
+  parseJoiningLetter,
   ROLE_LABEL,
   roleLabel,
   roleTitle,
@@ -24,7 +26,7 @@ import {
   type InternData,
   type Clause,
 } from "@/lib/intern-docs";
-import { listRoles, getFormConfig, getLegalConfig, listRegTypes, RESERVED_REG_KEYS } from "@/lib/portal-db";
+import { listRoles, getFormConfig, getLegalConfig, listRegTypes, isReservedRegKey } from "@/lib/portal-db";
 import { getSession } from "@/lib/portal-auth";
 
 export const runtime = "nodejs";
@@ -389,7 +391,7 @@ export async function POST(req: Request) {
   let regTypeKey = String(dRaw.regType || "").trim().toLowerCase();
   let regType = "Intern";
   try {
-    const offered = (await listRegTypes()).filter((t) => t.enabled && !RESERVED_REG_KEYS.includes(t.key));
+    const offered = (await listRegTypes()).filter((t) => t.enabled && !isReservedRegKey(t.key));
     const hit = offered.find((t) => t.key === regTypeKey) || offered[0];
     if (hit) { regTypeKey = hit.key; regType = hit.label; }
     else { regTypeKey = "intern"; }
@@ -502,8 +504,12 @@ export async function POST(req: Request) {
     const signImgN = await n.pdf.embedPng(b64ToBytes(signature)).catch(() => undefined);
     const nd = new Doc(n.pdf, n.fonts, n.logo);
     nd.header();
-    nd.title("Internship Joining Letter");
-    const jl = joiningLetter(d);
+    // The owner's letter for this role when they have written one, else the built-in template.
+    // Same source as the editor shows, so what is signed is what was previewed.
+    const jl = (roleCfg?.joining_letter && String(roleCfg.joining_letter).trim())
+      ? parseJoiningLetter(String(roleCfg.joining_letter), d)
+      : parseJoiningLetter(defaultJoiningLetterText(d, regType), d);
+    nd.title(jl.title);
     nd.para(new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }), { size: 10, color: MUTED, gap: 10 });
     for (const p of jl.paragraphs) nd.para(p, { gap: 8 });
     for (const b of jl.bullets) nd.para("•  " + b, { size: 10.5, gap: 3 });

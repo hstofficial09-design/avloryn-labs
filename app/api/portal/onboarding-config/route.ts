@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/portal-auth";
 import { listRoles, upsertRole, archiveRole, renameRole, setRoleDefaultTerms, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig,
-  listRegTypes, upsertRegType, archiveRegType, regKeyFrom, RESERVED_REG_KEYS } from "@/lib/portal-db";
-import { defaultTermsText, standardNdaText, roleLabel, isHrRole, sensitiveClause } from "@/lib/intern-docs";
+  listRegTypes, upsertRegType, archiveRegType, regKeyFrom, RESERVED_REG_KEYS, isReservedRegKey, setRoleJoiningLetter } from "@/lib/portal-db";
+import { defaultTermsText, standardNdaText, roleLabel, isHrRole, sensitiveClause, defaultJoiningLetterText, sampleDataFor } from "@/lib/intern-docs";
 import { bustFormConfigCache } from "@/app/api/onboarding-form/config/route";
 
 export const runtime = "nodejs";
@@ -23,11 +23,20 @@ export async function GET() {
   // default text read "joins as a M&C Intern", which then got saved into the role's terms.
   // "Reset to default" restores the owner's OWN saved baseline when they've set one, so a stray
   // click can never drop a role back to the built-in template and lose their agreement.
+  // The letter's title word comes from the kind's own label — "Consultant Joining Letter" rather
+  // than a ternary that only knows about interns and employees.
+  const kindLabel = (key: string) => regTypes.find((t) => t.key === key)?.label || "Employment";
   const withDefaults = roles.map((r) => ({
     ...r,
     defaultTerms: r.default_terms
       || defaultTermsText(roleLabel(r.track), isHrRole(r.track) || r.sensitive, r.paid, r.salary, r.salary_period),
     defaultIsCustom: !!r.default_terms,
+    // The joining letter, alongside the agreement — the editor needs both the current text and
+    // what "Reset to default" would restore.
+    joiningText: r.joining_letter || defaultJoiningLetterText(sampleDataFor(r.track), kindLabel(r.default_emp_type)),
+    joiningDefault: r.joining_letter_default
+      || defaultJoiningLetterText(sampleDataFor(r.track), kindLabel(r.default_emp_type)),
+    joiningIsCustom: !!r.joining_letter,
   }));
   // The NDA is one shared document. Owner-edited text wins; "Reset to default" restores their
   // own saved baseline if they set one, else the standard template.
@@ -78,6 +87,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
     // ── the kinds of person who can join ────────────────────────────────────────────────
+    if (d.action === "joining" || d.action === "joining-default") {
+      const track = String(d.track || "").trim();
+      if (!track) return NextResponse.json({ error: "Which role?" }, { status: 400 });
+      const text = typeof d.text === "string" ? d.text.slice(0, TERMS_MAX) : null;
+      // "Save as my default" also stores the baseline, so a later Reset restores THIS letter and
+      // not the built-in template — the same protection the agreement already has.
+      await setRoleJoiningLetter(track, text && text.trim() ? text : null, d.action === "joining-default");
+      return NextResponse.json({ ok: true });
+    }
+
     if (d.action === "reg-type") {
       const t = d.regType || {};
       const label = String(t.label || "").trim();
@@ -86,7 +105,7 @@ export async function POST(req: Request) {
       // employees.emp_type for everyone who joined, and dashboards and documents read it.
       const key = String(t.key || "").trim().toLowerCase() || regKeyFrom(label);
       if (!key) return NextResponse.json({ error: "That name has no letters or numbers in it" }, { status: 400 });
-      if (RESERVED_REG_KEYS.includes(key)) {
+      if (isReservedRegKey(key)) {
         return NextResponse.json(
           { error: "“Partner” is set aside — network partners are added and approved from the network, not this form." },
           { status: 400 });

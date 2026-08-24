@@ -8,10 +8,11 @@
  * Run:  npx tsx tests/test_logic.ts
  */
 import { decideNewTime } from "../lib/booking/sync";
+import { hostOrder } from "../lib/booking/google";
 import { taskStatus, workStats, reviewAverage, tenureScore, weekStartIST, tasksInWeek, type Task, type Review } from "../lib/portal-db";
 import { shouldAlert, type Tracked } from "../lib/monitor/state";
 import { roleLabel } from "../lib/role-label";
-import { regKeyFrom, RESERVED_REG_KEYS } from "../lib/portal-db";
+import { regKeyFrom, RESERVED_REG_KEYS, isReservedRegKey } from "../lib/portal-db";
 import { shouldSignOut } from "../lib/session-ended";
 import { stillIgnored } from "../lib/monitor/state";
 
@@ -55,6 +56,25 @@ console.log("\n── which calendar copy wins a sync ──");
     { memberId: "a", startISO: new Date(Date.parse(iso(14)) + 30_000).toISOString(), updatedAt: iso(16) },
   ], "a");
   ok(decision === null, "half a minute of drift is rounding, not a reschedule");
+}
+
+console.log("\n── who hosts the meeting ──");
+{
+  // The host's Google event creates the Meet link, so someone whose calendar lives in Zoho is a
+  // poor first choice — but a chosen organizer outranks that. "Make me the organizer" was losing
+  // exactly here: the choice went to the front, then the Zoho-last rule pushed it back, and the
+  // owner works in Zoho, so the person who picked themselves was always the one demoted.
+  const zoho = new Set(["owner"]);
+  ok(hostOrder(["a", "owner", "b"], zoho, "owner")[0] === "owner",
+     "a chosen organizer hosts even when their calendar is Zoho",
+     hostOrder(["a", "owner", "b"], zoho, "owner")[0]);
+  ok(hostOrder(["owner", "a"], zoho, null)[0] === "a",
+     "with nobody chosen, a Google calendar is tried first");
+  ok(hostOrder(["a", "b"], new Set<string>(), "nobody")[0] === "a",
+     "an organizer who is not attending is ignored rather than inserted");
+  ok(hostOrder(["a", "owner", "b"], zoho, "owner").length === 3,
+     "nobody is dropped from the running order");
+  ok(hostOrder(["x"], new Set<string>(), null).join() === "x", "a single member is simply the host");
 }
 
 console.log("\n── on time, late, overdue ──");
@@ -172,6 +192,12 @@ console.log("\n── adding a kind of person ──");
   // their own. A kind on the PUBLIC form that grants those would hand them to anyone with the link.
   ok(RESERVED_REG_KEYS.includes("partner"), "'partner' is reserved and can never be offered on the form");
   ok(RESERVED_REG_KEYS.includes(regKeyFrom("Partner")), "…including when typed as a label");
+  // Blocking the exact key was not enough: "Network Partner" becomes `network_partner`, sailed
+  // through, and showed up as an option on the public form.
+  ok(isReservedRegKey(regKeyFrom("Network Partner")), "'Network Partner' is refused too, key or no key");
+  ok(isReservedRegKey("partners"), "…and the plural");
+  ok(!isReservedRegKey("partnership"), "but a word that merely contains it is fine");
+  ok(!isReservedRegKey("consultant") && !isReservedRegKey("volunteer"), "ordinary kinds are unaffected");
 }
 
 console.log("\n── when a 401 means 'sign in again' ──");

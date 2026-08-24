@@ -89,6 +89,11 @@ async function ensureSchema(c: PoolClient) {
   // The owner's own baseline for "Reset to default". Without it, Reset restored the built-in
   // template and an accidental click could wipe a role's edited agreement.
   await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS default_terms TEXT`);
+  // The joining letter, editable per role like the agreement above it. It was generated from a
+  // fixed template that said "Internship Joining Letter" and "Unpaid, deliverable-based" whoever
+  // was joining — so an Employee received an intern's letter.
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS joining_letter TEXT`);
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS joining_letter_default TEXT`);
   // HR is non-commission + handles sensitive data, by default
   await c.query(`INSERT INTO track_settings (track, commission_enabled, sensitive) VALUES ('Human Resources', FALSE, TRUE) ON CONFLICT (track) DO NOTHING`);
 
@@ -903,7 +908,7 @@ export async function listTrackSettings(): Promise<{ track: string; commission_e
 }
 
 // ── Registration kinds ("I am registering as") ───────────────────────────────
-export type RegType = { key: string; label: string; enabled: boolean; sort: number; terms: string | null; inUse?: number };
+export type RegType = { key: string; label: string; enabled: boolean; sort: number; terms: string | null; inUse?: number; roles?: number };
 
 /**
  * `partner` is NOT a registration kind and must never become one.
@@ -915,6 +920,19 @@ export type RegType = { key: string; label: string; enabled: boolean; sort: numb
  */
 export const RESERVED_REG_KEYS = ["partner"];
 
+/**
+ * Anything that READS as a partner, not just the exact key.
+ *
+ * Blocking only "partner" was not enough: "Network Partner" becomes the key `network_partner`,
+ * sailed through, and appeared on the public form as an option — which is precisely the confusion
+ * the reservation exists to prevent, whatever the key underneath happens to be.
+ */
+export function isReservedRegKey(key: string): boolean {
+  const k = (key || "").trim().toLowerCase();
+  if (RESERVED_REG_KEYS.includes(k)) return true;
+  return /(^|_)partners?(_|$)/.test(k);
+}
+
 /** A label typed by a person → a stable key. "Consultant (part-time)" → "consultant_part_time". */
 export function regKeyFrom(label: string): string {
   return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
@@ -924,20 +942,25 @@ export async function listRegTypes(includeArchived = false): Promise<RegType[]> 
   return (await withClient(async (c) => {
     const r = await c.query(
       `SELECT rt.key, rt.label, rt.enabled, rt.sort, rt.terms,
-              (SELECT COUNT(*)::int FROM employees e WHERE e.emp_type = rt.key AND e.deleted_at IS NULL) AS in_use
+              (SELECT COUNT(*)::int FROM employees e WHERE e.emp_type = rt.key AND e.deleted_at IS NULL) AS in_use,
+              -- How many roles are set up for this kind. A kind with none is offered on the form
+              -- but leads to an empty track list, so the owner needs to see that where they can
+              -- fix it rather than discovering it on the public form.
+              (SELECT COUNT(*)::int FROM track_settings ts
+                WHERE COALESCE(ts.archived,FALSE)=FALSE AND COALESCE(ts.default_emp_type,'intern') = rt.key) AS roles
          FROM reg_types rt
         WHERE $1 OR COALESCE(rt.archived,FALSE) = FALSE
         ORDER BY rt.sort, rt.label`, [includeArchived]);
     return r.rows.map((x: any) => ({
       key: x.key, label: x.label, enabled: x.enabled !== false, sort: +x.sort || 0,
-      terms: x.terms || null, inUse: +x.in_use || 0,
+      terms: x.terms || null, inUse: +x.in_use || 0, roles: +x.roles || 0,
     }));
   })) || [];
 }
 
 export async function upsertRegType(t: { key: string; label: string; enabled: boolean; sort?: number; terms?: string | null }) {
   const key = t.key.trim().toLowerCase();
-  if (!key || RESERVED_REG_KEYS.includes(key)) throw new Error("That name is reserved");
+  if (!key || isReservedRegKey(key)) throw new Error("That name is reserved");
   return withClient((c) => c.query(
     `INSERT INTO reg_types (key,label,enabled,sort,terms) VALUES ($1,$2,$3,$4,$5)
      ON CONFLICT (key) DO UPDATE SET label=$2, enabled=$3, sort=$4, terms=$5, archived=FALSE`,
@@ -962,12 +985,16 @@ export type RoleConfig = {
   salary_period: string | null; scope: string | null; terms: string | null; sensitive: boolean; default_emp_type: string;
   /** Owner-saved baseline restored by "Reset to default"; null = use the built-in template. */
   default_terms?: string | null;
+  /** The joining letter for this role; null = build it from the template. */
+  joining_letter?: string | null;
+  joining_letter_default?: string | null;
 };
 export async function listRoles(): Promise<RoleConfig[]> {
   return withClient(async (c) => {
     const r = await c.query(`
       SELECT t.track, COALESCE(ts.commission_enabled,TRUE) commission_enabled, COALESCE(ts.paid,FALSE) paid,
-             ts.salary, ts.salary_period, ts.scope, ts.terms, ts.default_terms, COALESCE(ts.sensitive,FALSE) sensitive,
+             ts.salary, ts.salary_period, ts.scope, ts.terms, ts.default_terms,
+             ts.joining_letter, ts.joining_letter_default, COALESCE(ts.sensitive,FALSE) sensitive,
              COALESCE(ts.default_emp_type,'intern') default_emp_type
       FROM (SELECT DISTINCT track FROM employees WHERE track IS NOT NULL AND track<>'' AND deleted_at IS NULL
             UNION SELECT track FROM track_settings WHERE COALESCE(archived,FALSE)=FALSE) t
@@ -978,6 +1005,7 @@ export async function listRoles(): Promise<RoleConfig[]> {
       track: x.track, commission_enabled: x.commission_enabled !== false, paid: x.paid === true,
       salary: x.salary != null ? +x.salary : null, salary_period: x.salary_period || null,
       scope: x.scope || null, terms: x.terms || null, default_terms: x.default_terms || null,
+      joining_letter: x.joining_letter || null, joining_letter_default: x.joining_letter_default || null,
       sensitive: x.sensitive === true, default_emp_type: x.default_emp_type || "intern",
     }));
   });
@@ -991,6 +1019,17 @@ export async function upsertRole(f: RoleConfig) {
 }
 /** Make the role's current terms its "default": Reset-to-default then restores THIS text,
  *  so a stray click can never fall back to the built-in template and lose the owner's version. */
+/** Save (or clear) the joining letter for one role. Mirrors setRoleDefaultTerms below. */
+export async function setRoleJoiningLetter(track: string, text: string | null, alsoDefault = false) {
+  return withClient((c) => c.query(
+    alsoDefault
+      ? `INSERT INTO track_settings (track, joining_letter, joining_letter_default) VALUES ($1,$2,$2)
+         ON CONFLICT (track) DO UPDATE SET joining_letter=$2, joining_letter_default=$2, archived=FALSE`
+      : `INSERT INTO track_settings (track, joining_letter) VALUES ($1,$2)
+         ON CONFLICT (track) DO UPDATE SET joining_letter=$2, archived=FALSE`,
+    [track.trim(), text]));
+}
+
 export async function setRoleDefaultTerms(track: string, terms: string | null) {
   return withClient((c) => c.query(
     `INSERT INTO track_settings (track, terms, default_terms) VALUES ($1,$2,$2)
