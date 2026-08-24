@@ -68,6 +68,28 @@ async function ensureSchema(c: PoolClient) {
   await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS default_terms TEXT`);
   // HR is non-commission + handles sensitive data, by default
   await c.query(`INSERT INTO track_settings (track, commission_enabled, sensitive) VALUES ('Human Resources', FALSE, TRUE) ON CONFLICT (track) DO NOTHING`);
+
+  // ── the kinds of person who can join ────────────────────────────────────────────────────
+  // "I am registering as" used to be two hard-coded radios on the form, with Employee greyed out
+  // as "coming soon". Adding a third kind meant editing the form, the submit route, the builder
+  // and the config API together — so in practice it never happened.
+  //
+  // The KEY is what lands in employees.emp_type and is never renamed after creation: dashboards,
+  // documents and the partner rules all read it. The LABEL is what people see and is free to
+  // change. Archiving hides a kind from the form without touching anyone who already joined as it.
+  await c.query(`CREATE TABLE IF NOT EXISTS reg_types (
+    key TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    sort INT NOT NULL DEFAULT 100,
+    terms TEXT,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT now())`);
+  // Seeds match what the form already offered, so nothing shifts on the day this lands. Employee
+  // arrives enabled — it was only ever "coming soon" because nothing rendered it.
+  for (const [k, l, srt] of [["intern", "Intern", 10], ["employee", "Employee", 20]] as const) {
+    await c.query(`INSERT INTO reg_types (key,label,sort) VALUES ($1,$2,$3) ON CONFLICT (key) DO NOTHING`, [k, l, srt]);
+  }
   // onboarding form field config + editable legal text (single JSON rows)
   await c.query(`CREATE TABLE IF NOT EXISTS form_config (id INT PRIMARY KEY DEFAULT 1, config JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ)`);
   await c.query(`CREATE TABLE IF NOT EXISTS legal_config (id INT PRIMARY KEY DEFAULT 1, config JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ)`);
@@ -855,6 +877,60 @@ export async function listTrackSettings(): Promise<{ track: string; commission_e
       ORDER BY t.track`);
     return r.rows.map((x: any) => ({ track: x.track, commission_enabled: x.commission_enabled !== false }));
   });
+}
+
+// ── Registration kinds ("I am registering as") ───────────────────────────────
+export type RegType = { key: string; label: string; enabled: boolean; sort: number; terms: string | null; inUse?: number };
+
+/**
+ * `partner` is NOT a registration kind and must never become one.
+ *
+ * Network partners are recruited and approved through the network flow, not by filling in the
+ * onboarding form — and emp_type "partner" carries real rules with it (their own dashboard, the
+ * 2% override, no network of their own). Letting someone appear on the public form and self-select
+ * into it would hand out those rules to whoever found the link.
+ */
+export const RESERVED_REG_KEYS = ["partner"];
+
+/** A label typed by a person → a stable key. "Consultant (part-time)" → "consultant_part_time". */
+export function regKeyFrom(label: string): string {
+  return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+}
+
+export async function listRegTypes(includeArchived = false): Promise<RegType[]> {
+  return (await withClient(async (c) => {
+    const r = await c.query(
+      `SELECT rt.key, rt.label, rt.enabled, rt.sort, rt.terms,
+              (SELECT COUNT(*)::int FROM employees e WHERE e.emp_type = rt.key AND e.deleted_at IS NULL) AS in_use
+         FROM reg_types rt
+        WHERE $1 OR COALESCE(rt.archived,FALSE) = FALSE
+        ORDER BY rt.sort, rt.label`, [includeArchived]);
+    return r.rows.map((x: any) => ({
+      key: x.key, label: x.label, enabled: x.enabled !== false, sort: +x.sort || 0,
+      terms: x.terms || null, inUse: +x.in_use || 0,
+    }));
+  })) || [];
+}
+
+export async function upsertRegType(t: { key: string; label: string; enabled: boolean; sort?: number; terms?: string | null }) {
+  const key = t.key.trim().toLowerCase();
+  if (!key || RESERVED_REG_KEYS.includes(key)) throw new Error("That name is reserved");
+  return withClient((c) => c.query(
+    `INSERT INTO reg_types (key,label,enabled,sort,terms) VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (key) DO UPDATE SET label=$2, enabled=$3, sort=$4, terms=$5, archived=FALSE`,
+    [key, t.label.trim() || key, t.enabled, t.sort ?? 100, t.terms ?? null]));
+}
+
+/**
+ * Archive, never delete.
+ *
+ * People already carry this key in employees.emp_type. Removing the row would leave their record
+ * pointing at a kind nothing can name any more, so it is hidden from the form and kept for them.
+ */
+export async function archiveRegType(key: string) {
+  const k = key.trim().toLowerCase();
+  if (RESERVED_REG_KEYS.includes(k)) throw new Error("That kind cannot be removed");
+  return withClient((c) => c.query(`UPDATE reg_types SET archived=TRUE, enabled=FALSE WHERE key=$1`, [k]));
 }
 
 // ── Full role config (onboarding form + legal) ───────────────────────────────

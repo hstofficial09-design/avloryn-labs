@@ -30,9 +30,12 @@ async function api(action: string, body: any) {
   return d;
 }
 
+type RegType = { key: string; label: string; enabled: boolean; sort: number; terms: string | null; inUse?: number };
+
 export default function OnboardingBuilder() {
   const [tab, setTab] = useState<"roles" | "fields">("roles");
   const [roles, setRoles] = useState<Role[]>([]);
+  const [regTypes, setRegTypes] = useState<RegType[]>([]);
   const [form, setForm] = useState<Form>({});
   const [nda, setNda] = useState("");
   const [ndaDefault, setNdaDefault] = useState("");
@@ -45,7 +48,7 @@ export default function OnboardingBuilder() {
   const load = useCallback(async () => {
     try {
       const r = await fetch("/api/portal/onboarding-config"); const d = await r.json();
-      setRoles(d.roles || []); setForm(d.form || {}); setNda(d.ndaText || "");
+      setRoles(d.roles || []); setRegTypes(d.regTypes || []); setForm(d.form || {}); setNda(d.ndaText || "");
       setNdaDefault(d.ndaDefault || ""); setNdaIsCustom(!!d.ndaIsCustom); setSensCl(d.sensitiveClause || null);
       setLoaded(true);
     }
@@ -76,13 +79,13 @@ export default function OnboardingBuilder() {
 
       {!loaded
         ? <div className="card-lux rounded-3xl p-6 text-[13px] text-muted-foreground">Loading your settings…</div>
-        : tab === "roles" ? <RolesTab roles={roles} nda={nda} ndaDefault={ndaDefault} ndaIsCustom={ndaIsCustom} sensCl={sensCl} reload={load} /> : <FieldsTab form={form} reload={load} />}
+        : tab === "roles" ? <RolesTab roles={roles} regTypes={regTypes} nda={nda} ndaDefault={ndaDefault} ndaIsCustom={ndaIsCustom} sensCl={sensCl} reload={load} /> : <FieldsTab form={form} reload={load} />}
     </div>
   );
 }
 
 /* ─────────── Roles & terms ─────────── */
-function RolesTab({ roles, nda, ndaDefault, ndaIsCustom, sensCl, reload }: { roles: Role[]; nda: string; ndaDefault: string; ndaIsCustom: boolean; sensCl: { h?: string; t: string } | null; reload: () => void }) {
+function RolesTab({ roles, regTypes, nda, ndaDefault, ndaIsCustom, sensCl, reload }: { roles: Role[]; regTypes: RegType[]; nda: string; ndaDefault: string; ndaIsCustom: boolean; sensCl: { h?: string; t: string } | null; reload: () => void }) {
   const [newRole, setNewRole] = useState("");
   const [busy, setBusy] = useState(false);
   const [showNda, setShowNda] = useState(false);
@@ -93,7 +96,8 @@ function RolesTab({ roles, nda, ndaDefault, ndaIsCustom, sensCl, reload }: { rol
   return (
     <div className="grid gap-4">
       <NdaCard nda={nda} ndaDefault={ndaDefault} ndaIsCustom={ndaIsCustom} sensCl={sensCl} open={showNda} setOpen={setShowNda} reload={reload} />
-      {roles.map((r) => <RoleCard key={r.track} role={r} reload={reload} />)}
+      <RegTypesCard types={regTypes} reload={reload} />
+      {roles.map((r) => <RoleCard key={r.track} role={r} regTypes={regTypes} reload={reload} />)}
       <form onSubmit={add} className={card + " flex items-center gap-2 flex-wrap"}>
         <input value={newRole} onChange={(e) => setNewRole(e.target.value)} placeholder="Add a new role (e.g. Design)" className={input + " sm:max-w-sm"} />
         <button type="submit" disabled={busy} className={GOLD + " px-5 py-2.5 text-[13px]"}>Add role</button>
@@ -159,7 +163,81 @@ function NdaCard({ nda, ndaDefault, ndaIsCustom, sensCl, open, setOpen, reload }
   );
 }
 
-function RoleCard({ role, reload }: { role: Role; reload: () => void }) {
+
+/**
+ * The kinds of person who can join — what "I am registering as" offers on the form.
+ *
+ * This was two radios written into the form, with Employee greyed out as "coming soon", so adding
+ * a third meant editing the form, the submit route, the builder and the config API together.
+ *
+ * Two things are deliberately not editable. The KEY is fixed at creation because it is already
+ * written into everyone who joined as that kind, and the dashboards, the documents and the partner
+ * rules all read it — renaming it would orphan real people. And removing a kind archives it rather
+ * than deleting it, for the same reason: it stops being offered, and still names whoever holds it.
+ */
+function RegTypesCard({ types, reload }: { types: RegType[]; reload: () => void }) {
+  const pill = (on: boolean) => `rounded-full px-3 py-1 text-[11.5px] font-[600] ${on ? "btn-gold" : "bg-card ring-hairline text-muted-foreground"}`;
+  const [adding, setAdding] = useState("");
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+
+  async function save(t: RegType, patch: Partial<RegType>) {
+    setBusy(t.key); setErr("");
+    try { await api("reg-type", { regType: { ...t, ...patch } }); reload(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Save failed"); }
+    finally { setBusy(""); }
+  }
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    const label = adding.trim(); if (!label) return;
+    setBusy("new"); setErr("");
+    try {
+      await api("reg-type", { regType: { label, enabled: true, sort: (types.at(-1)?.sort ?? 0) + 10 } });
+      setAdding(""); reload();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not add"); }
+    finally { setBusy(""); }
+  }
+  async function remove(t: RegType) {
+    if (!confirm(`Stop offering “${t.label}” on the form?\n\n${t.inUse ? `${t.inUse} person(s) already joined as this — they keep it. ` : ""}You can add it back later.`)) return;
+    setBusy(t.key);
+    try { await api("reg-type-archive", { key: t.key }); reload(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Could not remove"); }
+    finally { setBusy(""); }
+  }
+
+  return (
+    <div className={card}>
+      <div className="font-serif text-[16px] font-[600]">Who can join</div>
+      <p className="text-[12px] text-muted-foreground mt-1 mb-3">
+        The options under “I am registering as” on the onboarding form. Network partners are not
+        here on purpose — they are added and approved from the network, not this form.
+      </p>
+      <div className="grid gap-2">
+        {types.map((t) => (
+          <div key={t.key} className="flex items-center gap-2 flex-wrap rounded-xl ring-hairline bg-card px-3 py-2">
+            <input value={t.label} onChange={(e) => save(t, { label: e.target.value })}
+              className={input + " flex-1 min-w-[160px] !py-1.5"} />
+            <span className="text-[11px] text-faint font-mono">{t.key}</span>
+            {!!t.inUse && <span className="text-[11px] text-faint">{t.inUse} joined</span>}
+            <button onClick={() => save(t, { enabled: !t.enabled })} disabled={busy === t.key}
+              className={pill(t.enabled) + " !text-[11.5px]"}>{t.enabled ? "On the form" : "Hidden"}</button>
+            <button onClick={() => remove(t)} disabled={busy === t.key}
+              className="text-[11.5px] text-[#b3341f] px-2 py-1 rounded-lg hover:bg-[#b3341f]/8">Remove</button>
+          </div>
+        ))}
+        {!types.length && <div className="text-[12.5px] text-faint">None yet — add one below.</div>}
+      </div>
+      <form onSubmit={add} className="flex items-center gap-2 flex-wrap mt-3">
+        <input value={adding} onChange={(e) => setAdding(e.target.value)}
+          placeholder="Add a kind (e.g. Consultant, Freelancer, Volunteer)" className={input + " sm:max-w-sm"} />
+        <button type="submit" disabled={busy === "new"} className={GOLD + " px-5 py-2.5 text-[13px]"}>Add</button>
+      </form>
+      {err && <div className="text-[12px] text-[#b3341f] mt-2">{err}</div>}
+    </div>
+  );
+}
+
+function RoleCard({ role, regTypes, reload }: { role: Role; regTypes: RegType[]; reload: () => void }) {
   // Pre-fill terms with the CURRENT terms so the owner sees + edits what already exists.
   const [r, setR] = useState<Role>({ ...role, terms: role.terms ?? role.defaultTerms ?? "" });
   const [busy, setBusy] = useState(false);
@@ -227,9 +305,12 @@ function RoleCard({ role, reload }: { role: Role; reload: () => void }) {
         </div>
         <div>
           <div className={label}>Type</div>
-          <div className="flex gap-2">
-            <button onClick={() => set("default_emp_type", "intern")} className={pill(r.default_emp_type === "intern")}>Intern</button>
-            <button onClick={() => set("default_emp_type", "employee")} className={pill(r.default_emp_type === "employee")}>Employee</button>
+          {/* Every kind the owner has set up, not the two that used to be written in here. */}
+          <div className="flex gap-2 flex-wrap">
+            {(regTypes.length ? regTypes : [{ key: "intern", label: "Intern" } as RegType]).map((t) => (
+              <button key={t.key} onClick={() => set("default_emp_type", t.key)}
+                className={pill(r.default_emp_type === t.key)}>{t.label}</button>
+            ))}
           </div>
         </div>
         <div>

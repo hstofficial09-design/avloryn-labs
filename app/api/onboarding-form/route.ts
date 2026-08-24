@@ -24,7 +24,7 @@ import {
   type InternData,
   type Clause,
 } from "@/lib/intern-docs";
-import { listRoles, getFormConfig, getLegalConfig } from "@/lib/portal-db";
+import { listRoles, getFormConfig, getLegalConfig, listRegTypes, RESERVED_REG_KEYS } from "@/lib/portal-db";
 import { getSession } from "@/lib/portal-auth";
 
 export const runtime = "nodejs";
@@ -382,7 +382,22 @@ export async function POST(req: Request) {
   const dob = (dRaw.dob || "").trim();
   const signature = typeof body.signature === "string" ? (body.signature as string) : "";
   const consent = !!body.consent;
-  const regType = dRaw.regType === "employee" ? "Employee" : "Intern";
+  // Which kind of person this is. Validated against what the owner actually offers rather than
+  // trusted: this becomes employees.emp_type, which the dashboards, the documents and the partner
+  // rules all read, so an unknown value posted straight at this endpoint must not create one.
+  // Anything unrecognised falls back to the first offered kind — never to a reserved one.
+  let regTypeKey = String(dRaw.regType || "").trim().toLowerCase();
+  let regType = "Intern";
+  try {
+    const offered = (await listRegTypes()).filter((t) => t.enabled && !RESERVED_REG_KEYS.includes(t.key));
+    const hit = offered.find((t) => t.key === regTypeKey) || offered[0];
+    if (hit) { regTypeKey = hit.key; regType = hit.label; }
+    else { regTypeKey = "intern"; }
+  } catch {
+    // No config reachable — behave exactly as before rather than refusing a real submission.
+    regTypeKey = regTypeKey === "employee" ? "employee" : "intern";
+    regType = regTypeKey === "employee" ? "Employee" : "Intern";
+  }
 
   // Which optional fields are required is owner-controlled (default: required).
   let formCfg: { fields?: Record<string, { visible?: boolean; required?: boolean }>; custom?: { label: string; required?: boolean }[] } = {};
@@ -602,7 +617,7 @@ export async function POST(req: Request) {
           name: d.fullName,
           email: d.email,
           mobile: d.mobile,
-          emp_type: regType === "Employee" ? "employee" : "intern",
+          emp_type: regTypeKey,
           track: roleLabel(d.role) || "",
           dob: isoDate(dob) ?? undefined,   // store one consistent format, like start_date
           address: d.address,

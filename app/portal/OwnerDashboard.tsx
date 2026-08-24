@@ -65,6 +65,14 @@ export default function OwnerDashboard({ employees, orders, deleted, names, trac
   const [detail, setDetail] = useState<Emp | null>(null);
   const [msg, setMsg] = useState("");
   const [form, setForm] = useState({ name: "", email: "", mobile: "", emp_type: "intern", track: "", commission_pct: "10", password: "" });
+  // The kinds the owner set up in /portal/onboarding. Read here so this form and the public one
+  // stay the same list rather than drifting into two hard-coded copies.
+  const [regTypes, setRegTypes] = useState<{ key: string; label: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/onboarding-form/config").then((r) => r.json())
+      .then((d) => { if (Array.isArray(d.regTypes) && d.regTypes.length) setRegTypes(d.regTypes); })
+      .catch(() => { /* the form still works on the built-in default */ });
+  }, []);
 
   // True company GMV (each sale once). Computed server-side (companyGmv) because a 2-tier sale
   // books two commission rows — network partner 10% + BD 2% override — so summing per-employee sales would
@@ -174,8 +182,12 @@ export default function OwnerDashboard({ employees, orders, deleted, names, trac
                     <input className={inputCls} placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                     <input className={inputCls} placeholder="Email (login)" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
                     <input className={inputCls} placeholder="Mobile" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
+                    {/* Same list the onboarding form offers, so adding someone by hand and someone
+                        joining through the form can never produce two different kinds of person. */}
                     <select className={inputCls} value={form.emp_type} onChange={(e) => setForm({ ...form, emp_type: e.target.value })}>
-                      <option value="intern">Intern</option><option value="employee">Employee</option>
+                      {(regTypes.length ? regTypes : [{ key: "intern", label: "Intern" }]).map((t) => (
+                        <option key={t.key} value={t.key}>{t.label}</option>
+                      ))}
                     </select>
                     <input className={inputCls} placeholder="Track (M&C / P&R)" value={form.track} onChange={(e) => setForm({ ...form, track: e.target.value })} />
                     <input className={inputCls} type="number" placeholder="Commission %" value={form.commission_pct} onChange={(e) => setForm({ ...form, commission_pct: e.target.value })} />

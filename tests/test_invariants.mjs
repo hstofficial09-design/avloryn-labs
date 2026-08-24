@@ -305,6 +305,38 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     fail("R13 an ignored finding still emails:", "the button would do nothing anyone can feel");
 }
 
+// ── R14 · "who can join" stays configuration, and never hands out partner rules ───────────────
+// This list was two radios written into the form with Employee greyed out as "coming soon", which
+// is exactly why it stayed that way for months: adding a kind meant editing the form, the submit
+// route, the builder and the config API together. It is data now, and must stay data.
+//
+// The one thing it must never offer is `partner`. That emp_type carries real rules — their own
+// dashboard, the 2% override, no network of their own — and the onboarding form is PUBLIC, so a
+// self-selectable "Partner" would hand those rules to anyone who found the link.
+{
+  const form = code("app/onboarding-form/intern-form.tsx");
+  if (/name="regType"[\s\S]{0,400}coming soon/.test(form))
+    fail("R14 the registration kinds are hard-coded again:", "app/onboarding-form/intern-form.tsx");
+  if (!/regTypes\.map/.test(form))
+    fail("R14 the form no longer renders the configured kinds:", "adding one would change nothing");
+
+  // The submit route decides what lands in employees.emp_type, so it must check the value against
+  // what is actually offered rather than trusting whatever was posted.
+  const submit = code("app/api/onboarding-form/route.ts");
+  if (!/listRegTypes\s*\(/.test(submit))
+    fail("R14 the submitted kind is no longer validated:", "any emp_type could be posted straight in");
+  if (!/RESERVED_REG_KEYS/.test(submit))
+    fail("R14 a reserved kind could be submitted:", "'partner' would grant partner rules from a public form");
+
+  const db = code("lib/portal-db.ts");
+  if (!/RESERVED_REG_KEYS[\s\S]{0,400}partner/.test(db))
+    fail("R14 'partner' is no longer reserved:", "it could be added as a public registration kind");
+  // Archive, never delete: people already carry the key in employees.emp_type, and a record
+  // pointing at a kind nothing can name reads as broken data.
+  if (/DELETE FROM reg_types/.test(db))
+    fail("R14 a registration kind can be deleted:", "everyone who joined as it would be orphaned");
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");

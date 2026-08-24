@@ -67,7 +67,7 @@ function fmtDate(iso: string): string {
 
 export default function InternForm() {
   const [f, setF] = useState({
-    regType: "intern" as "intern" | "employee",
+    regType: "intern",
     fullName: "", dob: "", mobile: "", email: "", address: "",
     role: "M&C", startDate: "", duration: "3",
     idType: "PAN card", idNumber: "",
@@ -83,11 +83,20 @@ export default function InternForm() {
   const [customAns, setCustomAns] = useState<Record<string, string>>({});
   // The owner can rewrite the NDA; null = the standard one.
   const [ndaText, setNdaText] = useState<string | null>(null);
+  // "I am registering as", as the owner configured it. Seeded with Intern so the form is usable
+  // for the moment before the config lands, and replaced the instant it does.
+  const [regTypes, setRegTypes] = useState<{ key: string; label: string }[]>([{ key: "intern", label: "Intern" }]);
   useEffect(() => {
     fetch("/api/onboarding-form/config").then((r) => r.json()).then((d) => {
       if (Array.isArray(d.roles) && d.roles.length) {
         setRoleOpts(d.roles);
         setF((cur) => (d.roles.some((r: any) => r.value === cur.role) ? cur : { ...cur, role: d.roles[0].value }));
+      }
+      if (Array.isArray(d.regTypes) && d.regTypes.length) {
+        setRegTypes(d.regTypes);
+        // Keep whatever is selected if it still exists; otherwise fall to the first offered kind,
+        // so a kind the owner turns off can never leave someone submitting a dead value.
+        setF((cur) => (d.regTypes.some((t: any) => t.key === cur.regType) ? cur : { ...cur, regType: d.regTypes[0].key }));
       }
       if (d.fields && typeof d.fields === "object") setFieldsCfg(d.fields);
       if (Array.isArray(d.custom)) setCustomQ(d.custom.filter((q: any) => q?.label));
@@ -243,15 +252,15 @@ export default function InternForm() {
         {/* Registration type */}
         <div className="card-lux rounded-2xl p-5">
           <div className="text-[13px] font-medium mb-2.5 text-foreground/80">I am registering as</div>
+          {/* Whatever the owner has set up. This was two hard-coded radios with Employee greyed
+              out as "coming soon" — which is why it stayed that way. */}
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="radio" name="regType" checked={f.regType === "intern"} onChange={() => up("regType", "intern")} />
-              Intern
-            </label>
-            <label className="flex items-center gap-2 text-muted-foreground cursor-not-allowed">
-              <input type="radio" name="regType" disabled />
-              Employee <span className="text-xs">(coming soon)</span>
-            </label>
+            {regTypes.map((t) => (
+              <label key={t.key} className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="regType" checked={f.regType === t.key} onChange={() => up("regType", t.key)} />
+                {t.label}
+              </label>
+            ))}
           </div>
         </div>
 

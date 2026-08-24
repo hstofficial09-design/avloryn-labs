@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/portal-auth";
-import { listRoles, upsertRole, archiveRole, renameRole, setRoleDefaultTerms, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig } from "@/lib/portal-db";
+import { listRoles, upsertRole, archiveRole, renameRole, setRoleDefaultTerms, getFormConfig, saveFormConfig, getLegalConfig, saveLegalConfig,
+  listRegTypes, upsertRegType, archiveRegType, regKeyFrom, RESERVED_REG_KEYS } from "@/lib/portal-db";
 import { defaultTermsText, standardNdaText, roleLabel, isHrRole, sensitiveClause } from "@/lib/intern-docs";
 
 export const runtime = "nodejs";
@@ -15,7 +16,7 @@ const SCOPE_MAX = 5000;
 export async function GET() {
   const s = await getSession();
   if (!s || s.role !== "owner") return deny();
-  const [roles, form, legal] = await Promise.all([listRoles(), getFormConfig(), getLegalConfig()]);
+  const [roles, form, legal, regTypes] = await Promise.all([listRoles(), getFormConfig(), getLegalConfig(), listRegTypes(true)]);
   // Attach the CURRENT default terms per role + the standard NDA, so the editor shows what exists.
   // Use the FRIENDLY label ("M&C" → "Marketing & Community"): passing the raw track code made the
   // default text read "joins as a M&C Intern", which then got saved into the role's terms.
@@ -31,7 +32,7 @@ export async function GET() {
   // own saved baseline if they set one, else the standard template.
   const ndaText = legal?.nda || standardNdaText();
   return NextResponse.json({
-    roles: withDefaults, form, legal, ndaText,
+    roles: withDefaults, regTypes, form, legal, ndaText,
     ndaDefault: legal?.ndaDefault || standardNdaText(),
     ndaIsCustom: !!legal?.nda,
     ndaDefaultIsCustom: !!legal?.ndaDefault,
@@ -66,10 +67,42 @@ export async function POST(req: Request) {
         scope,
         terms,
         sensitive: !!r.sensitive,
-        default_emp_type: r.default_emp_type === "employee" ? "employee" : "intern",
+        // Whatever kind the owner configured. Forcing it back to intern|employee here is what
+        // made the two hard-coded pills the only real options, however many kinds existed.
+        default_emp_type: String(r.default_emp_type || "intern").trim().toLowerCase() || "intern",
       });
       return NextResponse.json({ ok: true });
     }
+    // ── the kinds of person who can join ────────────────────────────────────────────────
+    if (d.action === "reg-type") {
+      const t = d.regType || {};
+      const label = String(t.label || "").trim();
+      if (!label) return NextResponse.json({ error: "Give it a name" }, { status: 400 });
+      // The key is fixed at creation and never follows a rename: it is already written into
+      // employees.emp_type for everyone who joined, and dashboards and documents read it.
+      const key = String(t.key || "").trim().toLowerCase() || regKeyFrom(label);
+      if (!key) return NextResponse.json({ error: "That name has no letters or numbers in it" }, { status: 400 });
+      if (RESERVED_REG_KEYS.includes(key)) {
+        return NextResponse.json(
+          { error: "“Partner” is set aside — network partners are added and approved from the network, not this form." },
+          { status: 400 });
+      }
+      await upsertRegType({
+        key, label, enabled: t.enabled !== false,
+        sort: Number.isFinite(+t.sort) ? +t.sort : 100,
+        terms: typeof t.terms === "string" ? t.terms.slice(0, TERMS_MAX) : null,
+      });
+      return NextResponse.json({ ok: true, key });
+    }
+    if (d.action === "reg-type-archive") {
+      const key = String(d.key || "").trim().toLowerCase();
+      if (!key) return NextResponse.json({ error: "Which kind?" }, { status: 400 });
+      // Kept, not deleted: people already carry this key, and a record pointing at a kind nothing
+      // can name reads as broken data.
+      await archiveRegType(key);
+      return NextResponse.json({ ok: true });
+    }
+
     if (d.action === "role-default") {
       const track = String(d.track || "").trim();
       const terms = d.terms ? String(d.terms).trim() : null;

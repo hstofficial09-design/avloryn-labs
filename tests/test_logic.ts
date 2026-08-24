@@ -11,6 +11,7 @@ import { decideNewTime } from "../lib/booking/sync";
 import { taskStatus, workStats, reviewAverage, tenureScore, weekStartIST, tasksInWeek, type Task, type Review } from "../lib/portal-db";
 import { shouldAlert, type Tracked } from "../lib/monitor/state";
 import { roleLabel } from "../lib/role-label";
+import { regKeyFrom, RESERVED_REG_KEYS } from "../lib/portal-db";
 import { shouldSignOut } from "../lib/session-ended";
 import { stillIgnored } from "../lib/monitor/state";
 
@@ -153,6 +154,24 @@ console.log("\n── what we call somebody ──");
      "the owner is the owner whatever the row says");
   ok(roleLabel(null) === "Employee" && roleLabel(undefined) === "Employee",
      "a missing row never renders as blank or 'undefined'");
+  // The owner can add kinds of their own. This runs client-side with no database, and a kind can
+  // be archived while people still hold it, so the label comes from the key.
+  ok(roleLabel({ emp_type: "consultant" }) === "Consultant", "a kind the owner invented is named properly");
+  ok(roleLabel({ emp_type: "part_time_writer" }) === "Part Time Writer", "…including a multi-word one");
+  ok(roleLabel({ emp_type: "volunteer" }) !== "Employee",
+     "an unknown kind is never mislabelled as Employee — that is the bug this replaced");
+}
+
+console.log("\n── adding a kind of person ──");
+{
+  ok(regKeyFrom("Consultant") === "consultant", "a typed name becomes a stable key");
+  ok(regKeyFrom("Part-time Writer") === "part_time_writer", "punctuation and spaces collapse");
+  ok(regKeyFrom("  Volunteer  ") === "volunteer", "stray spacing does not become part of the key");
+  ok(regKeyFrom("!!!") === "", "a name with nothing usable in it yields no key, rather than a junk one");
+  // emp_type "partner" carries real rules — their own dashboard, the 2% override, no network of
+  // their own. A kind on the PUBLIC form that grants those would hand them to anyone with the link.
+  ok(RESERVED_REG_KEYS.includes("partner"), "'partner' is reserved and can never be offered on the form");
+  ok(RESERVED_REG_KEYS.includes(regKeyFrom("Partner")), "…including when typed as a label");
 }
 
 console.log("\n── when a 401 means 'sign in again' ──");

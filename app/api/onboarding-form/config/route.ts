@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listRoles, getFormConfig, getLegalConfig } from "@/lib/portal-db";
+import { listRoles, getFormConfig, getLegalConfig, listRegTypes } from "@/lib/portal-db";
 import { roleLabel } from "@/lib/intern-docs";
 
 export const runtime = "nodejs";
@@ -16,8 +16,11 @@ export const dynamic = "force-dynamic";
 // signs. Still withheld: commission_enabled/scope and every other internal setting.
 export async function GET() {
   try {
-    const [roles, form, legal] = await Promise.all([listRoles(), getFormConfig(), getLegalConfig()]);
+    const [roles, form, legal, regTypes] = await Promise.all([listRoles(), getFormConfig(), getLegalConfig(), listRegTypes()]);
     return NextResponse.json({
+      // What "I am registering as" offers. Enabled ones only — an archived kind still names the
+      // people who joined under it, but nobody new may pick it.
+      regTypes: regTypes.filter((t) => t.enabled).map((t) => ({ key: t.key, label: t.label })),
       roles: roles.map((r) => ({
         value: r.track,
         label: roleLabel(r.track), // "M&C" → "Marketing & Community"; full names pass through
@@ -34,6 +37,6 @@ export async function GET() {
       custom: Array.isArray(form?.custom) ? form.custom : [],
     });
   } catch {
-    return NextResponse.json({ roles: [], fields: {}, custom: [], nda: null });
+    return NextResponse.json({ regTypes: [], roles: [], fields: {}, custom: [], nda: null });
   }
 }

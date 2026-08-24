@@ -9,6 +9,14 @@
  *
  * So it lives here, once. Adding a kind of person is now a change to this function, not a hunt.
  */
+/** "consultant" → "Consultant", "part_time_writer" → "Part Time Writer". */
+function prettify(key: string): string {
+  return key.trim().replace(/[_-]+/g, " ").replace(/\s+/g, " ")
+    .split(" ").filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 export type RoleLike = {
   emp_type?: string | null;
   /** Network partners: their kind — Campus Ambassador, Influencer, Thesis Writing Agency. */
@@ -30,9 +38,15 @@ export function roleLabel(e: RoleLike | null | undefined, opts: { isOwner?: bool
   const { isOwner = false, withTrack = true } = opts;
   if (isOwner) return "Owner";
   if (isPartnerRole(e)) return (e?.role || "").trim() || "Network Partner";
-  if ((e?.emp_type || "") === "intern") {
+  const kind = (e?.emp_type || "").trim();
+  if (kind === "intern") {
     const track = (e?.track || "").trim();
     return withTrack && track ? `Intern · ${track}` : "Intern";
   }
-  return "Employee";
+  if (!kind || kind === "employee") return "Employee";
+  // The owner can add kinds of their own (Consultant, Freelancer, Volunteer). This runs on the
+  // client with no database, and a kind can be archived while people still hold it, so the label
+  // is derived from the key rather than looked up — an unknown kind must never render as blank,
+  // as "undefined", or worst of all as the wrong word.
+  return prettify(kind);
 }
