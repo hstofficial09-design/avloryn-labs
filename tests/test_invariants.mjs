@@ -443,6 +443,12 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
 
   // "Responsibilities" was offered in the editor as "shown in the agreement", saved, length-checked
   // — and read by nothing. Whoever filled it in was writing into a void.
+  // A role's own agreement wins over the built-in template, so a setting that only reaches the
+  // template silently does nothing for a role that has been customised. That must be said where it
+  // can be fixed, not discovered on a signed document.
+  if (!/\[Probation\][\s\S]{0,400}r\.terms|r\.terms[\s\S]{0,400}\[Probation\]/.test(builder))
+    fail("R17 nothing warns that a probation cannot reach a customised agreement:", "it would silently do nothing");
+
   const docs = code("lib/intern-docs.ts");
   if (!/d\.scope/.test(docs))
     fail("R17 Responsibilities never reaches the agreement:", "the editor promises it is shown there");

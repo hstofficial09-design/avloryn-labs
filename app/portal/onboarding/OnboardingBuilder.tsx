@@ -772,6 +772,16 @@ function RoleCard({ role, regTypes, reload }: { role: Role; regTypes: RegType[];
             </select>
             <span className="text-[11px] text-faint">{r.probation ? `“${r.probation}”` : "leave blank for none"}</span>
           </div>
+          {/* A role's own agreement always wins over the built-in template — so setting a probation
+              on a role whose text was written before [Probation] existed changes nothing at all.
+              Said here rather than left to be discovered on a signed document. */}
+          {r.probation && (r.terms || "").trim() && !(r.terms || "").includes("[Probation]") && (
+            <p className="text-[11px] mt-1.5" style={{ color: "#b3341f" }}>
+              This role has its own agreement below, and that text never mentions probation — so
+              nothing about it will appear on the document. Add <b>[Probation]</b> to a clause in it,
+              for example: “There is a probation period of [Probation] from the start date.”
+            </p>
+          )}
         </div>
 
         <label className="flex items-center gap-2 text-[13px] cursor-pointer self-end">
