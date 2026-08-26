@@ -471,6 +471,18 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     if (!/partyName/.test(dcs))
       fail("R18 documents no longer know what to call the signer:", "the kind's own word is ignored");
     // roleTitle appends "Intern" — that must depend on the kind, not happen to everyone.
+    // The record PDF must print only what its kind was actually asked. Every line printed
+    // regardless, so a record read "Duration:  months" for someone never asked for one, and
+    // asserted "Current student: No" as a fact nobody had supplied.
+    const rec = /od\.kv\("Registering as"[\s\S]*?od\.kv\("Submitted"/.exec(pdf)?.[0] || "";
+    if (!rec) fail("R18 the record PDF changed shape:", "app/api/onboarding-form/route.ts");
+    else {
+      for (const k of ["duration", "student", "dob", "address"]) {
+        if (!new RegExp(`shown\\("${k}"\\)`).test(rec))
+          fail("R18 the record prints a field its kind never asked for:", `"${k}" — an answer nobody gave`);
+      }
+    }
+
     const rt = /export const roleTitle[\s\S]*?\n};/.exec(dcs)?.[0] || "";
     if (!rt) fail("R18 roleTitle is gone:", "lib/intern-docs.ts");
     else if (!/isIntern\s*=\s*[^;\n]*\bnoun\b/.test(rt))

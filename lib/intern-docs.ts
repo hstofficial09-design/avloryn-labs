@@ -114,7 +114,7 @@ export function internshipAgreement(d: InternData): {
     clauses: [
       {
         h: "1. Role & Duration",
-        t: `The Intern joins as a ${roleTitle(d.role)}, working remotely, for ${d.duration} months starting ${d.startDate}. The internship is deliverable-based — no fixed daily hours are mandated.`
+        t: `The Intern joins as a ${roleTitle(d.role, d.kindNoun)}, working remotely, for ${d.duration} months starting ${d.startDate}. The internship is deliverable-based — no fixed daily hours are mandated.`
           + ((d.scope || "").trim() ? ` Responsibilities: ${(d.scope || "").trim().replace(/\s+/g, " ")}` : ""),
       },
       {

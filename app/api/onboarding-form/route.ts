@@ -510,19 +510,27 @@ export async function POST(req: Request) {
     const od = new Doc(o.pdf, o.fonts, o.logo);
     od.header();
     od.title("Onboarding — Submission");
+    // Only what this kind was actually asked. Every line used to print regardless, so a record
+    // for someone never asked about a duration read "Duration:  months", and one for a kind with
+    // no student question still asserted "Current student: No" — a fact nobody had supplied.
+    const shown = (k: string) => fld[k]?.visible !== false;
     od.kv("Registering as", regType);
     od.kv("Name", d.fullName);
-    od.kv("Date of birth", dob);
-    od.kv("Role", roleTitle(d.role));
-    od.kv("Mobile", d.mobile);
+    if (shown("dob") && dob) od.kv("Date of birth", dob);
+    // The noun, so a partner is not filed as a "…Partnership Intern" on their own record.
+    if (shown("role") && d.role) od.kv("Role", roleTitle(d.role, d.kindNoun));
+    if (shown("mobile") && d.mobile) od.kv("Mobile", d.mobile);
     od.kv("Email", d.email);
-    od.kv("Address", d.address);
-    od.kv("ID type", `${d.idType}${d.idNumber ? " · " + d.idNumber : ""}`);
-    od.kv("Current student", d.isStudent
-      ? `Yes${d.collegeName ? " · " + d.collegeName : ""}${d.studentId ? " · ID " + d.studentId : ""}`
-      : "No");
-    od.kv("Start date", d.startDate);
-    od.kv("Duration", `${d.duration} months`);
+    if (shown("address") && d.address) od.kv("Address", d.address);
+    if (shown("govId") && d.idType) od.kv("ID type", `${d.idType}${d.idNumber ? " · " + d.idNumber : ""}`);
+    if (shown("student")) {
+      od.kv("Current student", d.isStudent
+        ? `Yes${d.collegeName ? " · " + d.collegeName : ""}${d.studentId ? " · ID " + d.studentId : ""}`
+        : "No");
+    }
+    if (shown("startDate") && d.startDate) od.kv("Start date", d.startDate);
+    if (shown("duration") && d.duration) od.kv("Duration", `${d.duration} months`);
+    if ((roleCfg?.probation || "").trim()) od.kv("Probation", String(roleCfg.probation).trim());
     for (const c of custom) od.kv(c.q, c.a);
     od.kv("Submitted", d.signedAt);
     await embedImageOrPdf(o.pdf, files.photo, od, "Photo");
