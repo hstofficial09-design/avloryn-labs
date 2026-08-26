@@ -12,10 +12,20 @@ export const ROLE_LABEL: Record<Role, string> = {
 // Roles are dynamic now — accept any label/code. These normalise it.
 export const roleLabel = (r: string) => ROLE_LABEL[r as Role] || r;
 export const isHrRole = (r: string) => r === "HR" || r === "Human Resources";
-/** "<Role> Intern" — but never "Business Development Intern Intern": the owner can name a
- *  role with "Intern" already in it, so only append when it isn't there already. */
-export const roleTitle = (r: string) => {
+/**
+ * What to call someone in this role.
+ *
+ * "Intern" is appended only for interns. It used to be appended to everything, so a partner was
+ * welcomed as a "Business Development Executive Partnership Intern" — a title that is both wrong
+ * and faintly absurd, on the letter confirming their partnership.
+ *
+ * `noun` is the kind's word for itself ("Internship", "Partnership", "Employment"). Left out, it
+ * behaves as before, so every existing intern document is unchanged.
+ */
+export const roleTitle = (r: string, noun?: string | null) => {
   const l = roleLabel(r);
+  const isIntern = noun == null ? true : /intern/i.test(noun);
+  if (!isIntern) return l;
   return /\bintern\b\s*$/i.test(l) ? l : `${l} Intern`;
 };
 
@@ -43,6 +53,10 @@ export type InternData = {
   scope?: string | null;
   /** "2 weeks", "3 months" — empty means the role has no probation period. */
   probation?: string | null;
+  /** The kind's word for itself — "Internship", "Partnership", "Employment". */
+  kindNoun?: string | null;
+  /** What to call the person signing — the kind's own label: "Intern", "Partner", "Employee". */
+  partyName?: string | null;
   paid?: boolean;
   salary?: number | null;
   salaryPeriod?: string | null; // 'monthly' | 'yearly'
@@ -185,43 +199,44 @@ export function ndaAgreement(d: InternData): {
     },
     {
       h: "Obligations",
-      t: `The Intern will (a) keep all Confidential Information strictly secret, (b) use it only for internship work, (c) not copy, share, publish, screenshot, or disclose it to anyone, and (d) not use it for personal benefit or any competing purpose.`,
+      t: `The ${d.partyName || "Intern"} will (a) keep all Confidential Information strictly secret, (b) use it only for work for the Company, (c) not copy, share, publish, screenshot, or disclose it to anyone, and (d) not use it for personal benefit or any competing purpose.`,
     },
     {
       h: "Return / Deletion",
-      t: `On completion or termination, the Intern will return or delete all Confidential Information and Company materials.`,
+      t: `On completion or termination, the ${d.partyName || "Intern"} will return or delete all Confidential Information and Company materials.`,
     },
     {
       h: "Intellectual Property",
-      t: `All work product remains the Company's property, as per the Internship Agreement.`,
+      t: `All work product remains the Company's property, as per the signed Agreement.`,
     },
     {
       h: "Duration",
-      t: `These confidentiality obligations continue after the internship ends and survive its termination.`,
+      t: `These confidentiality obligations continue after the engagement ends and survive its termination.`,
     },
     {
       h: "Breach",
       t: `Any breach may result in immediate termination and appropriate legal action.`,
     },
   ];
-  if (d.sensitive) body.push(sensitiveClause());
+  if (d.sensitive) body.push(sensitiveClause(d.partyName));
   body.push({
     h: "Governing Law",
     t: `This agreement is governed by the laws of India.`,
   });
   return {
     title: "NON-DISCLOSURE AGREEMENT (NDA)",
-    intro: `This Non-Disclosure Agreement is made between ${COMPANY} (the "Company") and ${d.fullName} (the "Intern").`,
+    intro: `This Non-Disclosure Agreement is made between ${COMPANY} (the "Company") and ${d.fullName} (the "${d.partyName || "Intern"}").`,
     clauses: numberClauses(body),
   };
 }
 
 /** The extra obligation a role marked "Handles sensitive data" takes on. Kept separate so it
  *  can also be appended to an NDA the owner has rewritten themselves. */
-export function sensitiveClause(): Clause {
+export function sensitiveClause(party?: string | null): Clause {
+  const who = (party || "").trim() || "signatory";
   return {
     h: "Handling of Sensitive Data",
-    t: `This role handles sensitive personal data (which may include candidate, applicant, customer, or employee information). The Intern will access such data only where it is necessary for assigned work; will not download, copy, or store it on personal devices, personal accounts, or any third-party tool without written approval; will not share it with anyone inside or outside the Company who does not need it for the same work; will delete or return it as soon as the work requiring it is complete; and will report any suspected loss, unauthorised access, or accidental disclosure to the Company immediately.`,
+    t: `This role handles sensitive personal data (which may include candidate, applicant, customer, or employee information). The ${who} will access such data only where it is necessary for assigned work; will not download, copy, or store it on personal devices, personal accounts, or any third-party tool without written approval; will not share it with anyone inside or outside the Company who does not need it for the same work; will delete or return it as soon as the work requiring it is complete; and will report any suspected loss, unauthorised access, or accidental disclosure to the Company immediately.`,
   };
 }
 
@@ -232,14 +247,52 @@ export function numberClauses(list: Clause[]): Clause[] {
 
 /** Append the sensitive-data clause to an NDA the owner has rewritten, continuing their
  *  own numbering when their clause headings are numbered. */
-export function withSensitiveClause(content: { title: string; intro: string; clauses: Clause[] }) {
-  const c = sensitiveClause();
+export function withSensitiveClause(content: { title: string; intro: string; clauses: Clause[] }, party?: string | null) {
+  const c = sensitiveClause(party);
   let max = 0;
   for (const cl of content.clauses) {
     const m = /^(\d+)[.)]/.exec((cl.h || "").trim());
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
   return { ...content, clauses: [...content.clauses, { ...c, h: max ? `${max + 1}. ${c.h}` : c.h }] };
+}
+
+/**
+ * Add the probation clause when a role has one and its own agreement never mentions it.
+ *
+ * A role's own text always wins over the built-in template — correctly — so a role whose agreement
+ * was written before probation existed would take the setting, save it, and then say nothing about
+ * it on the signed document. The setting was real and its effect was nil, which is the worst of
+ * both: it looks done.
+ *
+ * Only ever ADDS, and only when the text is silent on the subject. An agreement that already
+ * handles probation — however it words it — is left exactly as its author wrote it.
+ */
+export function withProbationClause(
+  content: { title: string; intro: string; clauses: Clause[] },
+  probation?: string | null,
+  raw?: string,
+) {
+  const p = (probation || "").trim();
+  if (!p) return content;
+  // Written about already, in the source text or in the rendered clauses? Then leave it alone.
+  const mentions = (t: string) => /\[Probation\]|probation|trial period/i.test(t);
+  if (raw && mentions(raw)) return content;
+  if (content.clauses.some((c) => mentions((c.h || "") + " " + (c.t || "")))) return content;
+
+  let max = 0;
+  for (const cl of content.clauses) {
+    const m = /^(\d+)[.)]/.exec((cl.h || "").trim());
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  const h = "Probation";
+  return {
+    ...content,
+    clauses: [...content.clauses, {
+      h: max ? `${max + 1}. ${h}` : h,
+      t: `The first ${p} from the start date are a probation period. During this time either party may end this arrangement immediately and without notice.`,
+    }],
+  };
 }
 
 /** Joining Letter — returns paragraphs + bullets. Commission-track interns get a
@@ -254,11 +307,11 @@ export function joiningLetter(d: InternData): {
     title: "Internship Joining Letter",
     paragraphs: [
       `Dear ${d.fullName},`,
-      `We are pleased to welcome you to ${COMPANY} as a ${roleTitle(d.role)}. We were impressed by your application and look forward to working with you.`,
+      `We are pleased to welcome you to ${COMPANY} as a ${roleTitle(d.role, d.kindNoun)}. We were impressed by your application and look forward to working with you.`,
       `Your internship details:`,
     ],
     bullets: [
-      `Role: ${roleTitle(d.role)}`,
+      `Role: ${roleTitle(d.role, d.kindNoun)}`,
       `Start date: ${d.startDate}`,
       `Duration: ${d.duration} months`,
       `Location: Remote / Work from Home`,
@@ -324,9 +377,10 @@ export const DOC_META = { COMPANY, FOUNDER, REGD_OFFICE, REGD_OFFICE_LINES, LLPI
 
 // ── Read-only text of the CURRENT NDA + terms, for the Onboarding Form editor ──
 /** A stand-in hire for previewing a role's documents in the editor (placeholders, not real data). */
-export function sampleDataFor(track: string): InternData {
+export function sampleDataFor(track: string, kindNoun?: string | null): InternData {
   const s = sampleData(isHrRole(track) ? "HR" : "M&C");
   s.role = (track as Role) || s.role;
+  s.kindNoun = kindNoun ?? null;
   return s;
 }
 
@@ -367,6 +421,10 @@ export function fillPlaceholders(text: string, d: InternData): string {
     // Responsibilities field only reached the built-in template — so a kind with its own agreement
     // could never say what its roles do, and one agreement could not serve two different roles.
     .split("[Responsibilities]").join((d.scope || "").trim() || "as agreed with the Company")
+    // What to call the person signing — "Intern", "Partner", "Employee". The NDA is one document
+    // that everybody signs, and it called every one of them "the Intern": a partner signed a
+    // confidentiality agreement addressed to somebody they are not.
+    .split("[Party]").join((d.partyName || "").trim() || "Intern")
     // Written as the finished phrase ("2 weeks"), so a clause can simply read "[Probation]".
     // When there is no probation the whole SENTENCE goes, rather than filling in a word: an
     // agreement that reads "The first none are a trial period" is worse than one that stays quiet.

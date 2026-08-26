@@ -25,7 +25,8 @@ export async function GET() {
   // click can never drop a role back to the built-in template and lose their agreement.
   // The letter's title word comes from the kind's own label — "Consultant Joining Letter" rather
   // than a ternary that only knows about interns and employees.
-  const kindLabel = (key: string) => regTypes.find((t) => t.key === key)?.label || "Employment";
+  const kindNoun = (key: string) => { const t = regTypes.find((x) => x.key === key); return t ? docNounFor(t) : "Employment"; };
+  const kindJoining = (key: string) => (regTypes.find((t) => t.key === key)?.joining || "").trim() || null;
   const withDefaults = roles.map((r) => ({
     ...r,
     defaultTerms: r.default_terms
@@ -33,9 +34,13 @@ export async function GET() {
     defaultIsCustom: !!r.default_terms,
     // The joining letter, alongside the agreement — the editor needs both the current text and
     // what "Reset to default" would restore.
-    joiningText: r.joining_letter || defaultJoiningLetterText(sampleDataFor(r.track), kindLabel(r.default_emp_type)),
-    joiningDefault: r.joining_letter_default
-      || defaultJoiningLetterText(sampleDataFor(r.track), kindLabel(r.default_emp_type)),
+    // Role's own letter, then the KIND's, then the template — the same order the PDF uses. Without
+    // the middle step a partner role's editor opened on the intern letter, welcoming them as an
+    // "…Partnership Intern", while the PDF sent the partnership one.
+    joiningText: r.joining_letter || kindJoining(r.default_emp_type)
+      || defaultJoiningLetterText(sampleDataFor(r.track, kindNoun(r.default_emp_type)), kindNoun(r.default_emp_type)),
+    joiningDefault: r.joining_letter_default || kindJoining(r.default_emp_type)
+      || defaultJoiningLetterText(sampleDataFor(r.track, kindNoun(r.default_emp_type)), kindNoun(r.default_emp_type)),
     joiningIsCustom: !!r.joining_letter,
   }));
   // The NDA is one shared document. Owner-edited text wins; "Reset to default" restores their

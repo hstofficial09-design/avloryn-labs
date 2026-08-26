@@ -244,14 +244,17 @@ export default function InternForm() {
   const previewData: InternData = useMemo(() => ({
     ...f, role: f.role, startDate: fmtDate(f.startDate) || "[Start Date]",
     duration: f.duration, idType: f.idType, isStudent: !!f.isStudent,
-    fullName: f.fullName || "[Intern Name]", signedAt: "",
+    fullName: f.fullName || "[Your Name]", signedAt: "",
     // Mirror what the PDF builder does with the role's pay settings, so the text matches.
     paid: !!roleCfg?.paid, salary: roleCfg?.salary ?? null, salaryPeriod: roleCfg?.salary_period ?? null,
     sensitive: !!roleCfg?.sensitive,
     // What this role actually does, so the responsibilities read here match the signed copy.
     scope: roleCfg?.scope ?? null,
     probation: roleCfg?.probation ?? null,
-  }), [f, roleCfg]);
+    // Same two the PDF sets, so the page and the document address the person identically.
+    kindNoun: kind?.noun ?? null,
+    partyName: kind?.label ?? null,
+  }), [f, roleCfg, kind]);
 
   // Read the SAME agreement the PDF will contain: the owner's edited terms for this role if
   // they set any, else the built-in default. Mirrors app/api/onboarding-form/route.ts.
@@ -267,7 +270,7 @@ export default function InternForm() {
   const nda = useMemo(() => {
     if (!ndaText) return ndaAgreement(previewData);
     const base = parseTermsToContent(ndaText, previewData);
-    return previewData.sensitive ? withSensitiveClause(base) : base;
+    return previewData.sensitive ? withSensitiveClause(base, previewData.partyName) : base;
   }, [ndaText, previewData]);
 
   async function submit(e: React.FormEvent) {

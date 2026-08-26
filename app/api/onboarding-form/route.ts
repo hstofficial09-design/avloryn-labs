@@ -478,6 +478,12 @@ export async function POST(req: Request) {
     // and, until now, read by nothing.
     d.scope = roleCfg?.scope || null;
     d.probation = roleCfg?.probation || null;
+    const kindCfg = (await listRegTypes(true).catch(() => [])).find((t) => t.key === regTypeKey) || null;
+    // What this kind's documents call the engagement and the person signing. Without them the
+    // shared NDA addressed a partner as "the Intern", and the letter welcomed them as a
+    // "…Partnership Intern".
+    d.kindNoun = kindCfg ? (kindCfg.doc_noun || regType) : regType;
+    d.partyName = kindCfg?.label || regType;
     // Which agreement gets signed: this role's own text, then the KIND's default, and only then
     // the built-in template.
     //
@@ -485,7 +491,6 @@ export async function POST(req: Request) {
     // — "unpaid internship", "no employer-employee relationship is created". Handing it to an
     // employee is not clumsy wording, it is the wrong document saying close to the opposite of
     // what was meant, and they would sign it.
-    const kindCfg = (await listRegTypes(true).catch(() => [])).find((t) => t.key === regTypeKey) || null;
     const agreementText = (roleCfg?.terms && String(roleCfg.terms).trim())
       || (kindCfg?.terms && String(kindCfg.terms).trim())
       || null;
@@ -496,7 +501,7 @@ export async function POST(req: Request) {
     try { legal = await getLegalConfig(); } catch { /* fall back to the standard NDA */ }
     const ownNda = legal?.nda && String(legal.nda).trim();
     const nda = ownNda
-      ? (d.sensitive ? withSensitiveClause(parseTermsToContent(String(legal.nda), d)) : parseTermsToContent(String(legal.nda), d))
+      ? (d.sensitive ? withSensitiveClause(parseTermsToContent(String(legal.nda), d), d.partyName) : parseTermsToContent(String(legal.nda), d))
       : ndaAgreement(d);
 
     // ===== OWNER PDF: cover + uploads + signed agreements =====

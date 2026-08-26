@@ -449,6 +449,34 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   if (!/\[Probation\][\s\S]{0,400}r\.terms|r\.terms[\s\S]{0,400}\[Probation\]/.test(builder))
     fail("R17 nothing warns that a probation cannot reach a customised agreement:", "it would silently do nothing");
 
+  // ── R18 · a shared document must not assume everyone is an intern ─────────────────────────
+  // The NDA is one document that every kind signs, and it addressed all of them as "the Intern" —
+  // a partner signing a confidentiality agreement made out to somebody they are not. The same
+  // assumption put "Intern" on the end of every role title, welcoming a partner as a "Business
+  // Development Executive Partnership Intern".
+  //
+  // Checked on the exact strings and on the branch that decides, not on a word appearing
+  // somewhere: the first version of this rule was satisfied by "noun" still being in the function
+  // signature, and passed against code that had been deliberately broken.
+  {
+    const dcs = code("lib/intern-docs.ts");
+    // Scoped to the NDA. The internship AGREEMENT says "the Intern" quite correctly — it is the
+    // intern template, and any other kind has its own. It is the SHARED document that must not.
+    const ndaFrom = dcs.indexOf("export function ndaAgreement(");
+    const ndaTo = dcs.indexOf("export function", ndaFrom + 10);
+    const nda = ndaFrom > -1 ? dcs.slice(ndaFrom, ndaTo > -1 ? ndaTo : undefined) : "";
+    if (!nda) fail("R18 the NDA is gone:", "lib/intern-docs.ts");
+    else if (/\(the "Intern"\)|\bthe Intern\b|\bThe Intern\b/.test(nda))
+      fail("R18 the shared NDA calls everyone an intern:", "a partner would sign a document addressed to somebody else");
+    if (!/partyName/.test(dcs))
+      fail("R18 documents no longer know what to call the signer:", "the kind's own word is ignored");
+    // roleTitle appends "Intern" — that must depend on the kind, not happen to everyone.
+    const rt = /export const roleTitle[\s\S]*?\n};/.exec(dcs)?.[0] || "";
+    if (!rt) fail("R18 roleTitle is gone:", "lib/intern-docs.ts");
+    else if (!/isIntern\s*=\s*[^;\n]*\bnoun\b/.test(rt))
+      fail("R18 every role is titled 'Intern' again:", "a partner becomes a '…Partnership Intern'");
+  }
+
   const docs = code("lib/intern-docs.ts");
   if (!/d\.scope/.test(docs))
     fail("R17 Responsibilities never reaches the agreement:", "the editor promises it is shown there");
