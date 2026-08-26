@@ -87,6 +87,7 @@ export async function POST(req: Request) {
         default_emp_type: String(r.default_emp_type || "intern").trim().toLowerCase() || "intern",
         // "2" fixes it, "3,6" offers a choice, blank keeps the standard options.
         duration: typeof r.duration === "string" ? r.duration.replace(/[^0-9,]/g, "").slice(0, 40) : null,
+        probation: typeof r.probation === "string" ? r.probation.trim().slice(0, 40) : null,
       });
       return NextResponse.json({ ok: true });
     }

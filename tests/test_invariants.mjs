@@ -394,8 +394,12 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   // existing anywhere, so pointing it back at the shared config still passed.
   if (!/effFields\s*=\s*[^;\n]*\bkind\b/.test(form))
     fail("R17 the form no longer follows the chosen kind:", "everyone is asked the same thing again");
-  if (!/effCustom\s*=\s*[^;\n]*\bkind\b/.test(form))
+  // The questions come from the kind, then narrow to the chosen track. Checked on the source
+  // rather than the variable name, which has already changed once under this rule.
+  if (!/(allCustom|effCustom)\s*=\s*[^;\n]*\bkind\b/.test(form))
     fail("R17 the questions no longer follow the chosen kind:", "app/onboarding-form/intern-form.tsx");
+  if (!/effCustom\s*=[\s\S]{0,200}roles/.test(form))
+    fail("R17 a question meant for one track is asked of everyone:", "app/onboarding-form/intern-form.tsx");
   if (/Section title="Internship"/.test(form))
     fail("R17 the form calls every kind an internship:", "an employee reads intern wording throughout");
   if (!/NOUN/.test(form))
@@ -447,6 +451,18 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   // this by hand is how the track and the start date came to appear nowhere at all, while Duration
   // was listed both as always-asked and as optional — the owner cannot configure what they cannot
   // see, and cannot trust a list that disagrees with the form.
+  // What is read on the page and what is signed in the PDF must come from the same place, in the
+  // same order. The page checked the role then fell back to the built-in template, skipping the
+  // KIND — so a partner read the internship agreement, signed it, and received the partnership
+  // one. Read one document, sign another.
+  if (!/kind\?\.terms/.test(form))
+    fail("R17 the form shows a different agreement from the one signed:", "the kind's own text is skipped on screen");
+  for (const [what, re] of [["role", /roleCfg\?\.terms/], ["kind", /kind\?\.terms/]]) {
+    if (!re.test(pdf.replace(/kindCfg/g, "kind")) && !re.test(form)) {
+      fail("R17 preview and PDF disagree:", `the ${what}'s agreement is used by only one of them`);
+    }
+  }
+
   const gated = [...form.matchAll(/fVis\(\s*["'](\w+)["']\s*\)/g)].map((m) => m[1]);
   const listed = [...builder.matchAll(/\{\s*key:\s*["'](\w+)["'],\s*label:/g)].map((m) => m[1]);
   for (const k of new Set(gated)) {

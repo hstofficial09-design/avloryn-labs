@@ -16,17 +16,26 @@ type RoleOpt = {
   sensitive?: boolean;
   /** "2" fixes the length, "3,6" offers a choice, blank = the standard options. */
   duration?: string | null;
+  /** What this role does — read into the agreement's responsibilities. */
+  scope?: string | null;
+  /** "2 weeks", "3 months" — read into the agreement's probation clause. */
+  probation?: string | null;
 };
 
-const ID_TYPES = ["PAN card", "College / Student ID", "Driving Licence", "Voter ID", "Passport"];
+const ID_TYPES = ["PAN card", "Driving Licence", "Voter ID", "Passport"];
+/** Only offered where a student ID is a plausible ID to hold — see idTypes below. */
+const STUDENT_ID_TYPE = "College / Student ID";
 
 /** A kind of person who can register, with its OWN form and its own word for its documents. */
 type RegKind = {
   key: string; label: string;
   /** "Internship", "Employment", "Consulting" — used wherever the documents name themselves. */
   noun: string;
+  /** The kind's own agreement, inherited by its roles. */
+  terms?: string | null;
   fields: Record<string, { visible?: boolean; required?: boolean }>;
-  custom: { label: string; type: string; required: boolean }[];
+  /** `roles` empty/absent = asked of everyone in this kind; otherwise only those tracks. */
+  custom: { label: string; type: string; required: boolean; roles?: string[] }[];
 };
 
 function fileToDataURL(file: File): Promise<string> {
@@ -124,7 +133,27 @@ export default function InternForm() {
   const NOUN = kind?.noun || "Internship";
   // Whatever the chosen kind asks for, falling back to the shared set before one is chosen.
   const effFields = kind?.fields && Object.keys(kind.fields).length ? kind.fields : fieldsCfg;
-  const effCustom = kind?.custom?.length ? kind.custom : customQ;
+  const allCustom = kind?.custom?.length ? kind.custom : customQ;
+  /**
+   * Questions that apply to the track actually chosen.
+   *
+   * A work-sample link only means something to a Content Creator; asking a Business Development
+   * partner for their Reels is noise, and noise in a form is what makes people abandon it.
+   */
+  const effCustom = useMemo(
+    () => allCustom.filter((q: any) => !q?.roles?.length || q.roles.includes(f.role)),
+    [allCustom, f.role]);
+
+  /**
+   * Which photo IDs this kind may present.
+   *
+   * A college ID is only a sensible thing to accept from someone we are also asking about being a
+   * student — an employee or a partner offering one is not what that field is for. So it follows
+   * the student question rather than being a separate switch that could disagree with it.
+   */
+  const idTypes = useMemo(
+    () => (effFields["student"]?.visible !== false ? [ID_TYPES[0], STUDENT_ID_TYPE, ...ID_TYPES.slice(1)] : ID_TYPES),
+    [effFields]);
 
   const fVis = (k: string) => effFields[k]?.visible !== false;      // default shown
   const fReq = (k: string) => effFields[k]?.required !== false;     // default required (owner can relax)
@@ -219,16 +248,20 @@ export default function InternForm() {
     // Mirror what the PDF builder does with the role's pay settings, so the text matches.
     paid: !!roleCfg?.paid, salary: roleCfg?.salary ?? null, salaryPeriod: roleCfg?.salary_period ?? null,
     sensitive: !!roleCfg?.sensitive,
+    // What this role actually does, so the responsibilities read here match the signed copy.
+    scope: roleCfg?.scope ?? null,
+    probation: roleCfg?.probation ?? null,
   }), [f, roleCfg]);
 
   // Read the SAME agreement the PDF will contain: the owner's edited terms for this role if
   // they set any, else the built-in default. Mirrors app/api/onboarding-form/route.ts.
-  const ia = useMemo(
-    () => (roleCfg?.terms && roleCfg.terms.trim()
-      ? parseTermsToContent(roleCfg.terms, previewData)
-      : internshipAgreement(previewData)),
-    [roleCfg, previewData],
-  );
+  const ia = useMemo(() => {
+    // Same order the PDF uses: this role's own text, then the KIND's, then the built-in template.
+    // The kind was missing here, so a partner read the built-in internship agreement on screen and
+    // signed it — and then received the partnership agreement. Read one, sign another.
+    const text = (roleCfg?.terms || "").trim() || (kind?.terms || "").trim();
+    return text ? parseTermsToContent(text, previewData) : internshipAgreement(previewData);
+  }, [roleCfg, kind, previewData]);
   // One shared NDA — the owner's rewrite when they've made one, else the standard document.
   // A role marked "handles sensitive data" adds one extra clause. Mirrors the PDF builder.
   const nda = useMemo(() => {
@@ -249,6 +282,7 @@ export default function InternForm() {
     if (fVis("address") && fReq("address") && !f.address) { setErr("Please add your address."); return; }
     for (const q of effCustom) if (q.required && !(customAns[q.label] || "").trim()) { setErr(`Please answer: ${q.label}`); return; }
     if (fVis("photo") && fReq("photo") && !photo) { setErr("Please upload your photo."); return; }
+    if (fVis("govId") && fReq("govId") && !f.idNumber.trim()) { setErr("Please add your ID number."); return; }
     if (fVis("govId") && fReq("govId") && !idDoc) { setErr("Please upload a photo ID."); return; }
     if (fVis("student")) {
       if (f.isStudent === null) { setErr("Please tell us whether you are a current student."); return; }
@@ -346,10 +380,10 @@ export default function InternForm() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label={"Photo ID type" + star("govId")}>
               <select className={inputCls} value={f.idType} onChange={(e) => up("idType", e.target.value)}>
-                {ID_TYPES.map((t) => <option key={t}>{t}</option>)}
+                {idTypes.map((t) => <option key={t}>{t}</option>)}
               </select>
             </Field>
-            <Field label="ID number (optional)"><input className={inputCls} value={f.idNumber} onChange={(e) => up("idNumber", e.target.value)} /></Field>
+            <Field label={"ID number" + star("govId")}><input className={inputCls} value={f.idNumber} onChange={(e) => up("idNumber", e.target.value)} /></Field>
           </div>
           <Field label={"Upload photo ID" + (fReq("govId") ? " *" : "") + " (JPG / PNG / PDF)"}><input type="file" accept="image/*,application/pdf" className={fileCls} onChange={async (e) => setIdDoc(await processFile(e.target.files![0]))} /></Field>
         </Section>
@@ -402,11 +436,20 @@ export default function InternForm() {
                 <select className={inputCls} value={f.role} onChange={(e) => up("role", e.target.value)}>
                   {rolesForKind.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                {!rolesForKind.length && (
+                {!rolesForKind.length ? (
                   <div className="text-[11.5px] text-[#b3341f] mt-1">
                     No tracks are set up for this yet — please pick another option above.
                   </div>
-                )}
+                ) : roleCfg ? (
+                  // What picking this track actually means. Otherwise the only way to find out is
+                  // to read the agreement further down, which is late to discover it is unpaid.
+                  <div className="text-[11px] text-muted-foreground mt-1">
+                    {roleCfg.paid
+                      ? `Paid — ₹${(roleCfg.salary ?? 0).toLocaleString("en-IN")} ${roleCfg.salary_period === "yearly" ? "per year" : "per month"}`
+                      : "Unpaid — you earn through your referral code"}
+                    {durationOpts.length === 1 ? ` · ${durationOpts[0]} months` : ""}
+                  </div>
+                ) : null}
               </Field>
             )}
             {fVis("startDate") && <Field label={"Start date" + star("startDate")}><input type="date" className={inputCls} value={f.startDate} onChange={(e) => up("startDate", e.target.value)} /></Field>}

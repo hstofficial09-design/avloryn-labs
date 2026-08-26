@@ -7,9 +7,11 @@ import { JobDescriptionPreview } from "@/components/careers/jd";
 type Role = { track: string; commission_enabled: boolean; paid: boolean; salary: number | null; salary_period: string | null; scope: string | null; terms: string | null; sensitive: boolean; default_emp_type: string; defaultTerms?: string; defaultIsCustom?: boolean;
   joiningText?: string; joiningDefault?: string; joiningIsCustom?: boolean;
   /** "2" fixes it, "3,6" offers a choice, blank = the standard options. */
-  duration?: string | null };
+  duration?: string | null;
+  /** "2 weeks", "3 months" — blank means this role has no probation. */
+  probation?: string | null };
 type FieldCfg = { visible: boolean; required: boolean };
-type Custom = { label: string; type: string; required: boolean };
+type Custom = { label: string; type: string; required: boolean; roles?: string[] };
 type Form = { fields?: Record<string, FieldCfg>; custom?: Custom[] };
 
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
@@ -289,7 +291,7 @@ function KindPanel({ kind, sharedForm, roles, regTypes, reload }: {
       )}
 
       <KindDocs kind={kind} busy={busy === "form"} onSave={saveForm} />
-      <KindForm kind={kind} sharedForm={sharedForm} busy={busy === "form"} onSave={saveForm} />
+      <KindForm kind={kind} sharedForm={sharedForm} roles={roles} busy={busy === "form"} onSave={saveForm} />
 
       <div className={card}>
         <div className="font-serif text-[16px] font-[600] mb-1">Roles</div>
@@ -358,7 +360,7 @@ function KindDocs({ kind, busy, onSave }: { kind: RegType; busy: boolean; onSave
 }
 
 /** Which fields and questions THIS kind's form asks. */
-function KindForm({ kind, sharedForm, busy, onSave }: { kind: RegType; sharedForm: Form; busy: boolean; onSave: (patch: any) => void }) {
+function KindForm({ kind, sharedForm, roles, busy, onSave }: { kind: RegType; sharedForm: Form; roles: Role[]; busy: boolean; onSave: (patch: any) => void }) {
   // A kind that has never been touched shows the shared settings, and saving adopts them as its
   // own — so the first edit is a starting point rather than a blank slate.
   const seed = kind.fields && Object.keys(kind.fields).length ? kind.fields : (sharedForm.fields || {});
@@ -428,6 +430,23 @@ function KindForm({ kind, sharedForm, busy, onSave }: { kind: RegType; sharedFor
             <select value={q.type} onChange={(e) => setCustom((c) => c.map((x, idx) => idx === i ? { ...x, type: e.target.value } : x))} className="neu-inset rounded-lg px-2.5 py-2 text-[13px]"><option value="text">Text</option><option value="date">Date</option><option value="number">Number</option></select>
             <label className="flex items-center gap-1 text-[12px]"><input type="checkbox" checked={q.required} onChange={(e) => setCustom((c) => c.map((x, idx) => idx === i ? { ...x, required: e.target.checked } : x))} className="accent-[#c8a24a]" />req</label>
             <button onClick={() => setCustom((c) => c.filter((_, idx) => idx !== i))} className="text-[#b3341f] text-[16px] px-1">×</button>
+            {/* A question that only means something to one track. Asking a business-development
+                partner for their Reels is noise, and noise is what makes people abandon a form. */}
+            <div className="w-full flex items-center gap-2 flex-wrap pl-1 -mt-0.5">
+              <span className="text-[11px] text-faint">Ask this of:</span>
+              <button onClick={() => setCustom((c) => c.map((x, idx) => idx === i ? { ...x, roles: [] } : x))}
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-[600] ${!q.roles?.length ? "btn-gold" : "bg-card ring-hairline text-muted-foreground"}`}>everyone</button>
+              {roles.map((r) => {
+                const on = !!q.roles?.includes(r.track);
+                return (
+                  <button key={r.track}
+                    onClick={() => setCustom((c) => c.map((x, idx) => idx === i
+                      ? { ...x, roles: on ? (x.roles || []).filter((t) => t !== r.track) : [...(x.roles || []), r.track] }
+                      : x))}
+                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-[600] ${on ? "btn-gold" : "bg-card ring-hairline text-muted-foreground"}`}>{r.track}</button>
+                );
+              })}
+            </div>
           </div>
         ))}
         <button onClick={() => setCustom((c) => [...c, { label: "", type: "text", required: false }])} className={GHOST + " text-[12.5px] px-4 py-2 w-fit"}>+ add question</button>
@@ -731,6 +750,28 @@ function RoleCard({ role, regTypes, reload }: { role: Role; regTypes: RegType[];
           <p className="text-[11px] text-faint mt-1">
             One number fixes it — “2” and nobody can pick anything else. Several offer a choice — “3,6”.
           </p>
+
+          {/* Written as the finished phrase so a clause can simply say [Probation] and read
+              correctly, rather than every agreement having to pluralise it for itself. */}
+          <div className={label + " mt-3"}>Probation</div>
+          <div className="flex items-center gap-2">
+            <input type="number" min={0} value={(r.probation || "").split(" ")[0] || ""}
+              onChange={(e) => {
+                const n = e.target.value.replace(/[^0-9]/g, "");
+                const unit = (r.probation || "").split(" ")[1] || "months";
+                set("probation", n ? `${n} ${unit}` : "");
+              }}
+              placeholder="none" className="neu-inset rounded-lg px-2.5 py-2 text-[13px] w-[90px]" />
+            <select value={(r.probation || "").split(" ")[1] || "months"}
+              onChange={(e) => {
+                const n = (r.probation || "").split(" ")[0];
+                if (n) set("probation", `${n} ${e.target.value}`);
+              }}
+              className="neu-inset rounded-lg px-2.5 py-2 text-[13px]">
+              <option value="weeks">weeks</option><option value="months">months</option>
+            </select>
+            <span className="text-[11px] text-faint">{r.probation ? `“${r.probation}”` : "leave blank for none"}</span>
+          </div>
         </div>
 
         <label className="flex items-center gap-2 text-[13px] cursor-pointer self-end">

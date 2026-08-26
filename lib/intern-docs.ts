@@ -41,6 +41,8 @@ export type InternData = {
    * saved, length-checked, and then read by nothing. Whoever filled it in was writing into a void.
    */
   scope?: string | null;
+  /** "2 weeks", "3 months" — empty means the role has no probation period. */
+  probation?: string | null;
   paid?: boolean;
   salary?: number | null;
   salaryPeriod?: string | null; // 'monthly' | 'yearly'
@@ -147,7 +149,10 @@ export function internshipAgreement(d: InternData): {
           },
       {
         h: "9. Termination",
-        t: `Either party may end the internship with reasonable notice. The Company may end it immediately for misconduct, breach of confidentiality, or non-performance.`,
+        t: ((d.probation || "").trim()
+          ? `The first ${(d.probation || "").trim()} are a probation period, during which either party may end the internship immediately and without notice. `
+          : "")
+          + `Either party may end the internship with reasonable notice. The Company may end it immediately for misconduct, breach of confidentiality, or non-performance.`,
       },
       {
         h: "10. Records & Consent",
@@ -362,6 +367,11 @@ export function fillPlaceholders(text: string, d: InternData): string {
     // Responsibilities field only reached the built-in template — so a kind with its own agreement
     // could never say what its roles do, and one agreement could not serve two different roles.
     .split("[Responsibilities]").join((d.scope || "").trim() || "as agreed with the Company")
+    // Written as the finished phrase ("2 weeks"), so a clause can simply read "[Probation]".
+    // When there is no probation the whole SENTENCE goes, rather than filling in a word: an
+    // agreement that reads "The first none are a trial period" is worse than one that stays quiet.
+    .replace(/[^.!?\n]*\[Probation\][^.!?\n]*[.!?]\s*/g, (m) => ((d.probation || "").trim() ? m : ""))
+    .split("[Probation]").join((d.probation || "").trim())
     .split("[Company]").join(COMPANY);
 }
 /** Parse an owner-edited terms text back into title + intro + clauses for the PDF. */

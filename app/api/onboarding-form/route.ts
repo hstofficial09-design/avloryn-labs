@@ -401,16 +401,27 @@ export async function POST(req: Request) {
     regType = regTypeKey === "employee" ? "Employee" : "Intern";
   }
 
-  // Which optional fields are required is owner-controlled (default: required).
-  let formCfg: { fields?: Record<string, { visible?: boolean; required?: boolean }>; custom?: { label: string; required?: boolean }[] } = {};
+  // What THIS kind asks, falling back to the shared settings when it has none of its own.
+  //
+  // This read the shared config regardless, so a kind that switched a field off still had it
+  // demanded here: the form would stop showing it and then refuse to submit without it, with no
+  // way for the person to satisfy a question they were never asked.
+  let formCfg: { fields?: Record<string, { visible?: boolean; required?: boolean }>; custom?: { label: string; required?: boolean; roles?: string[] }[] } = {};
   try { formCfg = ((await getFormConfig()) || {}) as any; } catch { /* default required */ }
-  const fld = formCfg.fields || {};
+  const kindForm = (await listRegTypes(true).catch(() => [])).find((t) => t.key === regTypeKey) || null;
+  const fld = (kindForm?.fields && Object.keys(kindForm.fields).length ? kindForm.fields : formCfg.fields) || {};
   const need = (k: string) => fld[k]?.visible !== false && fld[k]?.required !== false;
 
   // Custom answers are checked against the questions the OWNER configured, not the list the
   // client posted — otherwise a required question could simply be omitted, and any extra
   // key the client invented would land in the record PDF.
-  const configured = Array.isArray(formCfg.custom) ? formCfg.custom.filter((q) => q?.label) : [];
+  //
+  // A question tied to particular tracks is only asked of those tracks: a work-sample link means
+  // nothing to a business-development partner, and requiring it would block them outright.
+  const allConfigured = (Array.isArray(kindForm?.custom) && kindForm!.custom!.length
+    ? kindForm!.custom!
+    : (Array.isArray(formCfg.custom) ? formCfg.custom : [])).filter((q: any) => q?.label);
+  const configured = allConfigured.filter((q: any) => !q?.roles?.length || q.roles.includes(d.role));
   const posted = new Map(
     (Array.isArray(body.custom) ? (body.custom as { q: string; a: string }[]) : [])
       .filter((x) => x && x.q)
@@ -424,7 +435,7 @@ export async function POST(req: Request) {
   // as well as in the browser: the switches are the owner's rules, and rules that only exist in
   // the page are not rules.
   if (!d.fullName || !EMAIL_RE.test(d.email) || !signature || !consent
-    || (need("mobile") && !d.mobile) || (need("address") && !d.address) || (need("govId") && !d.idType)
+    || (need("mobile") && !d.mobile) || (need("address") && !d.address) || (need("govId") && (!d.idType || !String(d.idNumber || "").trim()))
     || (need("dob") && !dob) || (need("startDate") && !d.startDate) || (need("role") && !d.role)) {
     return NextResponse.json({ ok: false, error: "Please complete all required fields, sign, and accept the terms." }, { status: 400 });
   }
@@ -466,6 +477,7 @@ export async function POST(req: Request) {
     // What the role does, as written against it. Offered in the editor as "shown in the agreement"
     // and, until now, read by nothing.
     d.scope = roleCfg?.scope || null;
+    d.probation = roleCfg?.probation || null;
     // Which agreement gets signed: this role's own text, then the KIND's default, and only then
     // the built-in template.
     //

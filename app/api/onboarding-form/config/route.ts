@@ -26,7 +26,9 @@ export function bustFormConfigCache() { cache = null; }
 // (app/api/onboarding-form/route.ts). Without it the form showed the built-in default while the
 // emailed PDF carried the owner's edit — two different documents for one signature.
 // `sensitive` and the NDA ride along for the same reason — they change the document the hire
-// signs. Still withheld: commission_enabled/scope and every other internal setting.
+// signs. `scope` (Responsibilities) joined them once it started appearing IN the agreement — a
+// person cannot be asked to sign a clause the page will not show them.
+// Still withheld: commission_enabled and every other internal setting.
 export async function GET() {
   if (cache && Date.now() - cache.at < TTL_MS) return NextResponse.json(cache.body);
   try {
@@ -42,6 +44,11 @@ export async function GET() {
         label: t.label,
         // The word its documents use — "Internship Agreement", "Employment Agreement".
         noun: docNounFor(t),
+        // The kind's own agreement, returned for the same reason a role's is: the person reads
+        // and signs THIS text on the form, and the PDF is built from the same source. Without it
+        // the form showed a partner the built-in internship agreement while the PDF carried the
+        // partnership one — read one document, sign another.
+        terms: t.terms || null,
         fields: t.fields ?? form?.fields ?? {},
         custom: Array.isArray(t.custom) ? t.custom : (Array.isArray(form?.custom) ? form.custom : []),
       })),
@@ -56,6 +63,9 @@ export async function GET() {
         sensitive: r.sensitive,
         // How long this role runs, so the form can offer exactly that.
         duration: r.duration || null,
+        probation: r.probation || null,
+        // Read into the agreement's responsibilities, so what is shown matches what is signed.
+        scope: r.scope || null,
       })),
       // The NDA the hire will actually sign (owner-edited when set), so the form shows it.
       nda: legal?.nda || null,

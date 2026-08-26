@@ -12,6 +12,7 @@ import { hostOrder } from "../lib/booking/google";
 import { taskStatus, workStats, reviewAverage, tenureScore, weekStartIST, tasksInWeek, type Task, type Review } from "../lib/portal-db";
 import { shouldAlert, type Tracked } from "../lib/monitor/state";
 import { roleLabel } from "../lib/role-label";
+import { fillPlaceholders } from "../lib/intern-docs";
 import { regKeyFrom } from "../lib/portal-db";
 import { shouldSignOut } from "../lib/session-ended";
 import { stillIgnored } from "../lib/monitor/state";
@@ -192,6 +193,31 @@ console.log("\n── adding a kind of person ──");
   // that a key is always derivable, since it is what lands in employees.emp_type.
   ok(regKeyFrom("Network Partner") === "network_partner", "any label the owner types produces a usable key");
   ok(regKeyFrom("Partner") === "partner", "…including one that carries partner behaviour, which is the owner's call");
+}
+
+console.log("\n── what the documents fill in ──");
+{
+  const d = (o: any = {}) => ({ fullName:"Asha", role:"M&C", startDate:"01 Sep 2026", duration:"3",
+    email:"a@b.c", mobile:"9", address:"x", idType:"PAN", isStudent:false, signedAt:"today", ...o } as any);
+
+  ok(fillPlaceholders("Dear [Full Name], from [Start Date].", d()) === "Dear Asha, from 01 Sep 2026.",
+     "the ordinary fields fill in");
+  ok(fillPlaceholders("Duties: [Responsibilities]", d({ scope: "Write content." })) === "Duties: Write content.",
+     "a role's responsibilities reach the agreement");
+  ok(/as agreed with the Company/.test(fillPlaceholders("Duties: [Responsibilities]", d())),
+     "…and read sensibly when nothing was written");
+
+  // Probation is the awkward one: a text agreement cannot carry an "if" the way code can, so an
+  // unset probation has to remove its whole sentence rather than fill in a word. "The first none
+  // are a trial period" is worse than saying nothing.
+  const clause = "9. Ending it\nThere is a trial period of [Probation] from the start. Either of us may end it at any time.";
+  const withP = fillPlaceholders(clause, d({ probation: "2 weeks" }));
+  ok(withP.includes("trial period of 2 weeks"), "a probation that is set reads as written");
+  const noP = fillPlaceholders(clause, d());
+  ok(!noP.includes("trial period") && !noP.includes("[Probation]") && !noP.includes("none"),
+     "an unset probation takes its sentence with it rather than filling in a word", noP);
+  ok(noP.includes("9. Ending it"), "…and the clause heading survives — the removal must not cross a line", noP.split("\n")[0]);
+  ok(noP.includes("Either of us may end it at any time."), "…and the rest of the clause is untouched");
 }
 
 console.log("\n── when a 401 means 'sign in again' ──");
