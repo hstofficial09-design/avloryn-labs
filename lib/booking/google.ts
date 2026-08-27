@@ -5,7 +5,7 @@
  */
 import { google } from "googleapis";
 import { randomUUID } from "crypto";
-import { getGoogle, saveGoogle } from "./db";
+import { getGoogle, saveGoogle, listMembers } from "./db";
 import type { Interval } from "./availability";
 import { SITE_URL } from "@/lib/seo";
 
@@ -171,44 +171,6 @@ export async function memberEvents(memberId: string, fromISO: string, toISO: str
   }
 }
 
-/** Create the meeting event (with a Meet link) on the host member's calendar, inviting
- *  every member + the client. Returns the event id + Meet link. */
-export async function createMeetingEvent(opts: {
-  hostMemberId: string;
-  summary: string;
-  description: string;
-  startISO: string;
-  endISO: string;
-  attendeeEmails: string[];
-  timezone?: string;
-}): Promise<{ eventId: string | null; meetLink: string | null; htmlLink: string | null }> {
-  const m = await memberClient(opts.hostMemberId);
-  if (!m) return { eventId: null, meetLink: null, htmlLink: null };
-  const cal = google.calendar({ version: "v3", auth: m.client });
-  const res = await cal.events.insert({
-    calendarId: m.calendarId,
-    conferenceDataVersion: 1,
-    sendUpdates: "all",
-    requestBody: {
-      summary: opts.summary,
-      description: opts.description,
-      start: { dateTime: opts.startISO, timeZone: opts.timezone || "UTC" },
-      end: { dateTime: opts.endISO, timeZone: opts.timezone || "UTC" },
-      attendees: Array.from(new Set(opts.attendeeEmails.filter(Boolean))).map((email) => ({ email })),
-      conferenceData: {
-        createRequest: { requestId: randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } },
-      },
-    },
-  });
-  const d = res.data;
-  const meetLink =
-    d.hangoutLink ||
-    d.conferenceData?.entryPoints?.find((e) => e.entryPointType === "video")?.uri ||
-    null;
-  return { eventId: d.id || null, meetLink, htmlLink: d.htmlLink || null };
-}
-
-/** Cancel (delete) a previously created event on the host's calendar. Best-effort. */
 export async function deleteMeetingEvent(hostMemberId: string, eventId: string): Promise<void> {
   try {
     const m = await memberClient(hostMemberId);
@@ -294,9 +256,13 @@ export async function createMeetingForMembers(opts: {
       const res = await cal.events.insert({
         calendarId: m.calendarId,
         conferenceDataVersion: 1,
-        // Only people outside the organisation are emailed by Google. The team get our own invite
-        // and their own calendar copy already; a third message for the same meeting is noise.
-        sendUpdates: "externalOnly",
+        // Google emails nobody. We send our own invite, with an .ics, to the guest and to every
+        // member — so anything Google sends is a second message about the same meeting.
+        //
+        // "externalOnly" was not enough: the team sign in with their own Gmail addresses, which are
+        // external to the workspace, so Google mailed them an invitation to accept — for a meeting
+        // that was already on their calendar and that they had not been asked to accept.
+        sendUpdates: "none",
         requestBody: {
           summary: opts.summary,
           description: opts.description,
@@ -324,12 +290,21 @@ export async function createMeetingForMembers(opts: {
   }
   if (!hostId) return { meetLink: null, events: [], hostId: null };
 
-  // Every other member who uses Google: write the same meeting to their own calendar (auto-add,
-  // no dup invite). Anyone whose calendar is Zoho is skipped here and mirrored there instead.
+  // Every other member who uses Google gets the meeting written to their own calendar — UNLESS
+  // they are already an attendee on the host's event, which now puts it there anyway.
+  //
+  // Doing both produced two events for one meeting: the attendee copy and this one. Being an
+  // attendee is what admits them to the Meet without knocking, so that is the one to keep.
   const desc = (meetLink ? `Join Google Meet: ${meetLink}\n\n` : "") + opts.description;
   const copyTo = opts.googleCopyMemberIds ?? opts.memberIds;
+  const attending = new Set((opts.memberEmails || []).map((e) => e.trim().toLowerCase()).filter(Boolean));
+  // Read once rather than per member: the ids come in whatever order the host search left them,
+  // so pairing them with the email list by position would quietly match the wrong people.
+  const emailById = new Map((await listMembers().catch(() => [])).map((m) => [m.id, (m.email || "").trim().toLowerCase()]));
   for (const id of opts.memberIds) {
     if (id === hostId || !copyTo.includes(id)) continue;
+    const mEmail = emailById.get(id) || "";
+    if (mEmail && attending.has(mEmail)) continue;   // already on their calendar as an attendee
     try {
       const m = await memberClient(id);
       if (!m) continue;

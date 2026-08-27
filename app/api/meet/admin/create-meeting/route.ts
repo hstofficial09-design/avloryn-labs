@@ -74,7 +74,14 @@ export async function POST(req: Request) {
   try {
     const { meetLink: ml, events } = await createMeetingForMembers({ memberIds: hostOrderIds, googleCopyMemberIds, memberEmails, clientEmail: guest, summary: title, description: baseDesc, startISO, endISO });
     meetLink = ml; if (events.length) eventsJson = JSON.stringify(events);
-    onGoogle = events.map((e) => e.memberId);
+    // Everyone the Google event already accounts for — the calendars it was written to, PLUS
+    // everyone listed on it as an attendee, because an invitation lands on their calendar just as
+    // a written copy does.
+    //
+    // Only the written copies counted before. So a member who is an attendee got the Google
+    // invitation AND a Zoho mirror of the same meeting — two events for one booking, which is
+    // most visible to anyone whose Zoho also shows their Google calendar.
+    onGoogle = Array.from(new Set([...events.map((e) => e.memberId), ...memberIds.filter((id) => byId.get(id)?.email)]));
   } catch (e) {
     // A calendar failure must not lose the meeting — but it must not be silent either, or the
     // meeting exists with nothing on anyone's calendar and nobody can tell why.

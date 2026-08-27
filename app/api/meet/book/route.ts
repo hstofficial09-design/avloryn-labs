@@ -147,7 +147,8 @@ export async function POST(req: Request) {
     });
     meetLink = ml;
     if (events.length) eventsJson = JSON.stringify(events);
-    onGoogle = events.map((e) => e.memberId);
+    // Same rule as the admin path: an attendee already has it, so Zoho must not mirror it too.
+    onGoogle = Array.from(new Set([...events.map((e) => e.memberId), ...memberIds.filter((id) => byId.get(id)?.email)]));
   } catch (e) {
     /* calendar write failed — still save the booking so the request isn't lost */
     console.error("[meet/book] Google calendar failed:", e);

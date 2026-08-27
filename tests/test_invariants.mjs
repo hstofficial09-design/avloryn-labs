@@ -365,9 +365,32 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     fail("R16 the team are no longer attendees:", "they will have to ask to be let into their own meeting");
   if (!/responseStatus:\s*["']accepted["']/.test(g))
     fail("R16 the team are invited rather than included:", "they are not being asked, they are attending");
-  // Only outsiders should get Google's own invite: the team already get ours and their own copy.
-  if (!/sendUpdates:\s*["']externalOnly["']/.test(g))
-    fail("R16 everyone is emailed by Google too:", "the team get the same meeting three times");
+  // Google must email nobody: we send our own invite with an .ics, so anything Google sends is a
+  // second message about the same meeting. "externalOnly" was not enough — the team sign in with
+  // their own Gmail addresses, which are external to the workspace, so Google mailed each of them
+  // an invitation to accept a meeting that was already on their calendar.
+  // Scoped to the HOST insert — the one that creates the Meet and carries the attendees. The
+  // per-member copies also say sendUpdates "none", so checking the file as a whole was satisfied
+  // by those and passed against a host insert that had been changed back.
+  {
+    // Picked out by what makes it the host insert — it is the one that creates the conference.
+    // Anchoring on conferenceDataVersion matched an earlier call in a different function, so the
+    // rule was reading a block that never had sendUpdates in it and failing on healthy code.
+    const host = g.split("events.insert(").find((chunk) => chunk.includes("conferenceSolutionKey")) || "";
+    if (!host) fail("R16 the host insert changed shape:", "lib/booking/google.ts");
+    else if (!/sendUpdates:\s*["']none["']/.test(host))
+      fail("R16 Google emails the team as well as us:", "an 'accept this invitation' for a meeting they did not need to accept");
+  }
+
+  // One person, one event. Being an attendee already puts the meeting on their calendar, so a
+  // written copy on top of it is a duplicate — and so is a Zoho mirror of the same booking.
+  if (!/attending\.has\(/.test(g))
+    fail("R16 a member gets both an invitation and their own copy:", "two events for one meeting");
+  for (const f of ["app/api/meet/admin/create-meeting/route.ts", "app/api/meet/book/route.ts"]) {
+    const src = code(f);
+    if (/onGoogle = events\.map/.test(src))
+      fail("R16 Zoho mirrors a meeting the member is already attending:", `${f} — two events for one booking`);
+  }
   // Every path that creates a meeting has to pass them, not just the one that was reported.
   // Checked INSIDE the call, not anywhere in the file: `memberEmails` is a local variable in each
   // of these routes anyway, so a rule that greps the whole file passes even when the argument has
