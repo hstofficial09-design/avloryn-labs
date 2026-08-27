@@ -27,9 +27,17 @@ export async function GET() {
   // than a ternary that only knows about interns and employees.
   const kindNoun = (key: string) => { const t = regTypes.find((x) => x.key === key); return t ? docNounFor(t) : "Employment"; };
   const kindJoining = (key: string) => (regTypes.find((t) => t.key === key)?.joining || "").trim() || null;
+  const kindTerms = (key: string) => (regTypes.find((t) => t.key === key)?.terms || "").trim() || null;
   const withDefaults = roles.map((r) => ({
     ...r,
-    defaultTerms: r.default_terms
+    // Role's own baseline, then the KIND's agreement, and only then the built-in template — the
+    // same order the form and the PDF use.
+    //
+    // Without the middle step, opening a PARTNER role showed an internship agreement in its terms
+    // box: "the Intern joins as…", "this is an unpaid internship". The form and the PDF were both
+    // right, so the only place that was wrong was the one the owner edits — and a save would have
+    // made it wrong everywhere, because a role's own text overrides its kind's.
+    defaultTerms: r.default_terms || kindTerms(r.default_emp_type)
       || defaultTermsText(roleLabel(r.track), isHrRole(r.track) || r.sensitive, r.paid, r.salary, r.salary_period, r.scope),
     defaultIsCustom: !!r.default_terms,
     // The joining letter, alongside the agreement — the editor needs both the current text and

@@ -412,6 +412,19 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   if (!/kindCfg\?\.joining/.test(pdf))
     fail("R17 the kind's own joining letter is skipped:", "app/api/onboarding-form/route.ts");
 
+  // Everywhere a role's documents are resolved — the form, the PDF, and the EDITOR — must use the
+  // same order: role, then kind, then template. The editor was the one that did not, so opening a
+  // partner role showed an internship agreement in its terms box. The form and the PDF were both
+  // right, which made it worse: the only wrong copy was the one you would edit, and saving it
+  // would have made it wrong everywhere, because a role's own text overrides its kind's.
+  {
+    const cfg = code("app/api/portal/onboarding-config/route.ts");
+    for (const [what, fn] of [["agreement", "kindTerms"], ["joining letter", "kindJoining"]]) {
+      if (!new RegExp(`${fn}\\(`).test(cfg))
+        fail("R17 the editor skips the kind's own document:", `${what} — a partner would be shown an intern's`);
+    }
+  }
+
   // A role created inside a kind's tab must land in THAT kind, not silently become an intern one.
   const builder = code("app/portal/onboarding/OnboardingBuilder.tsx");
   if (!/default_emp_type:\s*kind\.key/.test(builder))
