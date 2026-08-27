@@ -103,7 +103,8 @@ export default function SystemWatch() {
           </div>
           <div className="text-[12.5px] text-faint mt-1">
             {d.stale
-              ? `Nothing has been checked since ${ago(d.staleMin)} — until it runs again, nothing below is current.`
+              ? `Nothing has been checked since ${ago(d.staleMin)} — until it runs again, nothing below is current. `
+                + "The checks run on GitHub's scheduler, which is late often enough that this is usually a delay rather than a fault."
               : `Checked ${ago(d.staleMin)} · ${d.counts.total} checks across Avloryn and LivoDraft.`}
           </div>
         </div>

@@ -21,13 +21,23 @@ import type { PoolClient } from "pg";
 /** Re-alert on a still-broken check at these ages, each time with sharper wording. */
 export const ESCALATION_HOURS = [24, 72, 168];
 /** How long a job may stay silent before its silence is treated as failure. */
+/**
+ * How long a job may be silent before it counts as stopped.
+ *
+ * Set from what the scheduler actually does, not from what it is asked to do. Measured over 40
+ * runs of each: a job asked to run every 15 minutes averaged 50 minutes between runs and once went
+ * 184; the hourly one averaged 59 and once went 215. So the old values — an hour and three hours —
+ * were inside GitHub's ordinary lateness, and the banner announced that the watch had stopped
+ * while it was running perfectly well.
+ *
+ * That is worse than useless. A warning that cries wolf is one people learn to scroll past, and
+ * this is the warning that has to be believed.
+ */
 export const BEAT_GRACE_MIN: Record<string, number> = {
-  // Reminders run every 15 minutes. GitHub's scheduler is best-effort and often minutes late, so
-  // an hour of silence is a real outage, not a slow run.
-  "meet-reminders": 60,
+  "meet-reminders": 240,
   // The watchdog's own beat. If this stops, everything below stops being checked — the portal
   // banner reads this so a dead watchdog is visible instead of looking like "all clear".
-  "monitor": 180,
+  "monitor": 300,
 };
 
 export type CheckResult = {

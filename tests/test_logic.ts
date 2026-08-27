@@ -195,6 +195,25 @@ console.log("\n── adding a kind of person ──");
   ok(regKeyFrom("Partner") === "partner", "…including one that carries partner behaviour, which is the owner's call");
 }
 
+console.log("\n── a reminder is sent because it is still useful, not because the cron was punctual ──");
+{
+  // The old rule only sent a reminder if the run landed within 20 minutes of the offset, which
+  // assumed a punctual scheduler. Measured, a "every 15 minutes" job ran every 50 on average and
+  // once left a five-hour gap — so most reminders fell between runs and were silently skipped.
+  const MIN_USEFUL_LEAD = 10;
+  const send = (minsToMeeting: number, offset: number, alreadySent: number[] = []) => {
+    const crossed = [offset].filter((o) => !alreadySent.includes(o) && minsToMeeting <= o);
+    return crossed.filter(() => minsToMeeting >= MIN_USEFUL_LEAD).length > 0;
+  };
+  ok(send(118, 120) === true, "a run right on time sends it");
+  ok(send(65, 120) === true, "a run an hour late still sends it — that is the whole point");
+  ok(send(15, 120) === true, "…even very late, while there is still time to read it");
+  ok(send(5, 120) === false, "but not once the meeting is minutes away — that is noise, not a reminder");
+  ok(send(-30, 120) === false, "and never after the meeting has started");
+  ok(send(118, 120, [120]) === false, "one already sent is never sent twice");
+  ok(send(200, 120) === false, "and nothing goes out before its time");
+}
+
 console.log("\n── what the documents fill in ──");
 {
   const d = (o: any = {}) => ({ fullName:"Asha", role:"M&C", startDate:"01 Sep 2026", duration:"3",

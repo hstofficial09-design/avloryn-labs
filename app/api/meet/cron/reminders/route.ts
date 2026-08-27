@@ -10,7 +10,20 @@ import { beat } from "@/lib/monitor/state";
 import { SITE_URL } from "@/lib/seo";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const CRON_WINDOW = 20; // the scheduled function runs ~every 15 min
+/**
+ * How close to the meeting a reminder is still worth sending.
+ *
+ * This used to be a 20-minute window tied to the cron's cadence: a reminder went out only if the
+ * run happened to land within 20 minutes of the offset, and otherwise the offset was marked
+ * handled and silently skipped. That assumed the schedule was punctual. Measured over 40 runs,
+ * GitHub's scheduler fired a "every 15 minutes" job every 50 minutes on average and once left a
+ * five-hour gap — so most reminders were falling between runs and never being sent at all.
+ *
+ * Usefulness is the right test, not punctuality: send it however late the run is, as long as there
+ * is still enough time before the meeting for it to be worth reading. Anything later than this is
+ * still marked handled, so a stale reminder never arrives after the fact.
+ */
+const MIN_USEFUL_LEAD = 10;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,7 +70,7 @@ async function run() {
       if (!crossed.length) continue;
       // Email only the most imminent still-fresh offset; mark every crossed one handled
       // (a long-missed offset is marked without spamming a stale reminder).
-      const fresh = crossed.filter((o) => mins > o - CRON_WINDOW);
+      const fresh = crossed.filter(() => mins >= MIN_USEFUL_LEAD);
       const toEmail = fresh.length ? Math.min(...fresh) : null;
       // Record it BEFORE sending. If we can't record it we must not send at all: an unrecorded
       // reminder goes out again on the next run, and the next, every 15 minutes.

@@ -519,6 +519,28 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   }
 }
 
+// ── R19 · a reminder must not depend on the scheduler being punctual ─────────────────────────
+// Reminders went out only if the run landed within 20 minutes of the offset, and otherwise the
+// offset was marked handled and silently skipped. Measured over 40 runs, a job asked to run every
+// 15 minutes actually ran every 50 on average and once left a five-hour gap — so most reminders
+// fell between runs and were never sent, while every run reported success.
+{
+  const rem = code("app/api/meet/cron/reminders/route.ts");
+  if (/CRON_WINDOW/.test(rem))
+    fail("R19 reminders are tied to the cron's cadence again:", "most of them will fall between runs");
+  if (!/MIN_USEFUL_LEAD/.test(rem))
+    fail("R19 nothing decides whether a late reminder is still worth sending:", "either stale ones go out or none do");
+
+  // Grace periods must reflect what the scheduler actually does, or the banner cries wolf — and
+  // this is the one warning that has to be believed.
+  const st = code("lib/monitor/state.ts");
+  const graces = [...st.matchAll(/"(meet-reminders|monitor)":\s*(\d+)/g)].map((m) => [m[1], +m[2]]);
+  if (graces.length < 2) fail("R19 the beat grace periods are gone:", "lib/monitor/state.ts");
+  for (const [name, min] of graces) {
+    if (min < 200) fail("R19 grace is inside the scheduler's ordinary lateness:", `${name} at ${min} min — measured gaps reach 215`);
+  }
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");
