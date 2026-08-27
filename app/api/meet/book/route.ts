@@ -170,6 +170,18 @@ export async function POST(req: Request) {
     answers, zoho_event_id: zohoJson, payment_id: paymentId, amount_inr: amountInr, coupon_code: couponCode,
   });
 
+  // The invitation, built once so BOTH emails can carry it. It used to be built inside the
+  // client's block, which is why the team's message could not attach it — they were sent a notice
+  // about a meeting rather than an invitation to one, with nothing to accept.
+  const inviteIcs = buildICS({
+    uid: booking.id, startISO, endISO,
+    summary: `${mt.name} — Avloryn Labs`,
+    description: (meetLink ? `Join Google Meet: ${meetLink}\n\n` : "") + `${mt.name} with ${memberNames || "Avloryn Labs"}.`,
+    location: meetLink || "Online",
+    organizerName: "Avloryn Labs", organizerEmail: memberEmails[0] || undefined,
+    attendeeEmails: [email, ...memberEmails].filter(Boolean),
+  });
+
   // Branded confirmation to the client (+ a universal .ics attachment).
   try {
     if (key && EMAIL_RE.test(email)) {
@@ -204,6 +216,9 @@ export async function POST(req: Request) {
     if (key && to.length) {
       await new Resend(key).emails.send({
         from, to,
+        // The same invitation the client gets, so this can be accepted and adds itself to
+        // whichever calendar they use.
+        attachments: [{ filename: "invite.ics", content: Buffer.from(inviteIcs).toString("base64") }],
         subject: `New booking: ${mt.name} — ${name}`,
         html: meetingInviteHTML({ heading: "New booking", title: `${mt.name} — ${name}`, whenText: whenIST(startISO), withNames: memberNames || "—", notes: [`Client: ${name} (${email})`, notes, answerLines].filter(Boolean).join(" · "), meetLink }),
         text:

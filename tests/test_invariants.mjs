@@ -390,6 +390,19 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     const src = code(f);
     if (/onGoogle = events\.map/.test(src))
       fail("R16 Zoho mirrors a meeting the member is already attending:", `${f} — two events for one booking`);
+    // An email about a CONFIRMED meeting must carry the invitation. The team's did not, so they
+    // got a notice with nothing to accept and nothing that would add itself to their calendar.
+    //
+    // Only the confirmed ones: "Request received" and "Approval needed" come before anything is
+    // settled and would be wrong to attach an invitation to. Matching every send flagged those two
+    // and a third whose attachment simply sat further down than the window looked.
+    for (const snd of src.split("emails.send(").slice(1)) {
+      const subject = /subject:\s*`([^`]*)`/.exec(snd.slice(0, 900))?.[1] || "";
+      if (!/Confirmed:|New booking:/.test(subject)) continue;
+      const body = snd.slice(0, snd.indexOf("});") + 1 || 2000);
+      if (!/attachments/.test(body))
+        fail("R16 a confirmed meeting is announced without its invitation:", `${f} — "${subject.slice(0, 40)}" has nothing to accept`);
+    }
   }
   // Every path that creates a meeting has to pass them, not just the one that was reported.
   // Checked INSIDE the call, not anywhere in the file: `memberEmails` is a local variable in each
