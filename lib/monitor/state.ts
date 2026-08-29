@@ -24,20 +24,20 @@ export const ESCALATION_HOURS = [24, 72, 168];
 /**
  * How long a job may be silent before it counts as stopped.
  *
- * Set from what the scheduler actually does, not from what it is asked to do. Measured over 40
- * runs of each: a job asked to run every 15 minutes averaged 50 minutes between runs and once went
- * 184; the hourly one averaged 59 and once went 215. So the old values — an hour and three hours —
- * were inside GitHub's ordinary lateness, and the banner announced that the watch had stopped
- * while it was running perfectly well.
+ * Both jobs are scheduled by the app itself (instrumentation.ts) — reminders every 15 minutes, the
+ * watchdog hourly — so silence beyond a couple of cycles means something is genuinely wrong, not
+ * that a scheduler is busy.
  *
- * That is worse than useless. A warning that cries wolf is one people learn to scroll past, and
- * this is the warning that has to be believed.
+ * These were briefly set to four and five hours, from measuring how late GitHub Actions fired.
+ * That was fixing the wrong end: the answer was to stop depending on GitHub, not to widen the
+ * window until its worst behaviour looked normal. A watchdog that tolerates thirteen hours of
+ * silence is not watching anything.
  */
 export const BEAT_GRACE_MIN: Record<string, number> = {
-  "meet-reminders": 240,
+  "meet-reminders": 60,
   // The watchdog's own beat. If this stops, everything below stops being checked — the portal
   // banner reads this so a dead watchdog is visible instead of looking like "all clear".
-  "monitor": 300,
+  "monitor": 180,
 };
 
 export type CheckResult = {

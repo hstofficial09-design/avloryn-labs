@@ -580,13 +580,26 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   if (!/MIN_USEFUL_LEAD/.test(rem))
     fail("R19 nothing decides whether a late reminder is still worth sending:", "either stale ones go out or none do");
 
-  // Grace periods must reflect what the scheduler actually does, or the banner cries wolf — and
-  // this is the one warning that has to be believed.
-  const st = code("lib/monitor/state.ts");
-  const graces = [...st.matchAll(/"(meet-reminders|monitor)":\s*(\d+)/g)].map((m) => [m[1], +m[2]]);
-  if (graces.length < 2) fail("R19 the beat grace periods are gone:", "lib/monitor/state.ts");
-  for (const [name, min] of graces) {
-    if (min < 200) fail("R19 grace is inside the scheduler's ordinary lateness:", `${name} at ${min} min — measured gaps reach 215`);
+  // Anything that has to happen on a clock must be scheduled BY THE APP. GitHub Actions is a
+  // backup and a poor one: measured over a week, an hourly workflow went 615, 638, 533 and 800
+  // minutes between runs — every run succeeding, the workflow enabled, GitHub simply not calling
+  // it. The watchdog was left on that schedule alone and spent hours announcing its own death.
+  {
+    const inst = code("instrumentation.ts");
+    for (const [what, path] of [["reminders", "/api/meet/cron/reminders"], ["the watchdog", "/api/cron/monitor"]]) {
+      if (!inst.includes(path))
+        fail("R19 nothing in the app schedules it:", `${what} would depend on GitHub, which goes silent for hours`);
+    }
+    if (!/setInterval/.test(inst)) fail("R19 the in-app scheduler is gone:", "instrumentation.ts");
+
+    // Grace follows the app's own interval now, not GitHub's worst behaviour. Widening it to
+    // tolerate thirteen hours of silence would mean watching nothing.
+    const st = code("lib/monitor/state.ts");
+    const graces = [...st.matchAll(/"(meet-reminders|monitor)":\s*(\d+)/g)].map((m) => [m[1], +m[2]]);
+    if (graces.length < 2) fail("R19 the beat grace periods are gone:", "lib/monitor/state.ts");
+    for (const [name, min] of graces) {
+      if (min > 240) fail("R19 grace is so wide the watchdog sees nothing:", `${name} at ${min} min`);
+    }
   }
 }
 
