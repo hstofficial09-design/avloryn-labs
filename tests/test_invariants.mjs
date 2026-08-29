@@ -617,9 +617,12 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
 
   // A task's brief opens on request. Printing every one in full made a single long task run to
   // eight hundred pixels and the page to four thousand — most of it work already finished.
-  if (!/openDetail/.test(wl))
+  // Anchored on what GATES the rendering, not on a name being present. A name check passes as soon
+  // as the identifier exists anywhere — including in a stub that always returns true — and this
+  // rule quietly did exactly that against code deliberately broken to test it.
+  if (!/openDetail\.has\([^)]*\)\s*&&/.test(wl))
     fail("R20 every task detail prints in full again:", "one long brief and the page is unreadable");
-  if (!/showDone/.test(wl))
+  if (!/showDone\s*\?\s*tasks\s*:\s*tasks\.filter/.test(wl))
     fail("R20 delivered work is back among the open work:", "finished tasks bury what still needs doing");
   // Never hidden, though — the count is on screen whether or not the rows are.
   if (!/delivered`|delivered \(/.test(wl))
