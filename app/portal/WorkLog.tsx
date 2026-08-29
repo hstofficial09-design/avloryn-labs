@@ -148,42 +148,122 @@ export default function WorkLog({ mode }: { mode: "employee" | "owner" }) {
       {/* A dropdown hid the whole team behind one click and told you nothing until you picked
           someone. Cards show everyone at once, with what each person is actually carrying — so
           you can see who is loaded up and who is overdue before opening anybody. */}
-      {mode === "owner" && !who && (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4 items-start">
-          {team.length === 0 && (
-            <div className="card-lux rounded-2xl px-5 py-8 text-center text-[13px] text-muted-foreground sm:col-span-2 lg:col-span-3">
-              No team members yet.
+      {/* Grouped by what people DO, because that is how work is actually thought about — and
+          sorted so the ones carrying something come first. It used to be one flat grid in whatever
+          order the database returned, with "no tasks yet" cards scattered between busy ones and
+          rows that never lined up because every card was a different height. */}
+      {mode === "owner" && !who && (() => {
+        const load = (m: Member) => {
+          const theirs = allTasks.filter((t) => t.employee_id === m.id);
+          const open = theirs.filter((t) => !t.delivered_at);
+          return {
+            m, theirs, open,
+            overdue: open.filter((t) => t.due_at && Date.now() > Date.parse(t.due_at)),
+            delivered: theirs.length - open.length,
+          };
+        };
+        const all = team.map(load);
+        // Network partners are outside recruiters — no work log by design, so their cards would sit
+        // here empty for ever. They belong on the network page, not this one.
+        const staff = all.filter((x) => (x.m.emp_type || "") !== "partner");
+        const busy = staff.filter((x) => x.theirs.length > 0);
+        const idle = staff.filter((x) => x.theirs.length === 0);
+        const groupOf = (m: Member) => (m.track || m.role || "Unassigned").trim() || "Unassigned";
+        const groups = new Map<string, ReturnType<typeof load>[]>();
+        for (const x of busy) {
+          const g = groupOf(x.m);
+          groups.set(g, [...(groups.get(g) || []), x]);
+        }
+        // Most work first, within a group and between them — the busiest is what wants attention.
+        for (const [, list] of groups) {
+          list.sort((a, b) => b.overdue.length - a.overdue.length || b.open.length - a.open.length || a.m.name.localeCompare(b.m.name));
+        }
+        const ordered = [...groups.entries()].sort((a, b) =>
+          b[1].reduce((n, x) => n + x.open.length, 0) - a[1].reduce((n, x) => n + x.open.length, 0));
+        const totOpen = busy.reduce((n, x) => n + x.open.length, 0);
+        const totOver = busy.reduce((n, x) => n + x.overdue.length, 0);
+        const totDone = busy.reduce((n, x) => n + x.delivered, 0);
+
+        const Card = ({ x }: { x: ReturnType<typeof load> }) => (
+          <button type="button" onClick={() => setWho(x.m.id)}
+            className="card-lux rounded-2xl p-4 text-left flex flex-col hover:-translate-y-0.5 hover:shadow-[0_14px_30px_-16px_rgba(120,95,40,0.4)] transition-all">
+            <div className="flex items-baseline justify-between gap-2 mb-1">
+              <span className="font-serif text-[15.5px] font-[600] truncate">{x.m.name}</span>
+              {x.overdue.length > 0 && (
+                <span className="shrink-0 text-[10.5px] font-[700] rounded-full px-2 py-0.5"
+                  style={{ background: "rgba(179,52,31,0.10)", color: "#b3341f" }}>{x.overdue.length} overdue</span>
+              )}
             </div>
-          )}
-          {team.map((m) => {
-            const theirs = allTasks.filter((t) => t.employee_id === m.id);
-            const open = theirs.filter((t) => !t.delivered_at);
-            const overdue = open.filter((t) => t.due_at && Date.now() > Date.parse(t.due_at));
-            const delivered = theirs.length - open.length;
-            return (
-              <button key={m.id} type="button" onClick={() => setWho(m.id)}
-                className="card-lux rounded-2xl p-4 text-left hover:-translate-y-0.5 hover:shadow-[0_14px_30px_-16px_rgba(120,95,40,0.4)] transition-all">
-                <div className="flex items-baseline justify-between gap-2 mb-0.5">
-                  <span className="font-serif text-[15.5px] font-[600]">{m.name}</span>
-                  <span className="text-[11px] text-faint">{m.role || m.track || m.emp_type || ""}</span>
+            <div className="text-[12px] text-muted-foreground mb-2.5">
+              {x.open.length} open · {x.delivered} delivered
+            </div>
+            {/* A fixed run of three keeps every card the same height, so the rows line up. */}
+            <div className="flex-1">
+              {x.open.slice(0, 3).map((t) => (
+                <div key={t.id} className="text-[12px] truncate py-[3px] border-t border-border first:border-0">
+                  <span className="font-mono text-faint mr-1.5">{t.seq}</span>
+                  <span className={t.due_at && Date.now() > Date.parse(t.due_at) ? "text-[#b3341f]" : ""}>{t.title}</span>
                 </div>
-                <div className="text-[12px] text-muted-foreground mb-2.5">
-                  {theirs.length === 0 ? "No tasks yet"
-                    : <>{open.length} open · {delivered} delivered{overdue.length > 0 && <span className="text-[#b3341f] font-[600]"> · {overdue.length} overdue</span>}</>}
+              ))}
+              {x.open.length === 0 && <div className="text-[12px] text-faint py-[3px]">Nothing open — all delivered.</div>}
+            </div>
+            <div className="flex items-center justify-between gap-2 mt-2.5">
+              <span className="text-[11.5px] font-semibold text-gold">Open full view →</span>
+              {x.open.length > 3 && <span className="text-[11px] text-faint">+{x.open.length - 3} more</span>}
+            </div>
+          </button>
+        );
+
+        return (
+          <div className="mb-4">
+            {team.length === 0 ? (
+              <div className="card-lux rounded-2xl px-5 py-8 text-center text-[13px] text-muted-foreground">No team members yet.</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-3 mb-5">
+                  <Stat k="Open" v={String(totOpen)} />
+                  <Stat k="Overdue" v={String(totOver)} tone={totOver ? "#b3341f" : undefined} />
+                  <Stat k="Delivered" v={String(totDone)} />
                 </div>
-                {open.slice(0, 3).map((t) => (
-                  <div key={t.id} className="text-[12px] truncate py-[3px] border-t border-border first:border-0">
-                    <span className="font-mono text-faint mr-1.5">{t.seq}</span>
-                    <span className={t.due_at && Date.now() > Date.parse(t.due_at) ? "text-[#b3341f]" : ""}>{t.title}</span>
+
+                {ordered.map(([group, list]) => (
+                  <div key={group} className="mb-5">
+                    <div className="flex items-baseline gap-2 mb-2">
+                      <h3 className="font-serif text-[15px] font-[600]">{group}</h3>
+                      <span className="text-[11.5px] text-faint">
+                        {list.length} {list.length === 1 ? "person" : "people"} · {list.reduce((n, x) => n + x.open.length, 0)} open
+                      </span>
+                    </div>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {list.map((x) => <Card key={x.m.id} x={x} />)}
+                    </div>
                   </div>
                 ))}
-                {open.length > 3 && <div className="text-[11.5px] text-faint pt-1">+{open.length - 3} more</div>}
-                <div className="text-[11.5px] font-semibold text-gold mt-2.5">Open full view →</div>
-              </button>
-            );
-          })}
-        </div>
-      )}
+
+                {idle.length > 0 && (
+                  <div>
+                    <div className="flex items-baseline gap-2 mb-2">
+                      <h3 className="font-serif text-[15px] font-[600] text-muted-foreground">Nothing assigned yet</h3>
+                      <span className="text-[11.5px] text-faint">{idle.length}</span>
+                    </div>
+                    {/* One line each. A full card for somebody with no work is a lot of space
+                        spent saying nothing, and it is what broke the grid. */}
+                    <div className="card-lux rounded-2xl divide-y divide-border overflow-hidden">
+                      {idle.map((x) => (
+                        <button key={x.m.id} type="button" onClick={() => setWho(x.m.id)}
+                          className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-muted/50 transition-colors">
+                          <span className="text-[13px] font-[560] truncate">{x.m.name}</span>
+                          <span className="text-[11.5px] text-faint truncate">{groupOf(x.m)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {mode === "owner" && who && (
         <div className="card-lux rounded-2xl p-4 mb-4 flex flex-wrap items-center justify-between gap-3">

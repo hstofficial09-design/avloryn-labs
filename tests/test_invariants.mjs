@@ -603,6 +603,19 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   }
 }
 
+// ── R20 · the work log is for people who have work ────────────────────────────────────────────
+// Network partners are outside recruiters with no tasks and no weekly review by design, so their
+// cards sat on the tasks page saying "No tasks yet" for ever — scattered between the people who do
+// have work, breaking the grid and the reading of it.
+{
+  const wl = code("app/portal/WorkLog.tsx");
+  if (!/emp_type[^\n]*!==\s*["']partner["']|!==\s*["']partner["']/.test(wl))
+    fail("R20 network partners are back on the work log:", "permanent empty cards for people who have no tasks by design");
+  // Grouped and ordered, not one flat list in whatever order the database returned.
+  if (!/groupOf|groups\.set/.test(wl))
+    fail("R20 the tasks page is one flat list again:", "roles were the way it was meant to be read");
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");
