@@ -19,6 +19,11 @@ const GUARDS = [
   { file: "test_wiring.mjs", run: ["node"] },
   // the decisions that move real things: sync, on-time/late, tenure score
   { file: "test_logic.ts", run: ["npx", "tsx"] },
+  // and the one that checks the guards themselves: breaks each rule's subject and insists the
+  // rule notices. Several of them did not — they asked whether a NAME appeared in a file, which
+  // stays true even when the behaviour has been deleted. Those went green forever and reported
+  // nothing, and I shipped at least one of them describing it as proven.
+  { file: "test_guards_work.mjs", run: ["node"] },
 ];
 
 const failed = [];

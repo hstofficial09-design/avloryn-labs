@@ -325,8 +325,13 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   // more — the owner decides the list — but an arbitrary value posted straight at this public
   // endpoint must still not be able to invent a kind that was never offered.)
   const submit = code("app/api/onboarding-form/route.ts");
-  if (!/listRegTypes\s*\(/.test(submit))
-    fail("R14 the submitted kind is no longer validated:", "any emp_type could be posted straight in");
+  // The posted kind has to be resolved against what is actually OFFERED. Checking that
+  // listRegTypes is mentioned proves nothing — it is called three times in this file for other
+  // reasons, so the rule went green with the validation itself deleted.
+  if (!/offered\s*=\s*\(await listRegTypes\(\)\)/.test(submit))
+    fail("R14 the submitted kind is no longer checked against what is offered:", "any emp_type could be posted straight in");
+  if (!/offered\.find\(|offered\[0\]/.test(submit))
+    fail("R14 the offered list is fetched but not used:", "the check would be decorative");
 
   const db = code("lib/portal-db.ts");
   // Remove must mean what the button says. Always archiving made "Remove" behave as "Hide": the

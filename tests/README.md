@@ -15,6 +15,7 @@ source, and the logic guards import the real decision functions and run them on 
 | `test_invariants.mjs` | **Static class-guard** — reads every API route and fails if a portal endpoint doesn't check the session, a scheduling *setup* endpoint isn't restricted to the owner/HR, a route that books or moves a meeting skips the clash check, the calendar sync stops deciding by modification time, an employee listing forgets to exclude deleted people, or PDF text bypasses `pdfSafe`. Catches a NEW endpoint that forgets a gate. |
 | `test_wiring.mjs` | Dead buttons — every `/api/…` the frontend calls must exist as a real route file, and every internal page link must resolve to a page. |
 | `test_logic.ts` | The decisions that move real things: which calendar copy wins a sync (the bug that undid a reschedule), on-time vs late, and how a tenure score is built. |
+| `test_guards_work.mjs` | **The guards themselves** — breaks the subject of every rule and insists the rule notices. Several did not: they read a NAME rather than the behaviour, so they went green forever. |
 
 ## The discipline (why tests alone aren't enough)
 
@@ -26,6 +27,23 @@ through live in scenarios nobody thought to test. So for every fix:
    guarded — not the single instance you happened to find.
 3. Think **adversarially**: not "does the happy path work", but "who could call this, and what
    would they get".
+
+## Proving the guards
+
+`test_guards_work.mjs` breaks the subject of every rule in turn and insists the rule notices. It
+runs as part of `npm run guard`.
+
+It exists because several rules here did not catch anything. They asked whether a NAME appeared in
+a file — `openDetail`, `showDone`, `listRegTypes` — which stays true when the behaviour behind it
+has been deleted, or when the name is used elsewhere for something else. Those rules were green
+forever and reported nothing.
+
+Running the break by hand was not enough either: I have read past a silent result and described a
+rule as proven in the commit that shipped it unproven. So it is automatic, and a mutation that
+stops applying — because the code moved — fails too, since a rule aimed at code that no longer
+exists is guarding nothing.
+
+**Adding a rule means adding its mutation.** A rule with nothing trying to break it is decoration.
 
 ## The other half: the watchdog
 
