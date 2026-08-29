@@ -137,6 +137,14 @@ export default function WorkLog({ mode }: { mode: "employee" | "owner" }) {
     if (ok) { setTitle(""); setDetail(""); setDue(""); }
   }
 
+  // Which task details are open. Every detail used to print in full, always: one task with a long
+  // brief ran to eight hundred pixels on its own and pushed the page past four thousand.
+  const [openDetail, setOpenDetail] = useState<Set<string>>(new Set());
+  const toggleDetail = (id: string) =>
+    setOpenDetail((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // Delivered work stays out of the way but never hidden — the count is always on screen.
+  const [showDone, setShowDone] = useState(false);
+
   const person = team.find((m) => m.id === who);
   const pdfHref = (kind: "log" | "report") =>
     `/api/portal/worklog-pdf?kind=${kind}${mode === "owner" && who ? `&employeeId=${encodeURIComponent(who)}` : ""}`;
@@ -317,10 +325,33 @@ export default function WorkLog({ mode }: { mode: "employee" | "owner" }) {
           {/* ── the log ── */}
           <div className="card-lux rounded-2xl overflow-hidden">
             <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-              <b className="font-serif text-[15px] font-[600]">The log</b>
-              {mode === "employee" && (
-                <a href={pdfHref("log")} className={GHOST + " text-[12px] px-3.5 py-2 inline-block"}>↓ Download as PDF</a>
-              )}
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <b className="font-serif text-[15px] font-[600]">The log</b>
+                <span className="text-[11.5px] text-faint">
+                  {tasks.filter((t) => !t.delivered_at).length} open
+                  {tasks.some((t) => t.delivered_at) && ` · ${tasks.filter((t) => t.delivered_at).length} delivered`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Delivered work is never hidden — the count above says how much there is — but it
+                    does not have to sit between the things that still need doing. */}
+                {tasks.some((t) => t.delivered_at) && (
+                  <button type="button" onClick={() => setShowDone((v) => !v)}
+                    className={GHOST + " text-[12px] px-3.5 py-2"}>
+                    {showDone ? "Hide delivered" : `Show delivered (${tasks.filter((t) => t.delivered_at).length})`}
+                  </button>
+                )}
+                {tasks.some((t) => t.detail) && (
+                  <button type="button"
+                    onClick={() => setOpenDetail((s) => s.size ? new Set() : new Set(tasks.filter((t) => t.detail).map((t) => t.id)))}
+                    className={GHOST + " text-[12px] px-3.5 py-2"}>
+                    {openDetail.size ? "Collapse all" : "Expand all"}
+                  </button>
+                )}
+                {mode === "employee" && (
+                  <a href={pdfHref("log")} className={GHOST + " text-[12px] px-3.5 py-2 inline-block"}>↓ Download as PDF</a>
+                )}
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-[13px] min-w-[760px]">
@@ -333,14 +364,28 @@ export default function WorkLog({ mode }: { mode: "employee" | "owner" }) {
                       Nothing here yet — add the first task above.
                     </td></tr>
                   )}
-                  {tasks.map((t) => {
+                  {/* Open work first and always shown; delivered work sits behind one click below.
+                      Mixed together, a long finished task buried what still needs doing. */}
+                  {(showDone ? tasks : tasks.filter((t) => !t.delivered_at)).map((t) => {
                     const st = status(t);
                     return (
                       <tr key={t.id} className="border-t border-border align-top">
                         <td className="px-4 py-3 font-mono text-muted-foreground">{t.seq}</td>
                         <td className="px-4 py-3">
-                          <div className="font-[560]">{t.title}</div>
-                          {t.detail && <div className="text-[12px] text-muted-foreground mt-0.5 whitespace-pre-wrap">{t.detail}</div>}
+                          {t.detail ? (
+                            <button type="button" onClick={() => toggleDetail(t.id)}
+                              className="text-left font-[560] hover:text-gold transition-colors">
+                              {t.title}
+                              <span className="ml-1.5 text-[11px] font-normal text-faint">
+                                {openDetail.has(t.id) ? "− hide" : "+ detail"}
+                              </span>
+                            </button>
+                          ) : (
+                            <div className="font-[560]">{t.title}</div>
+                          )}
+                          {t.detail && openDetail.has(t.id) && (
+                            <div className="text-[12px] text-muted-foreground mt-1 whitespace-pre-wrap">{t.detail}</div>
+                          )}
                           <div className="text-[11px] text-faint mt-0.5">{t.source === "owner" ? "assigned" : "self-set"}</div>
                         </td>
                         <td className="px-4 py-3 text-[12px] text-muted-foreground">{fmt(t.assigned_at)}</td>

@@ -614,6 +614,16 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   // Grouped and ordered, not one flat list in whatever order the database returned.
   if (!/groupOf|groups\.set/.test(wl))
     fail("R20 the tasks page is one flat list again:", "roles were the way it was meant to be read");
+
+  // A task's brief opens on request. Printing every one in full made a single long task run to
+  // eight hundred pixels and the page to four thousand — most of it work already finished.
+  if (!/openDetail/.test(wl))
+    fail("R20 every task detail prints in full again:", "one long brief and the page is unreadable");
+  if (!/showDone/.test(wl))
+    fail("R20 delivered work is back among the open work:", "finished tasks bury what still needs doing");
+  // Never hidden, though — the count is on screen whether or not the rows are.
+  if (!/delivered`|delivered \(/.test(wl))
+    fail("R20 the delivered count is gone:", "hiding the rows must not hide that they exist");
 }
 
 console.log(`[invariants] scanned ${API.length} API routes`);
