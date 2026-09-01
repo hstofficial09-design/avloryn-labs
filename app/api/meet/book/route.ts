@@ -147,8 +147,15 @@ export async function POST(req: Request) {
     });
     meetLink = ml;
     if (events.length) eventsJson = JSON.stringify(events);
-    // Same rule as the admin path: an attendee already has it, so Zoho must not mirror it too.
-    onGoogle = Array.from(new Set([...events.map((e) => e.memberId), ...memberIds.filter((id) => byId.get(id)?.email)]));
+    // Only the people whose meeting was actually WRITTEN to a Google calendar. Anyone else — which
+    // now means anyone who lives in Zoho — still gets their Zoho copy.
+    //
+    // This briefly counted attendees too, on the theory that an invitation lands on their calendar
+    // anyway. For a Zoho user it does not: their working calendar is Zoho, the invitation goes to a
+    // Google account they do not open, and the meeting simply stopped appearing for them.
+    // Only people who got a Google copy AND do not work in Zoho. Someone with Zoho connected has
+    // their diary there; the Google entry is how the Meet is hosted, not where they read their day.
+    onGoogle = events.map((e) => e.memberId).filter((id) => !zohoIds.has(id));
   } catch (e) {
     /* calendar write failed — still save the booking so the request isn't lost */
     console.error("[meet/book] Google calendar failed:", e);

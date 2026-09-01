@@ -393,8 +393,17 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     fail("R16 a member gets both an invitation and their own copy:", "two events for one meeting");
   for (const f of ["app/api/meet/admin/create-meeting/route.ts", "app/api/meet/book/route.ts"]) {
     const src = code(f);
-    if (/onGoogle = events\.map/.test(src))
-      fail("R16 Zoho mirrors a meeting the member is already attending:", `${f} — two events for one booking`);
+    // Somebody who has connected Zoho works in Zoho. Their Google entry is how the Meet is hosted
+    // and how they get in without knocking — it is not their diary, and treating it as "they
+    // already have it" removed their Zoho copy and the meeting stopped appearing for them.
+    //
+    // This bites hardest for whoever hosts, because the host's Google event always exists: it is
+    // what creates the Meet link. Choosing yourself as organiser therefore deleted your own copy.
+    // Written as "the filter must be there" rather than "the bad shape must not be" — the negative
+    // form needed a regex that survives the arrow function inside map(), and mine did not, so the
+    // rule matched nothing and stayed silent against exactly the code it was added for.
+    if (!/onGoogle = events\.map\([\s\S]{0,60}?\)\.filter\([\s\S]{0,60}?zohoIds/.test(src))
+      fail("R16 a Zoho user loses their own copy:", `${f} — the host's Google event is not their calendar`);
     // An email about a CONFIRMED meeting must carry the invitation. The team's did not, so they
     // got a notice with nothing to accept and nothing that would add itself to their calendar.
     //

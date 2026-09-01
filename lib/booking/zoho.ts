@@ -118,11 +118,15 @@ export async function verifyMemberZoho(memberId: string): Promise<boolean> {
 export async function createZohoForMembers(opts: {
   memberIds: string[]; summary: string; description: string; startISO: string; endISO: string; meetLink: string | null;
   /**
-   * Members who already have this meeting on their GOOGLE calendar. They are skipped here.
+   * Members to skip because their meeting is already on a calendar they actually use.
    *
-   * Zoho mirroring exists for people who don't use Google (or whose Google grant has died) — not
-   * as a second copy for people who have both. Writing to both is why the same meeting appeared
-   * twice for anyone with Google and Zoho connected.
+   * NOT everyone who appears on the Google event. Someone who has connected Zoho works in Zoho —
+   * their Google account is there so the Meet can be hosted and so they are admitted to it without
+   * knocking, and they never open that calendar. Treating the Google copy as "they already have
+   * it" removed their Zoho copy and the meeting stopped appearing for them anywhere they look.
+   *
+   * This matters most for whoever hosts: the host's Google event always exists, because that is
+   * what creates the Meet link. It is infrastructure, not their diary.
    */
   alreadyOnGoogle?: string[];
 }): Promise<ZohoEvent[]> {

@@ -74,14 +74,15 @@ export async function POST(req: Request) {
   try {
     const { meetLink: ml, events } = await createMeetingForMembers({ memberIds: hostOrderIds, googleCopyMemberIds, memberEmails, clientEmail: guest, summary: title, description: baseDesc, startISO, endISO });
     meetLink = ml; if (events.length) eventsJson = JSON.stringify(events);
-    // Everyone the Google event already accounts for — the calendars it was written to, PLUS
-    // everyone listed on it as an attendee, because an invitation lands on their calendar just as
-    // a written copy does.
+    // Only the people whose meeting was actually WRITTEN to a Google calendar. Anyone else — which
+    // now means anyone who lives in Zoho — still gets their Zoho copy.
     //
-    // Only the written copies counted before. So a member who is an attendee got the Google
-    // invitation AND a Zoho mirror of the same meeting — two events for one booking, which is
-    // most visible to anyone whose Zoho also shows their Google calendar.
-    onGoogle = Array.from(new Set([...events.map((e) => e.memberId), ...memberIds.filter((id) => byId.get(id)?.email)]));
+    // This briefly counted attendees too, on the theory that an invitation lands on their calendar
+    // anyway. For a Zoho user it does not: their working calendar is Zoho, the invitation goes to a
+    // Google account they do not open, and the meeting simply stopped appearing for them.
+    // Only people who got a Google copy AND do not work in Zoho. Someone with Zoho connected has
+    // their diary there; the Google entry is how the Meet is hosted, not where they read their day.
+    onGoogle = events.map((e) => e.memberId).filter((id) => !zohoIds.has(id));
   } catch (e) {
     // A calendar failure must not lose the meeting — but it must not be silent either, or the
     // meeting exists with nothing on anyone's calendar and nobody can tell why.
