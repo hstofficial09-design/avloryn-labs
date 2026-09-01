@@ -9,7 +9,9 @@ type Role = { track: string; commission_enabled: boolean; paid: boolean; salary:
   /** "2" fixes it, "3,6" offers a choice, blank = the standard options. */
   duration?: string | null;
   /** "2 weeks", "3 months" — blank means this role has no probation. */
-  probation?: string | null };
+  probation?: string | null;
+  /** Filmed for the Company, which publishes it — adds the likeness clause. */
+  on_camera?: boolean };
 type FieldCfg = { visible: boolean; required: boolean };
 type Custom = { label: string; type: string; required: boolean; roles?: string[] };
 type Form = { fields?: Record<string, FieldCfg>; custom?: Custom[] };
@@ -784,10 +786,18 @@ function RoleCard({ role, regTypes, reload }: { role: Role; regTypes: RegType[];
           )}
         </div>
 
-        <label className="flex items-center gap-2 text-[13px] cursor-pointer self-end">
-          <input type="checkbox" checked={r.sensitive} onChange={(e) => set("sensitive", e.target.checked)} className="accent-[#c8a24a]" />
-          Handles sensitive data <span className="text-faint text-[11.5px]">(extra NDA clause)</span>
-        </label>
+        <div className="self-end grid gap-1.5">
+          <label className="flex items-center gap-2 text-[13px] cursor-pointer">
+            <input type="checkbox" checked={r.sensitive} onChange={(e) => set("sensitive", e.target.checked)} className="accent-[#c8a24a]" />
+            Handles sensitive data <span className="text-faint text-[11.5px]">(extra NDA clause)</span>
+          </label>
+          {/* Permission to publish somebody's face is not something a job title grants — it has to
+              be signed, so it is a clause rather than an assumption. */}
+          <label className="flex items-center gap-2 text-[13px] cursor-pointer">
+            <input type="checkbox" checked={!!r.on_camera} onChange={(e) => set("on_camera", e.target.checked)} className="accent-[#c8a24a]" />
+            Appears on camera <span className="text-faint text-[11.5px]">(we may publish their videos)</span>
+          </label>
+        </div>
       </div>
 
       <div className="mb-3">

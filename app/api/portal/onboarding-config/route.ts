@@ -95,6 +95,7 @@ export async function POST(req: Request) {
         scope,
         terms,
         sensitive: !!r.sensitive,
+        on_camera: !!r.on_camera,
         // Whatever kind the owner configured. Forcing it back to intern|employee here is what
         // made the two hard-coded pills the only real options, however many kinds existed.
         default_emp_type: String(r.default_emp_type || "intern").trim().toLowerCase() || "intern",

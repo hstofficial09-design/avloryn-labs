@@ -20,9 +20,9 @@ import {
   roleLabel,
   roleTitle,
   isHrRole,
-  parseTermsToContent,
+  parseTermsToContent, withProbationClause, withOnCameraClause,
   withSensitiveClause,
-  DOC_META,
+  DOC_META, letterheadLines,
   type InternData,
   type Clause,
 } from "@/lib/intern-docs";
@@ -182,14 +182,10 @@ class Doc {
       });
     }
 
-    // The LLPIN line is skipped rather than printed empty when the number isn't configured — a
-    // blank "LLPIN:" on a signed letter looks like a mistake.
-    const idBits = [DOC_META.LLPIN ? `LLPIN: ${DOC_META.LLPIN}` : "", "PAN: ACOFA6798F"].filter(Boolean);
-    const lines = [
-      ...DOC_META.REGD_OFFICE_LINES,
-      idBits.join("   |   "),
-      `${DOC_META.LIMITED_LIABILITY}   |   contact@avloryn.com   |   avloryn.com`,
-    ];
+    // One source for the letterhead — see letterheadLines(). The LLPIN line is skipped rather than
+    // printed empty when the number isn't configured: a blank "LLPIN:" on a signed letter looks
+    // like a mistake.
+    const lines = letterheadLines();
     let ly = top - 4;
     // Wide enough that the address breaks at a phrase rather than stranding the PIN code on a
     // line of its own; still clear of the logo and wordmark on the left.
@@ -494,7 +490,14 @@ export async function POST(req: Request) {
     const agreementText = (roleCfg?.terms && String(roleCfg.terms).trim())
       || (kindCfg?.terms && String(kindCfg.terms).trim())
       || null;
-    const ia = agreementText ? parseTermsToContent(agreementText, d) : internshipAgreement(d);
+    // Clauses a role's own agreement may not carry. Only added when the text is silent on the
+    // subject, so an author who has written their own version is left alone.
+    //
+    // The probation one was written and then never called: setting a probation on a role with its
+    // own agreement did nothing at all, which is exactly the silent no-op it was meant to fix.
+    let ia = agreementText ? parseTermsToContent(agreementText, d) : internshipAgreement(d);
+    ia = withProbationClause(ia, d.probation, agreementText || undefined);
+    ia = withOnCameraClause(ia, !!roleCfg?.on_camera, agreementText || undefined);
     // A role marked "Handles sensitive data" signs an extra NDA clause.
     d.sensitive = !!roleCfg?.sensitive;
     let legal: any = null;

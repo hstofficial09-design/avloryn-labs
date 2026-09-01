@@ -101,6 +101,9 @@ async function ensureSchema(c: PoolClient) {
   // Probation, written the way it is read: "2 weeks", "3 months". Stored as the finished phrase so
   // the agreement can use it directly and nothing has to guess at pluralising it.
   await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS probation TEXT`);
+  // The role is filmed and the company publishes it — a licence over somebody's face and voice,
+  // which has to be signed rather than assumed from the job title.
+  await c.query(`ALTER TABLE track_settings ADD COLUMN IF NOT EXISTS on_camera BOOLEAN NOT NULL DEFAULT FALSE`);
   // HR is non-commission + handles sensitive data, by default
   await c.query(`INSERT INTO track_settings (track, commission_enabled, sensitive) VALUES ('Human Resources', FALSE, TRUE) ON CONFLICT (track) DO NOTHING`);
 
@@ -1059,6 +1062,8 @@ export type RoleConfig = {
   duration?: string | null;
   /** "2 weeks", "3 months" — blank means the role has no probation. */
   probation?: string | null;
+  /** Appears on camera — adds the likeness and publicity clause. */
+  on_camera?: boolean;
   joining_letter_default?: string | null;
 };
 export async function listRoles(): Promise<RoleConfig[]> {
@@ -1066,7 +1071,7 @@ export async function listRoles(): Promise<RoleConfig[]> {
     const r = await c.query(`
       SELECT t.track, COALESCE(ts.commission_enabled,TRUE) commission_enabled, COALESCE(ts.paid,FALSE) paid,
              ts.salary, ts.salary_period, ts.scope, ts.terms, ts.default_terms,
-             ts.joining_letter, ts.joining_letter_default, ts.duration, ts.probation, COALESCE(ts.sensitive,FALSE) sensitive,
+             ts.joining_letter, ts.joining_letter_default, ts.duration, ts.probation, COALESCE(ts.on_camera,FALSE) on_camera, COALESCE(ts.sensitive,FALSE) sensitive,
              COALESCE(ts.default_emp_type,'intern') default_emp_type
       FROM (SELECT DISTINCT track FROM employees WHERE track IS NOT NULL AND track<>'' AND deleted_at IS NULL
             UNION SELECT track FROM track_settings WHERE COALESCE(archived,FALSE)=FALSE) t
@@ -1078,17 +1083,17 @@ export async function listRoles(): Promise<RoleConfig[]> {
       salary: x.salary != null ? +x.salary : null, salary_period: x.salary_period || null,
       scope: x.scope || null, terms: x.terms || null, default_terms: x.default_terms || null,
       joining_letter: x.joining_letter || null, joining_letter_default: x.joining_letter_default || null,
-      duration: x.duration || null, probation: x.probation || null,
+      duration: x.duration || null, probation: x.probation || null, on_camera: x.on_camera === true,
       sensitive: x.sensitive === true, default_emp_type: x.default_emp_type || "intern",
     }));
   });
 }
 export async function upsertRole(f: RoleConfig) {
   return withClient((c) => c.query(
-    `INSERT INTO track_settings (track, commission_enabled, paid, salary, salary_period, scope, terms, sensitive, default_emp_type, duration, probation)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-     ON CONFLICT (track) DO UPDATE SET commission_enabled=$2, paid=$3, salary=$4, salary_period=$5, scope=$6, terms=$7, sensitive=$8, default_emp_type=$9, duration=$10, probation=$11, archived=FALSE`,
-    [f.track.trim(), f.commission_enabled, f.paid, f.salary, f.salary_period, f.scope, f.terms, f.sensitive, f.default_emp_type, (f.duration || "").trim() || null, (f.probation || "").trim() || null]));
+    `INSERT INTO track_settings (track, commission_enabled, paid, salary, salary_period, scope, terms, sensitive, default_emp_type, duration, probation, on_camera)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     ON CONFLICT (track) DO UPDATE SET commission_enabled=$2, paid=$3, salary=$4, salary_period=$5, scope=$6, terms=$7, sensitive=$8, default_emp_type=$9, duration=$10, probation=$11, on_camera=$12, archived=FALSE`,
+    [f.track.trim(), f.commission_enabled, f.paid, f.salary, f.salary_period, f.scope, f.terms, f.sensitive, f.default_emp_type, (f.duration || "").trim() || null, (f.probation || "").trim() || null, !!f.on_camera]));
 }
 /** Make the role's current terms its "default": Reset-to-default then restores THIS text,
  *  so a stray click can never fall back to the built-in template and lose the owner's version. */

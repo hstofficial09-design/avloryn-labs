@@ -74,6 +74,14 @@ const MUTATIONS = [
     file: "instrumentation.ts", from: '"/api/cron/monitor"', to: '"/nope"' },
   { rule: "R20", why: "every task brief would print in full again",
     file: "app/portal/WorkLog.tsx", from: "{t.detail && openDetail.has(t.id) && (", to: "{t.detail && (" },
+  { rule: "R21", why: "a probation period would be set and appear in no agreement",
+    file: "app/api/onboarding-form/route.ts", from: "withProbationClause(", to: "keepAsIs(" },
+  { rule: "R21", why: "the preview and the signed PDF would show different agreements",
+    file: "app/onboarding-form/intern-form.tsx", from: "withOnCameraClause(", to: "keepAsIs(" },
+  { rule: "R21", why: "the likeness clause would skip itself on exactly the camera roles it is for",
+    file: "lib/intern-docs.ts",
+    from: 'const mentions = (t: string) => /likeness|publicity|image, voice/i.test(t);',
+    to: 'const mentions = (t: string) => /likeness|publicity|on camera/i.test(t);' },
 ];
 
 const runGuard = () => {

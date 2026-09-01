@@ -61,6 +61,8 @@ export async function GET() {
         salary_period: r.salary_period,
         terms: r.terms || null,
         sensitive: r.sensitive,
+        // Shown on the form so the clause a creator signs is the clause they read.
+        on_camera: r.on_camera,
         // How long this role runs, so the form can offer exactly that.
         duration: r.duration || null,
         probation: r.probation || null,

@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useEffect } from "react";
 import { LogoMark } from "@/components/ui/logo";
-import { internshipAgreement, ndaAgreement, parseTermsToContent, withSensitiveClause, ROLE_LABEL, type InternData } from "@/lib/intern-docs";
+import { internshipAgreement, ndaAgreement, parseTermsToContent, withSensitiveClause, withProbationClause, withOnCameraClause, ROLE_LABEL, type InternData } from "@/lib/intern-docs";
 
 type FilePayload = { kind: string; b64: string } | undefined;
 
@@ -20,6 +20,8 @@ type RoleOpt = {
   scope?: string | null;
   /** "2 weeks", "3 months" — read into the agreement's probation clause. */
   probation?: string | null;
+  /** Appears on camera — the likeness and publicity clause is added. */
+  on_camera?: boolean;
 };
 
 const ID_TYPES = ["PAN card", "Driving Licence", "Voter ID", "Passport"];
@@ -263,7 +265,12 @@ export default function InternForm() {
     // The kind was missing here, so a partner read the built-in internship agreement on screen and
     // signed it — and then received the partnership agreement. Read one, sign another.
     const text = (roleCfg?.terms || "").trim() || (kind?.terms || "").trim();
-    return text ? parseTermsToContent(text, previewData) : internshipAgreement(previewData);
+    let c = text ? parseTermsToContent(text, previewData) : internshipAgreement(previewData);
+    // The same added clauses the PDF applies — otherwise the page shows one document and the
+    // signature lands on another.
+    c = withProbationClause(c, previewData.probation, text || undefined);
+    c = withOnCameraClause(c, !!roleCfg?.on_camera, text || undefined);
+    return c;
   }, [roleCfg, kind, previewData]);
   // One shared NDA — the owner's rewrite when they've made one, else the standard document.
   // A role marked "handles sensitive data" adds one extra clause. Mirrors the PDF builder.

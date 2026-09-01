@@ -280,19 +280,55 @@ export function withProbationClause(
   if (raw && mentions(raw)) return content;
   if (content.clauses.some((c) => mentions((c.h || "") + " " + (c.t || "")))) return content;
 
+  return appendClause(content, {
+    h: "Probation",
+    t: `The first ${p} from the start date are a probation period. During this time either party may end this arrangement immediately and without notice.`,
+  });
+}
+
+/**
+ * The extra obligation a role marked "appears on camera" takes on.
+ *
+ * A content creator is filmed and the company publishes what is filmed. That is a licence over
+ * somebody's face and voice, and it has to be written down and signed rather than assumed from the
+ * job title — permission to use a person's likeness is not something a role description grants.
+ */
+export function onCameraClause(): Clause {
+  return {
+    h: "Content, Likeness & Publicity",
+    t: `This role involves appearing on camera. For content created for or about the Company, the signatory grants ${COMPANY} a free, worldwide, non-exclusive and transferable licence to use, edit, reproduce and publish that content — including their name, image, voice, likeness and performance — on the Company's own websites, social media accounts, advertising and other promotional material, for as long as the Company wishes. The signatory confirms they own or have permission for everything the content contains, including any music, footage or other people appearing in it, and that its publication breaches nobody else's rights. Content made specifically for the Company as part of this role belongs to the Company; the signatory may show it in their own portfolio. Where practical the Company will credit them. The signatory may ask the Company in writing to stop using a particular piece of content, and the Company will do so within a reasonable time for anything it has not already committed to a paid campaign.`,
+  };
+}
+
+/** Append a clause to an agreement, numbered to follow the ones already there. */
+function appendClause(content: { title: string; intro: string; clauses: Clause[] }, c: Clause) {
   let max = 0;
   for (const cl of content.clauses) {
     const m = /^(\d+)[.)]/.exec((cl.h || "").trim());
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
-  const h = "Probation";
-  return {
-    ...content,
-    clauses: [...content.clauses, {
-      h: max ? `${max + 1}. ${h}` : h,
-      t: `The first ${p} from the start date are a probation period. During this time either party may end this arrangement immediately and without notice.`,
-    }],
-  };
+  return { ...content, clauses: [...content.clauses, { ...c, h: max ? `${max + 1}. ${c.h}` : c.h }] };
+}
+
+/**
+ * Add the on-camera clause when the role needs one and the agreement is silent about it.
+ *
+ * Same shape as the probation clause: only ever adds, and only when the text does not already deal
+ * with the subject, so an agreement whose author has written their own version is left alone.
+ */
+export function withOnCameraClause(
+  content: { title: string; intro: string; clauses: Clause[] },
+  onCamera?: boolean | null,
+  raw?: string,
+) {
+  if (!onCamera) return content;
+  // Look for the LICENCE, not the activity. "on camera" appears in the responsibilities of any
+  // filming role — "appear on camera and represent the brand" — and matching that made the clause
+  // skip itself on precisely the roles it exists for: the duty was mistaken for the permission.
+  const mentions = (t: string) => /likeness|publicity|image, voice/i.test(t);
+  if (raw && mentions(raw)) return content;
+  if (content.clauses.some((c) => mentions((c.h || "") + " " + (c.t || "")))) return content;
+  return appendClause(content, onCameraClause());
 }
 
 /** Joining Letter — returns paragraphs + bullets. Commission-track interns get a
@@ -371,6 +407,23 @@ export function parseJoiningLetter(text: string, d: InternData): { title: string
     }
   }
   return { title, paragraphs, bullets, closing };
+}
+
+/**
+ * The lines under the wordmark on every document the firm sends.
+ *
+ * Shared rather than written inside the PDF builder, because an LLP's letterhead is not decoration:
+ * the Act requires the name, the registered office, the LLPIN and the limited-liability statement
+ * on it. Keeping it in one place means it cannot drift between the letter, the agreement and the
+ * record, and it can be rendered on its own to be looked at.
+ */
+export function letterheadLines(): string[] {
+  const ids = [LLPIN ? `LLPIN: ${LLPIN}` : "", "PAN: ACOFA6798F"].filter(Boolean);
+  return [
+    ...REGD_OFFICE_LINES,
+    ids.join("   |   "),
+    `${LIMITED_LIABILITY}   |   +91 89734 70009   |   contact@avloryn.com   |   avloryn.com`,
+  ];
 }
 
 export const DOC_META = { COMPANY, FOUNDER, REGD_OFFICE, REGD_OFFICE_LINES, LLPIN, LIMITED_LIABILITY, SIGNATORIES };

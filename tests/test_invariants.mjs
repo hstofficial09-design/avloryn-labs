@@ -643,6 +643,43 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     fail("R20 the delivered count is gone:", "hiding the rows must not hide that they exist");
 }
 
+// ── R21 · a clause the role needs is in the document it signs ────────────────────────────────
+// Two ways this goes wrong, and both have happened here.
+//
+// The helper nobody calls: `withProbationClause` was written, reviewed and shipped without a
+// single call site. Every probation period the owner set went into the database and into no
+// agreement. A function that exists is not a function that runs.
+//
+// The two documents drifting apart: the form preview and the PDF are built by different files, so
+// a clause added to one and not the other means somebody reads one agreement on screen and signs
+// a different one. That is the worst bug this system can have, and it is invisible.
+{
+  const pdf = code("app/api/onboarding-form/route.ts");
+  const form = code("app/onboarding-form/intern-form.tsx");
+  for (const [where, src] of [["the signed PDF", pdf], ["the on-screen preview", form]]) {
+    for (const fn of ["withProbationClause", "withOnCameraClause"]) {
+      // Called, not merely imported — `import { x }` alone left the clause out of every document.
+      if (!new RegExp(`${fn}\\s*\\(`).test(src.replace(/^import[^;]+;/gm, "")))
+        fail("R21 a clause is missing from", `${where}: ${fn} is never applied`);
+    }
+  }
+
+  // The skip test must look for the LICENCE, not the filming. Responsibilities for any camera role
+  // say "appear on camera" — matching that made the clause skip itself on exactly the roles it
+  // exists for. Run the real regex against a real responsibilities line rather than trusting it.
+  const docs = code("lib/intern-docs.ts");
+  const m = /withOnCameraClause[\s\S]*?const mentions = \(t: string\) => (\/[^\n]+?\/[a-z]*)\.test/.exec(docs);
+  if (!m) fail("R21 the on-camera skip test is gone:", "lib/intern-docs.ts");
+  else {
+    const body = m[1].replace(/^\/|\/[a-z]*$/g, ""), flags = (/\/([a-z]*)$/.exec(m[1]) || [, ""])[1];
+    const re = new RegExp(body, flags);
+    if (re.test("Appear on camera and represent the brand in short-form videos."))
+      fail("R21 the on-camera clause skips itself on camera roles:", "a duty in the responsibilities is being read as permission");
+    if (!re.test("grants the Company a licence over their name, image, voice and likeness"))
+      fail("R21 the on-camera clause would be added twice:", "an agreement that already grants the licence is not recognised");
+  }
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");
