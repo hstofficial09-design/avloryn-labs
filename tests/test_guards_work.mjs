@@ -82,6 +82,23 @@ const MUTATIONS = [
     file: "lib/intern-docs.ts",
     from: 'const mentions = (t: string) => /likeness|publicity|image, voice/i.test(t);',
     to: 'const mentions = (t: string) => /likeness|publicity|on camera/i.test(t);' },
+  { rule: "R22", why: "partner types would be a separate list again, invisible to the editor",
+    file: "lib/portal-db.ts",
+    from: `SELECT track FROM track_settings
+          WHERE COALESCE(archived,FALSE)=FALSE AND COALESCE(default_emp_type,'intern')='partner'`,
+    to: `SELECT role AS track FROM partner_roles WHERE TRUE` },
+  { rule: "R22", why: "renaming a role would leave every partner pointing at a name that is gone",
+    file: "lib/portal-db.ts",
+    from: "await c.query(`UPDATE employees SET role=$1 WHERE role=$2`, [n, o]);", to: "" },
+  { rule: "R22", why: "nothing would say when a partner's starter rate should end",
+    file: "app/portal/OwnerDashboard.tsx",
+    from: "const p = probationStatus(e.start_date, e.probation);", to: "const p = null as any;" },
+  { rule: "R22", why: "a partner type could take over a role belonging to an internship",
+    file: "lib/portal-db.ts",
+    from: `      const e: any = new Error(\`“\${r}” is already a \${clash.rows[0].k} role — give the partner type its own name.\`);
+      e.status = 409;
+      throw e;`,
+    to: "      /* converted anyway */" },
 ];
 
 const runGuard = () => {

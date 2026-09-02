@@ -680,6 +680,45 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   }
 }
 
+// ── R22 · one list of roles, and a probation somebody can see ────────────────────────────────
+// Partner types used to live in their own table, apart from the roles configured in the editor.
+// Two vocabularies for the same people: the editor knew "Content Creator Partnership", the
+// add-partner form offered "Campus Ambassador", and a probation or an agreement set against a
+// partner role reached nobody, because no partner held a role by that name.
+{
+  const db = code("lib/portal-db.ts");
+  const list = /export async function listPartnerRolesPortal[\s\S]{0,1200}?\n}/.exec(db)?.[0] || "";
+  if (!list) fail("R22 the partner role list is gone:", "lib/portal-db.ts");
+  else {
+    // track_settings must be what it reads FIRST. partner_roles may remain only as the fallback
+    // for a database with no partner role configured yet.
+    const iTrack = list.indexOf("track_settings"), iOld = list.indexOf("partner_roles");
+    if (iTrack < 0) fail("R22 partner types are a separate list again:", "a role set in the editor will reach no partner");
+    else if (iOld > -1 && iOld < iTrack) fail("R22 the old partner_roles table is being read first:", "the two lists will drift apart again");
+  }
+  // Adding one must land in the editor too, or the next one added is invisible there.
+  const add = /export async function addPartnerRole[\s\S]{0,1400}?\n}/.exec(db)?.[0] || "";
+  if (!/track_settings/.test(add)) fail("R22 a new partner type is written to the old list:", "invisible in the editor, so it can never carry an agreement");
+  // …and must not silently convert a role belonging to another kind. Checked by ORDER rather than
+  // by a name: the kind has to be read, and the refusal raised, BEFORE the row is written.
+  const iRead = add.indexOf("default_emp_type");
+  // The refusal AFTER the read — the function opens with an unrelated throw for a blank name,
+  // and anchoring on the first one passed while the kind check was deleted.
+  const iThrow = iRead < 0 ? -1 : add.indexOf("throw", iRead);
+  const iWrite = add.indexOf("INSERT INTO track_settings");
+  if (iRead < 0 || iThrow < 0 || iWrite < 0 || !(iRead < iThrow && iThrow < iWrite))
+    fail("R22 adding a partner type can convert another kind's role:", "an internship would change kind and take its agreement with it");
+
+  // A rename has to move the people on it. Staff carry the role in `track`, partners in `role`.
+  const ren = /export async function renameRole[\s\S]{0,1200}?\n}/.exec(db)?.[0] || "";
+  if (!/UPDATE employees SET role=/.test(ren))
+    fail("R22 renaming a role leaves every partner on the old name:", "pointing at a role that no longer exists");
+
+  // And the probation has to be visible, or the rate that is meant to rise after it never does.
+  if (!/probationStatus\(/.test(code("app/portal/OwnerDashboard.tsx")))
+    fail("R22 probation is no longer shown against a partner:", "nothing says when the starter rate should end");
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");

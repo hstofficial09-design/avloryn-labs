@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { LogoMark } from "@/components/ui/logo";
 import { roleLabel } from "@/lib/role-label";
+import { probationStatus } from "@/lib/probation";
 
 type Code = { code: string; commission_pct: number; active: number; uses: number };
 type Emp = {
@@ -16,6 +17,8 @@ type Emp = {
   /** Network partners only. `role` is their kind (Campus Ambassador, Influencer…), `upline` is
    *  whose network they sit in, and partner_approved is 0 while they await the owner's approval. */
   role?: string | null; upline?: string | null; partner_approved?: number | null;
+  /** The probation period configured against their role, e.g. "1 month". */
+  probation?: string | null;
 };
 type Order = {
   id: string; employee_id: string; product: string; code: string | null; doc_ref: string | null;
@@ -259,6 +262,16 @@ export default function OwnerDashboard({ employees, orders, deleted, names, trac
                           <div className="text-[10.5px] font-bold text-gold">{e.role || "Network Partner"}</div>
                           {/* A partner approved but never given a password is earning and locked out —
                               they see nothing and assume nothing has sold. */}
+                          {(() => {
+                            // Shown because the rate is meant to rise once probation is over, and
+                            // nothing else on any screen says when that is — so the increase would
+                            // depend entirely on remembering.
+                            const p = probationStatus(e.start_date, e.probation);
+                            if (!p) return null;
+                            return <div className={"text-[10.5px] mt-0.5 " + (p.over ? "font-semibold text-[#8a6a12]" : "text-faint")}>
+                              {p.label}{p.over ? " — review their rate" : ""}
+                            </div>;
+                          })()}
                           {e.partner_approved === 0
                             ? <div className="text-[10.5px] font-semibold text-[#b3341f] mt-0.5">Waiting for your approval</div>
                             : !e.has_password

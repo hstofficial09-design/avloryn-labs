@@ -293,6 +293,8 @@ export type EmployeeSummary = Employee & {
   upline?: string | null;
   /** 0 while a BD-recruited partner is waiting for the owner to approve them. */
   partner_approved?: number | null;
+  /** The probation set against their role — "1 month", "6 weeks" — or null. */
+  probation?: string | null;
 };
 
 export async function getEmployeeByEmail(email: string) {
@@ -346,6 +348,10 @@ export async function listEmployeesWithSummary(): Promise<EmployeeSummary[]> {
              -- Who recruited this network partner — i.e. who earns the 2% override on their sales.
              -- Without it the owner cannot tell whose network a partner belongs to.
              (SELECT b.name FROM employees b WHERE b.id = e.parent_bd_id) AS upline,
+             -- Probation is configured against the ROLE. Staff carry theirs in the track column,
+             -- a network partner in the role column, so whichever is filled in is looked up.
+             (SELECT ts.probation FROM track_settings ts
+               WHERE ts.track = COALESCE(NULLIF(e.role,''), e.track)) AS probation,
              (e.password_hash IS NOT NULL AND e.password_hash<>'') AS has_password,
              COUNT(ec.id)::int AS orders,
              COALESCE(SUM(ec.order_amount_inr),0) AS sales,
@@ -450,10 +456,28 @@ export async function companyGmv(): Promise<number> {
 }
 
 /** Add a partner type. The seeded three are only a starting point. */
+/** Add a partner type — into the editor, as a partner-kind role, so it arrives with everywhere
+ *  else that reads roles rather than in a list of its own. */
 export async function addPartnerRole(role: string) {
   const r = String(role || "").trim().slice(0, 60);
   if (!r) throw new Error("Give the role a name");
-  return withClient((c) => c.query(`INSERT INTO partner_roles (role) VALUES ($1) ON CONFLICT DO NOTHING`, [r]));
+  return withClient(async (c) => {
+    // A name already in use by another kind must not be quietly converted. "Content Creator"
+    // exists as an internship; upserting it as a partner role would flip that role's kind and
+    // take its agreement, probation and duration with it — every intern on it silently moved.
+    const clash = await c.query(
+      `SELECT COALESCE(default_emp_type,'intern') k FROM track_settings
+        WHERE track=$1 AND COALESCE(archived,FALSE)=FALSE`, [r]);
+    if (clash.rows.length && clash.rows[0].k !== "partner") {
+      const e: any = new Error(`“${r}” is already a ${clash.rows[0].k} role — give the partner type its own name.`);
+      e.status = 409;
+      throw e;
+    }
+    await c.query(
+      `INSERT INTO track_settings (track, default_emp_type, commission_enabled, archived)
+       VALUES ($1,'partner',TRUE,FALSE)
+       ON CONFLICT (track) DO UPDATE SET default_emp_type='partner', archived=FALSE`, [r]);
+  });
 }
 
 /** Remove a partner type. Refused while anyone is still on it, so nobody is left role-less. */
@@ -468,12 +492,37 @@ export async function deletePartnerRole(role: string) {
       e.status = 409;
       throw e;
     }
-    await c.query(`DELETE FROM partner_roles WHERE role=$1`, [r]);
+    // Archived rather than deleted, the same as Remove in the editor: the settings written
+    // against it (agreement, probation, duration) survive if it is ever brought back.
+    await c.query(
+      `INSERT INTO track_settings (track, archived) VALUES ($1, TRUE)
+       ON CONFLICT (track) DO UPDATE SET archived=TRUE`, [r]);
+    await c.query(`DELETE FROM partner_roles WHERE role=$1`, [r]).catch(() => {});
   });
 }
 
+/**
+ * The partner types offered when somebody adds a network partner.
+ *
+ * These used to live in their own `partner_roles` table, separate from the roles configured in
+ * the onboarding editor — two vocabularies for the same people. The editor knew "Content Creator
+ * Partnership"; the add-partner form offered "Campus Ambassador". So a probation, an agreement or
+ * a duration set against a partner role reached nobody, because no partner held a role by that
+ * name. One list now: the editor is the source, and a partner role is simply a role whose kind is
+ * partner.
+ *
+ * The old table is kept as a fallback for the one case that would otherwise offer an empty
+ * dropdown — a database where no partner-kind role has been configured yet.
+ */
 export async function listPartnerRolesPortal(): Promise<string[]> {
   return withClient(async (c) => {
+    try {
+      const r = await c.query(
+        `SELECT track FROM track_settings
+          WHERE COALESCE(archived,FALSE)=FALSE AND COALESCE(default_emp_type,'intern')='partner'
+          ORDER BY track`);
+      if (r.rows.length) return r.rows.map((x) => x.track);
+    } catch { /* fall through */ }
     try { return (await c.query(`SELECT role FROM partner_roles ORDER BY role`)).rows.map((x) => x.role); }
     catch { return []; }
   });
@@ -1129,6 +1178,9 @@ export async function renameRole(oldTrack: string, newTrack: string) {
     try {
       await c.query(`UPDATE track_settings SET track=$1 WHERE track=$2`, [n, o]);
       await c.query(`UPDATE employees SET track=$1 WHERE track=$2`, [n, o]);
+      // Staff carry their role in `track`; a network partner carries it in `role`. Renaming only
+      // the first left every partner on the old name — pointing at a role that no longer exists.
+      await c.query(`UPDATE employees SET role=$1 WHERE role=$2`, [n, o]);
       await c.query("COMMIT");
     } catch (e) { await c.query("ROLLBACK"); throw e; }
   });

@@ -13,6 +13,7 @@ import { taskStatus, workStats, reviewAverage, tenureScore, weekStartIST, tasksI
 import { shouldAlert, type Tracked } from "../lib/monitor/state";
 import { roleLabel } from "../lib/role-label";
 import { fillPlaceholders, tidySpan } from "../lib/intern-docs";
+import { probationEnds, probationStatus } from "../lib/probation";
 import { regKeyFrom } from "../lib/portal-db";
 import { shouldSignOut } from "../lib/session-ended";
 import { stillIgnored } from "../lib/monitor/state";
@@ -277,6 +278,32 @@ console.log("\n── ignoring a finding hides THAT finding, never a new one ─
   ok(stillIgnored("2026-08-24T00:00:00Z", was, was, false) === false,
      "once it passes the ignore is spent, so the next break is heard");
   ok(stillIgnored(null, was, was, true) === false, "nothing ignored means nothing hidden");
+}
+
+console.log("\n── when a probation ends ──");
+{
+  const end = probationEnds("2026-08-26", "1 months");
+  ok(!!end && end.getFullYear() === 2026 && end.getMonth() === 8 && end.getDate() === 26,
+     "a month from 26 Aug is 26 Sep", String(end));
+  const wk = probationEnds("2026-08-26", "2 weeks");
+  ok(!!wk && wk.getMonth() === 8 && wk.getDate() === 9, "two weeks is fourteen days", String(wk));
+
+  // Both halves are needed. A missing one must produce nothing rather than a date invented from
+  // whichever half exists — this is shown against a real person as fact.
+  ok(probationEnds(null, "1 months") === null, "no start date, no answer");
+  ok(probationEnds("2026-08-26", null) === null, "no probation, no answer");
+  ok(probationEnds("2026-08-26", "forever") === null, "an unreadable period is not guessed at");
+
+  // A bare ISO date read as UTC lands on the previous day once rendered in IST — the same bug that
+  // walked people's date of birth backwards.
+  ok(probationEnds("2026-03-01", "1 months")!.getDate() === 1, "the day does not drift a timezone");
+
+  const before = probationStatus("2026-08-26", "1 months", new Date(2026, 8, 20));
+  ok(before !== null && !before.over && /ends/.test(before.label), "still running reads as ends", before?.label);
+  const on = probationStatus("2026-08-26", "1 months", new Date(2026, 8, 26));
+  ok(on !== null && !on.over, "the last day is not yet over");
+  const after = probationStatus("2026-08-26", "1 months", new Date(2026, 8, 27));
+  ok(after !== null && after.over && /ended/.test(after.label), "the day after is over", after?.label);
 }
 
 console.log("\n── the week a task belongs to ──");
