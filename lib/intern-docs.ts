@@ -114,7 +114,7 @@ export function internshipAgreement(d: InternData): {
     clauses: [
       {
         h: "1. Role & Duration",
-        t: `The Intern joins as a ${roleTitle(d.role, d.kindNoun)}, working remotely, for ${d.duration} months starting ${d.startDate}. The internship is deliverable-based — no fixed daily hours are mandated.`
+        t: `The Intern joins as a ${roleTitle(d.role, d.kindNoun)}, working remotely, for ${tidySpan(`${d.duration} months`)} starting ${d.startDate}. The internship is deliverable-based — no fixed daily hours are mandated.`
           + ((d.scope || "").trim() ? ` Responsibilities: ${(d.scope || "").trim().replace(/\s+/g, " ")}` : ""),
       },
       {
@@ -273,7 +273,7 @@ export function withProbationClause(
   probation?: string | null,
   raw?: string,
 ) {
-  const p = (probation || "").trim();
+  const p = tidySpan(probation);
   if (!p) return content;
   // Written about already, in the source text or in the rendered clauses? Then leave it alone.
   const mentions = (t: string) => /\[Probation\]|probation|trial period/i.test(t);
@@ -349,7 +349,7 @@ export function joiningLetter(d: InternData): {
     bullets: [
       `Role: ${roleTitle(d.role, d.kindNoun)}`,
       `Start date: ${d.startDate}`,
-      `Duration: ${d.duration} months`,
+      `Duration: ${tidySpan(`${d.duration} months`)}`,
       `Location: Remote / Work from Home`,
       isHR
         ? `Nature: Unpaid, learning-first — hands-on experience in recruitment & HR operations`
@@ -456,6 +456,16 @@ export function defaultTermsText(roleLabel: string, isHR: boolean, paid = false,
 export function standardNdaText(): string {
   return toText(ndaAgreement(sampleData("M&C")));
 }
+/**
+ * "1 months" → "1 month".
+ *
+ * The editor builds these spans from a number and a unit, so a period of one comes out plural in
+ * every document that prints it — "a trial period of 1 months" is on a contract somebody signs.
+ */
+export function tidySpan(s?: string | null): string {
+  return String(s ?? "").trim().replace(/\b1\s+(week|month|year)s\b/gi, "1 $1");
+}
+
 /** Fill [bracketed] placeholders in an owner-edited terms text with the hire's data. */
 export function fillPlaceholders(text: string, d: InternData): string {
   return text
@@ -463,7 +473,7 @@ export function fillPlaceholders(text: string, d: InternData): string {
     .split("[Intern Name]").join(d.fullName)
     .split("[Name]").join(d.fullName)
     .split("[Role]").join(roleLabel(d.role))
-    .split("[Duration]").join(d.duration)
+    .split("[Duration]").join(tidySpan(d.duration))
     .split("[Start Date]").join(d.startDate)
     .split("[Email]").join(d.email)
     .split("[Mobile]").join(d.mobile)
@@ -482,7 +492,7 @@ export function fillPlaceholders(text: string, d: InternData): string {
     // When there is no probation the whole SENTENCE goes, rather than filling in a word: an
     // agreement that reads "The first none are a trial period" is worse than one that stays quiet.
     .replace(/[^.!?\n]*\[Probation\][^.!?\n]*[.!?]\s*/g, (m) => ((d.probation || "").trim() ? m : ""))
-    .split("[Probation]").join((d.probation || "").trim())
+    .split("[Probation]").join(tidySpan(d.probation))
     .split("[Company]").join(COMPANY);
 }
 /** Parse an owner-edited terms text back into title + intro + clauses for the PDF. */

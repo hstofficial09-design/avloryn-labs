@@ -12,7 +12,7 @@ import { hostOrder } from "../lib/booking/google";
 import { taskStatus, workStats, reviewAverage, tenureScore, weekStartIST, tasksInWeek, type Task, type Review } from "../lib/portal-db";
 import { shouldAlert, type Tracked } from "../lib/monitor/state";
 import { roleLabel } from "../lib/role-label";
-import { fillPlaceholders } from "../lib/intern-docs";
+import { fillPlaceholders, tidySpan } from "../lib/intern-docs";
 import { regKeyFrom } from "../lib/portal-db";
 import { shouldSignOut } from "../lib/session-ended";
 import { stillIgnored } from "../lib/monitor/state";
@@ -237,6 +237,15 @@ console.log("\n── what the documents fill in ──");
      "an unset probation takes its sentence with it rather than filling in a word", noP);
   ok(noP.includes("9. Ending it"), "…and the clause heading survives — the removal must not cross a line", noP.split("\n")[0]);
   ok(noP.includes("Either of us may end it at any time."), "…and the rest of the clause is untouched");
+
+  // A span of one. The editor builds these from a number and a unit, so a one-month probation
+  // reached a signed partnership agreement as "a trial period of 1 months".
+  ok(tidySpan("1 months") === "1 month", "a one-month span reads as one month");
+  ok(tidySpan("1 weeks") === "1 week", "…and one week");
+  ok(tidySpan("11 months") === "11 months", "…without mangling eleven");
+  ok(tidySpan("2 months") === "2 months", "…and leaving the plural alone where it belongs");
+  ok(fillPlaceholders(clause, d({ probation: "1 months" })).includes("trial period of 1 month from"),
+     "the fix reaches the agreement itself, not just the helper");
 }
 
 console.log("\n── when a 401 means 'sign in again' ──");

@@ -22,7 +22,7 @@ import {
   isHrRole,
   parseTermsToContent, withProbationClause, withOnCameraClause,
   withSensitiveClause,
-  DOC_META, letterheadLines,
+  DOC_META, letterheadLines, tidySpan,
   type InternData,
   type Clause,
 } from "@/lib/intern-docs";
@@ -533,7 +533,7 @@ export async function POST(req: Request) {
     }
     if (shown("startDate") && d.startDate) od.kv("Start date", d.startDate);
     if (shown("duration") && d.duration) od.kv("Duration", `${d.duration} months`);
-    if ((roleCfg?.probation || "").trim()) od.kv("Probation", String(roleCfg.probation).trim());
+    if ((roleCfg?.probation || "").trim()) od.kv("Probation", tidySpan(roleCfg.probation));
     for (const c of custom) od.kv(c.q, c.a);
     od.kv("Submitted", d.signedAt);
     await embedImageOrPdf(o.pdf, files.photo, od, "Photo");
