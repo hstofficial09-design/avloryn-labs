@@ -749,7 +749,14 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   if (!/isTeamMember\(p\.source\)/.test(bd))
     fail("R23 the birthday board is picking the team by the wrong thing:", "it must go on how somebody was added, not what they are called");
 
-  // 5. Everybody sees it — a reminder only the owner can see is not a reminder.
+  // 5. The dashboard's own date is worked out on the server, not in the browser. PortalHub is a
+  //    client component: computing a date there means the server renders it in UTC and the browser
+  //    re-renders it in IST, so between midnight and 05:30 they disagree — people were greeted
+  //    with yesterday's date and React threw a hydration error on every load.
+  if (/const today = new Date\(\)/.test(code("app/portal/PortalHub.tsx")))
+    fail("R23 the dashboard date is being computed in the browser again:", "it will show yesterday between midnight and 05:30 IST");
+
+  // 6. Everybody sees it — a reminder only the owner can see is not a reminder.
   const hub = code("app/portal/PortalHub.tsx");
   const m = /<Birthdays[\s\S]{0,120}?\/>/.exec(hub);
   if (!m) fail("R23 the birthday board is gone from the portal:", "app/portal/PortalHub.tsx");

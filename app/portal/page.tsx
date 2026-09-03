@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/portal-auth";
 import { getEmployeeProfile, commissionTracksMap, trackHasCommission, partnerBdMeta, listTeamBirthdays } from "@/lib/portal-db";
-import { upcomingBirthdays, dobMonthDay } from "@/lib/birthdays";
+import { upcomingBirthdays, dobMonthDay, istToday } from "@/lib/birthdays";
 import type { BirthdayRow } from "./Birthdays";
 import PortalHub from "./PortalHub";
 import { roleLabel } from "@/lib/role-label";
@@ -30,6 +30,9 @@ async function birthdayRows(): Promise<{ rows: BirthdayRow[]; missing: number }>
   } catch { return { rows: [], missing: 0 }; }
 }
 
+/** Today's date as India reads it, worked out once on the server so the browser cannot disagree. */
+const todayLabel = () => istToday().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
+
 export default async function PortalPage() {
   const s = await getSession();
   if (!s) redirect("/portal/login");
@@ -39,7 +42,7 @@ export default async function PortalPage() {
     return (
       <main className="portal-light min-h-screen">
         <PortalHub role="Owner" name="Hardev Singh Thakur" isOwner isCommissionRole
-                   birthdays={b.rows} birthdaysMissing={b.missing} />
+                   birthdays={b.rows} birthdaysMissing={b.missing} today={todayLabel()} />
       </main>
     );
   }
@@ -80,7 +83,7 @@ export default async function PortalPage() {
 
   return (
     <main className="portal-light min-h-screen">
-      <PortalHub role={role} name={name} isOwner={false} isCommissionRole={isCommissionRole} isBd={isBd} isPartner={isPartner} needsPayout={needsPayout} birthdays={birthdays.rows} />
+      <PortalHub role={role} name={name} isOwner={false} isCommissionRole={isCommissionRole} isBd={isBd} isPartner={isPartner} needsPayout={needsPayout} birthdays={birthdays.rows} today={todayLabel()} />
     </main>
   );
 }

@@ -135,6 +135,10 @@ const MUTATIONS = [
     file: "lib/birthdays.ts",
     from: "if (!name || !md || isPlaceholderPerson(name) || !isTeamMember(p.source)) continue;",
     to: "if (!name || !md || isPlaceholderPerson(name)) continue;" },
+  { rule: "R23", why: "the dashboard would greet people with yesterday's date every night",
+    file: "app/portal/PortalHub.tsx",
+    from: "  const pwInput = \"w-full text-[13px] neu-inset",
+    to: "  const today = new Date().toLocaleDateString();\n  const pwInput = \"w-full text-[13px] neu-inset" },
 ];
 
 const runGuard = () => {

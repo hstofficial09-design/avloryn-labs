@@ -9,7 +9,7 @@ import Birthdays, { type BirthdayRow } from "./Birthdays";
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
 const GOLD = "btn-gold rounded-full font-[560]";
 
-export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd, isPartner, needsPayout, birthdays, birthdaysMissing }: { role: string; name: string; isOwner: boolean; isCommissionRole: boolean; isBd?: boolean; isPartner?: boolean; needsPayout?: boolean; birthdays?: BirthdayRow[]; birthdaysMissing?: number }) {
+export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd, isPartner, needsPayout, birthdays, birthdaysMissing, today }: { role: string; name: string; isOwner: boolean; isCommissionRole: boolean; isBd?: boolean; isPartner?: boolean; needsPayout?: boolean; birthdays?: BirthdayRow[]; birthdaysMissing?: number; today?: string }) {
   const router = useRouter();
   const [showPw, setShowPw] = useState(false);
   const [cur, setCur] = useState(""); const [nw, setNw] = useState(""); const [nw2, setNw2] = useState("");
@@ -29,7 +29,9 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd,
     finally { setPbusy(false); }
   }
   const pwInput = "w-full text-[13px] neu-inset text-foreground placeholder:text-faint rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-gold/25 mb-2.5";
-  const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
+  // Passed in, not computed here. This is a client component: the server rendered the date in UTC
+  // and the browser re-rendered it in IST, so between midnight and 05:30 the two disagreed — the
+  // dashboard greeted people with yesterday's date and React threw a hydration error every load.
 
   type Card = { title: string; desc: string; href?: string; external?: boolean; onClick?: () => void; icon: React.ReactNode; feature?: boolean };
   // A network partner is an outside recruiter, not staff: they do not take internal meetings and
