@@ -99,6 +99,21 @@ const MUTATIONS = [
       e.status = 409;
       throw e;`,
     to: "      /* converted anyway */" },
+  { rule: "R23", why: "every colleague's age would be printed on every dashboard",
+    file: "lib/birthdays.ts",
+    from: `weekday: "short", day: "numeric", month: "short"`,
+    to: `weekday: "short", day: "numeric", month: "short", year: "numeric"` },
+  { rule: "R23", why: "birthdays would land a day out between midnight and 05:30 IST",
+    file: "lib/birthdays.ts",
+    from: "export function upcomingBirthdays(people: BirthdayPerson[], now = istToday(), limit = 6)",
+    to: "export function upcomingBirthdays(people: BirthdayPerson[], now = new Date(), limit = 6)" },
+  { rule: "R23", why: "one failed lookup would take everybody's dashboard down with it",
+    file: "app/portal/page.tsx",
+    from: "  } catch { return { rows: [], missing: 0 }; }", to: "  } finally { /* nothing */ }" },
+  { rule: "R23", why: "the board would be shown to the owner alone",
+    file: "app/portal/PortalHub.tsx",
+    from: "<Birthdays rows={birthdays || []} missing={birthdaysMissing} />",
+    to: "{isOwner && <Birthdays rows={birthdays || []} missing={birthdaysMissing} />}" },
 ];
 
 const runGuard = () => {

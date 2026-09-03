@@ -14,6 +14,7 @@ import { shouldAlert, type Tracked } from "../lib/monitor/state";
 import { roleLabel } from "../lib/role-label";
 import { fillPlaceholders, tidySpan } from "../lib/intern-docs";
 import { probationEnds, probationStatus } from "../lib/probation";
+import { upcomingBirthdays, dobMonthDay, nextOccurrence, istToday } from "../lib/birthdays";
 import { regKeyFrom } from "../lib/portal-db";
 import { shouldSignOut } from "../lib/session-ended";
 import { stillIgnored } from "../lib/monitor/state";
@@ -304,6 +305,54 @@ console.log("\n── when a probation ends ──");
   ok(on !== null && !on.over, "the last day is not yet over");
   const after = probationStatus("2026-08-26", "1 months", new Date(2026, 8, 27));
   ok(after !== null && after.over && /ended/.test(after.label), "the day after is over", after?.label);
+}
+
+console.log("\n── whose birthday is next ──");
+{
+  const now = new Date(2026, 8, 4);            // 4 Sept 2026
+  const team = [
+    { name: "Asha", dob: "2003-09-04" },       // today
+    { name: "Bilal", dob: "2001-09-05" },      // tomorrow
+    { name: "Chetan", dob: "16 Aug 2005" },    // already gone this year → next year
+    { name: "Divya", dob: "2000-09-20" },
+    { name: "Eshan", dob: "" },                // nothing recorded
+    { name: "Farah", dob: "not a date" },      // unreadable
+  ];
+  const up = upcomingBirthdays(team, now, 10);
+  ok(up.length === 4, "people with no readable date of birth are left out, not guessed at", String(up.length));
+  ok(up[0].name === "Asha" && up[0].days === 0 && up[0].label === "Today", "today comes first", JSON.stringify(up[0]));
+  ok(up[1].name === "Bilal" && up[1].days === 1 && up[1].label === "Tomorrow", "then tomorrow", up[1]?.label);
+  ok(up[2].name === "Divya", "then the rest in order");
+  const chetan = up.find((x) => x.name === "Chetan")!;
+  ok(chetan.days > 300, "a birthday already past this year rolls to next year", String(chetan.days));
+
+  // The whole point of a shared board: names and dates, never ages.
+  const shown = up.map((u) => u.label + " " + u.date).join(" ");
+  ok(!/\b(19|20)\d{2}\b/.test(shown), "no year of birth reaches the screen", shown);
+
+  // Both date formats live in that column — ISO from the form, display text from early records.
+  ok(JSON.stringify(dobMonthDay("2005-08-16")) === JSON.stringify({ y: 2005, m: 8, d: 16 }), "an ISO date reads");
+  ok(JSON.stringify(dobMonthDay("16 Aug 2005")) === JSON.stringify({ y: 2005, m: 8, d: 16 }), "…and so does display text");
+  ok(dobMonthDay("16/08/2005") === null && dobMonthDay(null) === null, "anything else is refused rather than half-read");
+
+  // Test accounts get a date of birth in the future, and a board announcing one is hard to explain.
+  ok(upcomingBirthdays([{ name: "Demo (test login)", dob: "2026-08-19" }], new Date(2026, 8, 4)).length === 0,
+     "a date of birth in the future is not one");
+
+  // 29 February. Somebody born on it should still be wished in a common year.
+  const leap = nextOccurrence(2, 29, new Date(2027, 0, 5));
+  ok(leap.getMonth() === 2 && leap.getDate() === 1, "29 Feb falls on 1 March in a common year", String(leap));
+  const realLeap = nextOccurrence(2, 29, new Date(2028, 0, 5));
+  ok(realLeap.getMonth() === 1 && realLeap.getDate() === 29, "…and on the 29th when there is one", String(realLeap));
+
+  // The owner sits in their own table as well as, sometimes, the employee list.
+  const dupe = upcomingBirthdays([{ name: "Hardev", dob: "2000-09-04" }, { name: "hardev", dob: "2000-09-04" }], now);
+  ok(dupe.length === 1, "the same person twice is one line, not two");
+
+  // The server runs in UTC; between midnight and 05:30 IST its own date is still yesterday's.
+  const t = istToday(new Date("2026-09-04T20:00:00Z"));   // 05:30 IST on the 5th
+  ok(t.getDate() === 5 && t.getMonth() === 8, "today is India's today, not the server's", String(t));
+  ok(t.getHours() === 0 && t.getMinutes() === 0, "…and starts at midnight");
 }
 
 console.log("\n── the week a task belongs to ──");

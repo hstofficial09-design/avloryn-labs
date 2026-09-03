@@ -719,6 +719,40 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     fail("R22 probation is no longer shown against a partner:", "nothing says when the starter rate should end");
 }
 
+// ── R23 · the birthday board: everyone's, nobody's age, and never in the way ─────────────────
+// A board of names and dates on every dashboard. Three things have to stay true about it.
+{
+  const bd = code("lib/birthdays.ts");
+
+  // 1. No year of birth. The team can see the board; the team does not need everybody's age, and
+  //    a date of birth was given on a joining form, not for publication.
+  for (const call of bd.match(/toLocaleDateString\([^)]*\)/g) || []) {
+    if (/year\s*:/.test(call)) fail("R23 the birthday board is printing a year:", "that is everybody's age, on a screen the whole team can see");
+  }
+
+  // 2. Today means today in India. The server runs in UTC, so between midnight and 05:30 IST its
+  //    own date is yesterday's — every birthday would be wished a day late, only in the early
+  //    hours, which is the hardest kind of wrong to notice.
+  if (!/upcomingBirthdays\([^)]*now = istToday\(\)/.test(bd))
+    fail("R23 the board no longer works in India's day:", "birthdays land a day out between midnight and 05:30 IST");
+
+  // 3. It must never cost anybody their dashboard. It is a nicety on a page people need.
+  const page = code("app/portal/page.tsx");
+  const fn = /async function birthdayRows[\s\S]{0,900}?\n}/.exec(page)?.[0] || "";
+  if (!/catch\s*\{[^}]*return/.test(fn))
+    fail("R23 a failed birthday lookup takes the whole portal down with it:", "app/portal/page.tsx");
+
+  // 4. Everybody sees it — a reminder only the owner can see is not a reminder.
+  const hub = code("app/portal/PortalHub.tsx");
+  const m = /<Birthdays[\s\S]{0,120}?\/>/.exec(hub);
+  if (!m) fail("R23 the birthday board is gone from the portal:", "app/portal/PortalHub.tsx");
+  else {
+    const before = hub.slice(Math.max(0, m.index - 90), m.index);
+    if (/isOwner\s*&&|isPartner\s*\?/.test(before))
+      fail("R23 the birthday board is being shown to only some people:", "everyone signs in to the same board");
+  }
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");

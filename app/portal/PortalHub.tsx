@@ -4,11 +4,12 @@ import { useRouter } from "next/navigation";
 import { LogoMark } from "@/components/ui/logo";
 import { PasswordInput } from "@/components/ui/password-input";
 import SystemWatch from "./SystemWatch";
+import Birthdays, { type BirthdayRow } from "./Birthdays";
 
 const GHOST = "rounded-full bg-card ring-hairline hover:bg-muted text-foreground font-[520] transition-colors";
 const GOLD = "btn-gold rounded-full font-[560]";
 
-export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd, isPartner, needsPayout }: { role: string; name: string; isOwner: boolean; isCommissionRole: boolean; isBd?: boolean; isPartner?: boolean; needsPayout?: boolean }) {
+export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd, isPartner, needsPayout, birthdays, birthdaysMissing }: { role: string; name: string; isOwner: boolean; isCommissionRole: boolean; isBd?: boolean; isPartner?: boolean; needsPayout?: boolean; birthdays?: BirthdayRow[]; birthdaysMissing?: number }) {
   const router = useRouter();
   const [showPw, setShowPw] = useState(false);
   const [cur, setCur] = useState(""); const [nw, setNw] = useState(""); const [nw2, setNw2] = useState("");
@@ -114,6 +115,10 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd,
             ? "Your referral code, what it has earned, and where your payout goes — all behind one login."
             : <>Welcome to your Avloryn workspace — scheduling, {isOwner || isCommissionRole ? "earnings, " : ""}and everything for your work, all behind one login.</>}</p>
         </div>
+
+        {/* Everybody sees the same board — a reminder is no use only to the person who already
+            knows. Renders nothing when no date of birth has been recorded. */}
+        <Birthdays rows={birthdays || []} missing={birthdaysMissing} />
 
         <div className="section-label mb-3 px-1">Your tools</div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

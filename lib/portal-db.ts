@@ -1259,6 +1259,30 @@ export async function getCompanyProfile() {
     return r.rows[0] || null;
   });
 }
+/**
+ * Everybody's birthday, for the board on the portal.
+ *
+ * The owner's own record lives in company_profile, not employees, so a query over staff alone
+ * would quietly leave the owner off a board titled "the whole team".
+ *
+ * Only the name and the date are read — never the year of birth on its own, and nothing else
+ * personal. Deactivated and deleted people are left out: a board is for the people who are here.
+ *
+ * People with no date recorded come back too, so the owner can be told how many are missing —
+ * an empty board otherwise looks like a broken feature rather than an unanswered question.
+ */
+export async function listTeamBirthdays(): Promise<{ name: string; dob: string | null; kind: string | null }[]> {
+  return withClient(async (c) => {
+    const r = await c.query(`
+      SELECT name, dob, emp_type AS kind FROM employees
+       WHERE deleted_at IS NULL AND COALESCE(active,1)=1
+      UNION ALL
+      SELECT full_name AS name, dob, 'owner' AS kind FROM company_profile
+       WHERE id=1 AND full_name IS NOT NULL AND full_name <> ''`);
+    return r.rows.map((x: any) => ({ name: x.name, dob: x.dob, kind: x.kind || null }));
+  });
+}
+
 export async function saveCompanyProfile(f: { full_name?: string; email?: string; mobile?: string; dob?: string; address?: string; start_date?: string }) {
   const v = (x?: string) => (x && x.trim() ? x.trim() : null);
   return withClient((c) => c.query(
