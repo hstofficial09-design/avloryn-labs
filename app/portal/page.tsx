@@ -15,7 +15,12 @@ export const metadata = { title: "Dashboard — Avloryn Labs", robots: { index: 
  *  dashboard because a birthday could not be read. */
 async function birthdayRows(): Promise<{ rows: BirthdayRow[]; missing: number }> {
   try {
-    const people = await listTeamBirthdays();
+    // One retry. The first request after a deploy can arrive before the connection pool is warm,
+    // and the board was simply absent from that page — the portal itself rendered fine, which is
+    // the point of the catch below, but a colleague opening it at that moment saw nothing.
+    let people;
+    try { people = await listTeamBirthdays(); }
+    catch { await new Promise((r) => setTimeout(r, 300)); people = await listTeamBirthdays(); }
     const rows = upcomingBirthdays(people, undefined, 5)
       .map(({ name, days, label, date, kind }) => ({ name, days, label, date, kind }));
     // A count, never the names — the owner needs to know there is something to chase, and nobody
