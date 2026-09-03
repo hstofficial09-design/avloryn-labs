@@ -345,8 +345,10 @@ console.log("\n── whose birthday is next ──");
      "a placeholder account is not on the board");
   ok(isPlaceholderPerson("tester") && isPlaceholderPerson("Demo Partner (test login)"),
      "placeholder accounts are recognised");
-  ok(upcomingBirthdays([{ name: "Renu Jakhar", dob: "1994-09-04", kind: "partner" }], new Date(2026, 8, 4)).length === 0,
-     "a network partner is not on the board either — one rule, both places");
+  ok(upcomingBirthdays([{ name: "Noor Hassan", dob: "1995-09-04", kind: "partner", source: "portal" }], new Date(2026, 8, 4)).length === 0,
+     "somebody added from the portal is not on the board either — one rule, both places");
+  ok(upcomingBirthdays([{ name: "Renu Jakhar", dob: "1994-09-04", kind: "partner", source: "onboarding" }], new Date(2026, 8, 4)).length === 1,
+     "…and somebody who filled in the form is, whatever their record calls them");
   ok(!isPlaceholderPerson("Testa Rossi") && !isPlaceholderPerson("Prakhar Agarwal") && !isPlaceholderPerson("Demoiselle Roy"),
      "a real name that merely contains the letters is left alone");
 
@@ -368,13 +370,17 @@ console.log("\n── whose birthday is next ──");
 
 console.log("\n── who gets the birthday mail ──");
 {
-  const P = (name: string, email: string, dob: string | null, kind = "intern") => ({ name, email, dob, kind });
+  const P = (name: string, email: string, dob: string | null, kind = "intern", source = "onboarding") =>
+    ({ name, email, dob, kind, source });
   const team = [
     P("Tavishi Bansal", "tavishi@x.com", "2007-09-04"),          // today
     P("Prakhar Agarwal", "prakhar@x.com", "1999-09-05"),         // tomorrow
     P("Amir Khurram", "amir@x.com", "2005-08-16"),
-    P("Renu Jakhar", "renu@x.com", "1994-09-04", "partner"),     // today, but a partner
-    P("Hardev Singh Thakur", "hardev@x.com", "2000-08-09", "owner"),
+    // Recorded as a partner, but she filled in the onboarding form — so she is on the team.
+    P("Renu Jakhar", "renu@x.com", "1994-09-04", "partner", "onboarding"),
+    // Added from the portal: a network partner, and outside all of this.
+    P("Noor Hassan", "noor@x.com", "1995-09-04", "partner", "portal"),
+    P("Hardev Singh Thakur", "hardev@x.com", "2000-08-09", "owner", "owner"),
     P("tester", "tester@x.com", "2000-09-04"),                   // placeholder, also today
     P("No Email", "", "2001-09-04"),
   ];
@@ -383,18 +389,20 @@ console.log("\n── who gets the birthday mail ──");
   ok(!!plan, "a plan is made when somebody has a birthday");
 
   const names = plan.celebrants.map((c) => c.name).sort();
-  ok(JSON.stringify(names) === JSON.stringify(["Tavishi Bansal"]),
-     "the team is wished — the people who came through the onboarding form", names.join(","));
-  ok(!names.includes("Renu Jakhar"),
-     "a network partner is not wished: they are an outside recruiter, not on the team", names.join(","));
+  ok(JSON.stringify(names) === JSON.stringify(["Renu Jakhar", "Tavishi Bansal"]),
+     "everyone who came through the onboarding form is wished", names.join(","));
+  ok(names.includes("Renu Jakhar"),
+     "…including one recorded as a partner: how she was ADDED is what decides it, not what she is called");
+  ok(!names.includes("Noor Hassan"),
+     "somebody added from the portal is a network partner and is not wished", names.join(","));
   ok(!names.includes("tester"), "a placeholder account is never emailed — that address belongs to somebody real");
   ok(!plan.celebrants.some((c) => !c.email), "nobody without an address is queued for a send");
 
   const aud = plan.audience.map((a) => a.email).sort();
   ok(!aud.includes("tavishi@x.com") && !aud.includes("renu@x.com"),
      "the people whose birthday it is are not told about their own birthday", aud.join(","));
-  ok(!aud.includes("renu@x.com") && !plan.audience.some((a) => a.kind === "partner"),
-     "…and is not told about anybody else's either — their address is held to pay them");
+  ok(!aud.includes("noor@x.com") && !plan.audience.some((a) => a.source === "portal"),
+     "network partners are not told about anybody's — their address is held to pay them", aud.join(","));
   ok(aud.includes("hardev@x.com") && aud.includes("prakhar@x.com"), "the rest of the team is told", aud.join(","));
   ok(!aud.includes("tester@x.com"), "…and placeholder accounts are not");
 

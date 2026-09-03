@@ -33,7 +33,7 @@ export function nameList(names: string[]): string {
   return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
 }
 
-export type Person = { name: string; email: string; dob: string | null; kind: string | null };
+export type Person = { name: string; email: string; dob: string | null; kind: string | null; source: string | null };
 export type Plan = {
   date: string;
   /** Whose birthday it is today. */
@@ -47,15 +47,16 @@ export type Plan = {
 /**
  * Who gets what, today.
  *
- * The team is the people who came through the onboarding form. A network partner is an outside
- * recruiter: no greeting, no announcement, not on the board either. Their email is on file so they
- * can be paid, and their date of birth is not the company's to circulate.
+ * The team is the people who came through the onboarding form — including one recorded as a
+ * partner, because she filled it in like everybody else. The network partners added from the
+ * portal get nothing: no greeting, no announcement, no place on the board. Their email is on file
+ * so they can be paid.
  */
 export function planFor(people: Person[], now = new Date()): Plan | null {
   const today = istToday(now);
   const m = today.getMonth() + 1, d = today.getDate();
 
-  const real = people.filter((p) => p.name && p.email && !isPlaceholderPerson(p.name) && isTeamMember(p.kind));
+  const real = people.filter((p) => p.name && p.email && !isPlaceholderPerson(p.name) && isTeamMember(p.source));
   const celebrants = real.filter((p) => {
     const md = dobMonthDay(p.dob);
     // Same rules as the board: a birth year of this year or later is not a date of birth.
@@ -64,9 +65,9 @@ export function planFor(people: Person[], now = new Date()): Plan | null {
   if (!celebrants.length) return null;
 
   const celebrantEmails = new Set(celebrants.map((c) => c.email.toLowerCase()));
-  // Partners are already gone from `real`; the check stays as the second lock on the one thing
-  // here that must never be got wrong.
-  const audience = real.filter((p) => p.kind !== "partner" && !celebrantEmails.has(p.email.toLowerCase()));
+  // Portal-added partners are already gone from `real`; the check stays as the second lock on the
+  // one thing here that must never be got wrong.
+  const audience = real.filter((p) => isTeamMember(p.source) && !celebrantEmails.has(p.email.toLowerCase()));
 
   const names = celebrants.map((c) => c.name);
   const firsts = celebrants.map((c) => firstName(c.name));

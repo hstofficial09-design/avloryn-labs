@@ -6,17 +6,23 @@
  * everybody's age on a screen the whole team can see, which is not what anybody asked for when
  * they filled in a date of birth on a joining form.
  */
-export type BirthdayPerson = { name: string; dob?: string | null; kind?: string | null };
+export type BirthdayPerson = { name: string; dob?: string | null; kind?: string | null; source?: string | null };
 
 /**
- * A network partner is not on the team.
+ * Who counts as the team.
  *
- * They are outside recruiters who never filled in an onboarding form — the team is the people who
- * did. Their date of birth is not the company's to put on a shared board, and their address is on
- * file so they can be paid. Applied here, in the one function both the board and the mail use, so
- * neither can drift from the other.
+ * Whoever came through the onboarding form. Network partners are the ones added from the portal
+ * instead — outside recruiters, whose address is on file so they can be paid and whose date of
+ * birth is not the company's to circulate.
+ *
+ * The test is HOW SOMEBODY WAS ADDED, not what they are called. One person is recorded as a
+ * partner and filled in the onboarding form like everybody else, so she is on the team; reading
+ * emp_type instead had quietly left her off. Anything not added from the portal counts, so a
+ * future manual entry is included rather than silently missing.
+ *
+ * Applied here, in the one place the board and the mail both use, so the two cannot drift apart.
  */
-export const isTeamMember = (kind?: string | null) => (kind || "") !== "partner";
+export const isTeamMember = (source?: string | null) => (source || "") !== "portal";
 export type Upcoming = {
   name: string;
   /** Days from today. 0 = today. */
@@ -110,7 +116,7 @@ export function upcomingBirthdays(people: BirthdayPerson[], now = istToday(), li
   for (const p of people || []) {
     const name = String(p?.name || "").trim();
     const md = dobMonthDay(p?.dob);
-    if (!name || !md || isPlaceholderPerson(name) || !isTeamMember(p.kind)) continue;
+    if (!name || !md || isPlaceholderPerson(name) || !isTeamMember(p.source)) continue;
     // Nobody working here was born this year. Test accounts get whatever date the form accepted
     // — the demo partner's says 2026 — and "It's Demo Partner (test login)'s birthday today" on
     // everybody's dashboard is not the kind of thing you want to explain afterwards.

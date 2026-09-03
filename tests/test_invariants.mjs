@@ -742,10 +742,12 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   if (!/catch\s*\{[^}]*return/.test(fn))
     fail("R23 a failed birthday lookup takes the whole portal down with it:", "app/portal/page.tsx");
 
-  // 4. Network partners are not on it. They never filled in an onboarding form; the team is the
-  //    people who did, and a partner's date of birth is not the company's to circulate.
-  if (!/isTeamMember\(p\.kind\)/.test(bd))
-    fail("R23 network partners are back on the birthday board:", "they are outside recruiters, not the team");
+  // 4. The team is whoever came through the onboarding form. Network partners are the ones added
+  //    from the portal, and their date of birth is not the company's to circulate. The test is how
+  //    somebody was ADDED — reading what they are called instead left a real colleague off,
+  //    because her record says partner and she filled in the form like everybody else.
+  if (!/isTeamMember\(p\.source\)/.test(bd))
+    fail("R23 the birthday board is picking the team by the wrong thing:", "it must go on how somebody was added, not what they are called");
 
   // 5. Everybody sees it — a reminder only the owner can see is not a reminder.
   const hub = code("app/portal/PortalHub.tsx");
@@ -774,9 +776,10 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   if (!/istHour\([^)]*\)\s*<\s*SEND_HOUR/.test(mail))
     fail("R24 birthday mail no longer waits for the morning:", "it would go out in the middle of the night");
 
-  // 3. Network partners are outside recruiters; their address is held to pay them.
-  if (!/kind\s*!==\s*["']partner["']/.test(mail))
-    fail("R24 network partners are being sent the team announcement:", "their email is on file to pay them, not for this");
+  // 3. Network partners — the ones added from the portal — are outside recruiters; their address
+  //    is held to pay them, not to tell them about a colleague's birthday.
+  if ((mail.match(/isTeamMember\(p\.source\)/g) || []).length < 2)
+    fail("R24 network partners can be sent the birthday mail:", "the rule must hold for both who is wished and who is told");
 
   // No year of birth in what gets emailed is guarded in test_logic.ts instead, on the text the
   // planner actually produces. A static version of it read the claim key's own date as an age.

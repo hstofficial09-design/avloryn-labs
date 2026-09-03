@@ -124,7 +124,7 @@ const MUTATIONS = [
     to: "if (!opts.preview && !opts.force && false)" },
   { rule: "R24", why: "network partners would be emailed about an intern's birthday",
     file: "lib/birthday-mail.ts",
-    from: `const audience = real.filter((p) => p.kind !== "partner" && !celebrantEmails.has(p.email.toLowerCase()));`,
+    from: `const audience = real.filter((p) => isTeamMember(p.source) && !celebrantEmails.has(p.email.toLowerCase()));`,
     to: `const audience = real.filter((p) => !celebrantEmails.has(p.email.toLowerCase()));` },
   { rule: "R24", why: "an owner session could mail the entire team by adding a parameter",
     file: "app/api/cron/birthdays/route.ts",
@@ -133,7 +133,7 @@ const MUTATIONS = [
     to: `  return NextResponse.json(await runBirthdayMail({ force: url.searchParams.get("force") === "1" }));` },
   { rule: "R23", why: "network partners would be back on the birthday board",
     file: "lib/birthdays.ts",
-    from: "if (!name || !md || isPlaceholderPerson(name) || !isTeamMember(p.kind)) continue;",
+    from: "if (!name || !md || isPlaceholderPerson(name) || !isTeamMember(p.source)) continue;",
     to: "if (!name || !md || isPlaceholderPerson(name)) continue;" },
 ];
 

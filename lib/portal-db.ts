@@ -1280,15 +1280,15 @@ export async function getCompanyProfile() {
  * People with no date recorded come back too, so the owner can be told how many are missing —
  * an empty board otherwise looks like a broken feature rather than an unanswered question.
  */
-export async function listTeamBirthdays(): Promise<{ name: string; dob: string | null; kind: string | null }[]> {
+export async function listTeamBirthdays(): Promise<{ name: string; dob: string | null; kind: string | null; source: string | null }[]> {
   return withClient(async (c) => {
     const r = await c.query(`
-      SELECT name, dob, emp_type AS kind FROM employees
-       WHERE deleted_at IS NULL AND COALESCE(active,1)=1 AND COALESCE(emp_type,'') <> 'partner'
+      SELECT name, dob, emp_type AS kind, source FROM employees
+       WHERE deleted_at IS NULL AND COALESCE(active,1)=1 AND COALESCE(source,'') <> 'portal'
       UNION ALL
-      SELECT full_name AS name, dob, 'owner' AS kind FROM company_profile
+      SELECT full_name AS name, dob, 'owner' AS kind, 'owner' AS source FROM company_profile
        WHERE id=1 AND full_name IS NOT NULL AND full_name <> ''`);
-    return r.rows.map((x: any) => ({ name: x.name, dob: x.dob, kind: x.kind || null }));
+    return r.rows.map((x: any) => ({ name: x.name, dob: x.dob, kind: x.kind || null, source: x.source || null }));
   });
 }
 
@@ -1298,16 +1298,16 @@ export async function listTeamBirthdays(): Promise<{ name: string; dob: string |
  * Kept apart from the board's query on purpose. The board's rows are sent to a browser, and an
  * email address has no business travelling with them — this one is only ever read on the server.
  */
-export async function listTeamForMail(): Promise<{ name: string; email: string; dob: string | null; kind: string | null }[]> {
+export async function listTeamForMail(): Promise<{ name: string; email: string; dob: string | null; kind: string | null; source: string | null }[]> {
   return withClient(async (c) => {
     const r = await c.query(`
-      SELECT name, email, dob, emp_type AS kind FROM employees
-       WHERE deleted_at IS NULL AND COALESCE(active,1)=1 AND COALESCE(emp_type,'') <> 'partner'
+      SELECT name, email, dob, emp_type AS kind, source FROM employees
+       WHERE deleted_at IS NULL AND COALESCE(active,1)=1 AND COALESCE(source,'') <> 'portal'
          AND email IS NOT NULL AND email <> ''
       UNION ALL
-      SELECT full_name AS name, email, dob, 'owner' AS kind FROM company_profile
+      SELECT full_name AS name, email, dob, 'owner' AS kind, 'owner' AS source FROM company_profile
        WHERE id=1 AND email IS NOT NULL AND email <> ''`);
-    return r.rows.map((x: any) => ({ name: x.name || "", email: x.email, dob: x.dob, kind: x.kind || null }));
+    return r.rows.map((x: any) => ({ name: x.name || "", email: x.email, dob: x.dob, kind: x.kind || null, source: x.source || null }));
   });
 }
 
