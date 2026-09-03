@@ -131,6 +131,10 @@ const MUTATIONS = [
     from: `  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   return NextResponse.json(await runBirthdayMail({ force: url.searchParams.get("force") === "1" }));`,
     to: `  return NextResponse.json(await runBirthdayMail({ force: url.searchParams.get("force") === "1" }));` },
+  { rule: "R23", why: "network partners would be back on the birthday board",
+    file: "lib/birthdays.ts",
+    from: "if (!name || !md || isPlaceholderPerson(name) || !isTeamMember(p.kind)) continue;",
+    to: "if (!name || !md || isPlaceholderPerson(name)) continue;" },
 ];
 
 const runGuard = () => {

@@ -7,6 +7,16 @@
  * they filled in a date of birth on a joining form.
  */
 export type BirthdayPerson = { name: string; dob?: string | null; kind?: string | null };
+
+/**
+ * A network partner is not on the team.
+ *
+ * They are outside recruiters who never filled in an onboarding form — the team is the people who
+ * did. Their date of birth is not the company's to put on a shared board, and their address is on
+ * file so they can be paid. Applied here, in the one function both the board and the mail use, so
+ * neither can drift from the other.
+ */
+export const isTeamMember = (kind?: string | null) => (kind || "") !== "partner";
 export type Upcoming = {
   name: string;
   /** Days from today. 0 = today. */
@@ -100,7 +110,7 @@ export function upcomingBirthdays(people: BirthdayPerson[], now = istToday(), li
   for (const p of people || []) {
     const name = String(p?.name || "").trim();
     const md = dobMonthDay(p?.dob);
-    if (!name || !md || isPlaceholderPerson(name)) continue;
+    if (!name || !md || isPlaceholderPerson(name) || !isTeamMember(p.kind)) continue;
     // Nobody working here was born this year. Test accounts get whatever date the form accepted
     // — the demo partner's says 2026 — and "It's Demo Partner (test login)'s birthday today" on
     // everybody's dashboard is not the kind of thing you want to explain afterwards.

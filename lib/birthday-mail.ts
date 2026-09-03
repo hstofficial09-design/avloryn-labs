@@ -1,6 +1,6 @@
 import { Resend } from "resend";
 import { listTeamForMail, claimBirthdaySend, releaseBirthdaySend } from "./portal-db";
-import { dobMonthDay, istToday, isPlaceholderPerson } from "./birthdays";
+import { dobMonthDay, istToday, isPlaceholderPerson, isTeamMember } from "./birthdays";
 
 /**
  * The birthday emails: one to the person, one to everybody else.
@@ -47,15 +47,15 @@ export type Plan = {
 /**
  * Who gets what, today.
  *
- * The greeting goes to whoever has the birthday, staff or network partner alike. The announcement
- * goes to the team only: a partner is an outside recruiter whose email we hold to pay them, not to
- * tell them about an intern's birthday.
+ * The team is the people who came through the onboarding form. A network partner is an outside
+ * recruiter: no greeting, no announcement, not on the board either. Their email is on file so they
+ * can be paid, and their date of birth is not the company's to circulate.
  */
 export function planFor(people: Person[], now = new Date()): Plan | null {
   const today = istToday(now);
   const m = today.getMonth() + 1, d = today.getDate();
 
-  const real = people.filter((p) => p.name && p.email && !isPlaceholderPerson(p.name));
+  const real = people.filter((p) => p.name && p.email && !isPlaceholderPerson(p.name) && isTeamMember(p.kind));
   const celebrants = real.filter((p) => {
     const md = dobMonthDay(p.dob);
     // Same rules as the board: a birth year of this year or later is not a date of birth.
@@ -64,6 +64,8 @@ export function planFor(people: Person[], now = new Date()): Plan | null {
   if (!celebrants.length) return null;
 
   const celebrantEmails = new Set(celebrants.map((c) => c.email.toLowerCase()));
+  // Partners are already gone from `real`; the check stays as the second lock on the one thing
+  // here that must never be got wrong.
   const audience = real.filter((p) => p.kind !== "partner" && !celebrantEmails.has(p.email.toLowerCase()));
 
   const names = celebrants.map((c) => c.name);

@@ -1284,7 +1284,7 @@ export async function listTeamBirthdays(): Promise<{ name: string; dob: string |
   return withClient(async (c) => {
     const r = await c.query(`
       SELECT name, dob, emp_type AS kind FROM employees
-       WHERE deleted_at IS NULL AND COALESCE(active,1)=1
+       WHERE deleted_at IS NULL AND COALESCE(active,1)=1 AND COALESCE(emp_type,'') <> 'partner'
       UNION ALL
       SELECT full_name AS name, dob, 'owner' AS kind FROM company_profile
        WHERE id=1 AND full_name IS NOT NULL AND full_name <> ''`);
@@ -1302,7 +1302,8 @@ export async function listTeamForMail(): Promise<{ name: string; email: string; 
   return withClient(async (c) => {
     const r = await c.query(`
       SELECT name, email, dob, emp_type AS kind FROM employees
-       WHERE deleted_at IS NULL AND COALESCE(active,1)=1 AND email IS NOT NULL AND email <> ''
+       WHERE deleted_at IS NULL AND COALESCE(active,1)=1 AND COALESCE(emp_type,'') <> 'partner'
+         AND email IS NOT NULL AND email <> ''
       UNION ALL
       SELECT full_name AS name, email, dob, 'owner' AS kind FROM company_profile
        WHERE id=1 AND email IS NOT NULL AND email <> ''`);

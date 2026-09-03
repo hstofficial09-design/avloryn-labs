@@ -345,6 +345,8 @@ console.log("\n── whose birthday is next ──");
      "a placeholder account is not on the board");
   ok(isPlaceholderPerson("tester") && isPlaceholderPerson("Demo Partner (test login)"),
      "placeholder accounts are recognised");
+  ok(upcomingBirthdays([{ name: "Renu Jakhar", dob: "1994-09-04", kind: "partner" }], new Date(2026, 8, 4)).length === 0,
+     "a network partner is not on the board either — one rule, both places");
   ok(!isPlaceholderPerson("Testa Rossi") && !isPlaceholderPerson("Prakhar Agarwal") && !isPlaceholderPerson("Demoiselle Roy"),
      "a real name that merely contains the letters is left alone");
 
@@ -381,8 +383,10 @@ console.log("\n── who gets the birthday mail ──");
   ok(!!plan, "a plan is made when somebody has a birthday");
 
   const names = plan.celebrants.map((c) => c.name).sort();
-  ok(JSON.stringify(names) === JSON.stringify(["Renu Jakhar", "Tavishi Bansal"]),
-     "everyone with a birthday is wished, partner or staff", names.join(","));
+  ok(JSON.stringify(names) === JSON.stringify(["Tavishi Bansal"]),
+     "the team is wished — the people who came through the onboarding form", names.join(","));
+  ok(!names.includes("Renu Jakhar"),
+     "a network partner is not wished: they are an outside recruiter, not on the team", names.join(","));
   ok(!names.includes("tester"), "a placeholder account is never emailed — that address belongs to somebody real");
   ok(!plan.celebrants.some((c) => !c.email), "nobody without an address is queued for a send");
 
@@ -390,7 +394,7 @@ console.log("\n── who gets the birthday mail ──");
   ok(!aud.includes("tavishi@x.com") && !aud.includes("renu@x.com"),
      "the people whose birthday it is are not told about their own birthday", aud.join(","));
   ok(!aud.includes("renu@x.com") && !plan.audience.some((a) => a.kind === "partner"),
-     "network partners are not sent the team announcement — their address is held to pay them");
+     "…and is not told about anybody else's either — their address is held to pay them");
   ok(aud.includes("hardev@x.com") && aud.includes("prakhar@x.com"), "the rest of the team is told", aud.join(","));
   ok(!aud.includes("tester@x.com"), "…and placeholder accounts are not");
 

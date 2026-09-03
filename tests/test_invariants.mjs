@@ -742,7 +742,12 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   if (!/catch\s*\{[^}]*return/.test(fn))
     fail("R23 a failed birthday lookup takes the whole portal down with it:", "app/portal/page.tsx");
 
-  // 4. Everybody sees it — a reminder only the owner can see is not a reminder.
+  // 4. Network partners are not on it. They never filled in an onboarding form; the team is the
+  //    people who did, and a partner's date of birth is not the company's to circulate.
+  if (!/isTeamMember\(p\.kind\)/.test(bd))
+    fail("R23 network partners are back on the birthday board:", "they are outside recruiters, not the team");
+
+  // 5. Everybody sees it — a reminder only the owner can see is not a reminder.
   const hub = code("app/portal/PortalHub.tsx");
   const m = /<Birthdays[\s\S]{0,120}?\/>/.exec(hub);
   if (!m) fail("R23 the birthday board is gone from the portal:", "app/portal/PortalHub.tsx");
