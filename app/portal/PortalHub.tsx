@@ -108,6 +108,13 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd,
           </a>
         )}
 
+        {/* At the top, above the greeting: a birthday is only useful if it is seen before the day
+            goes by, and below the hero it was the thing people scrolled past. The two banners
+            above it stay above it — something broken, or money that cannot reach you, outranks it.
+            Everybody sees the same board; a reminder is no use only to the person who already
+            knows. Renders nothing when nobody has a date of birth recorded. */}
+        <Birthdays rows={birthdays || []} missing={birthdaysMissing} />
+
         {/* Hero */}
         <div className="card-lux rounded-[26px] p-7 sm:p-9 mb-7 relative overflow-hidden">
           <div aria-hidden className="absolute -right-10 -top-14 w-56 h-56 rounded-full" style={{ background: "radial-gradient(circle, rgba(203,177,118,0.28), transparent 70%)" }} />
@@ -117,10 +124,6 @@ export default function PortalHub({ role, name, isOwner, isCommissionRole, isBd,
             ? "Your referral code, what it has earned, and where your payout goes — all behind one login."
             : <>Welcome to your Avloryn workspace — scheduling, {isOwner || isCommissionRole ? "earnings, " : ""}and everything for your work, all behind one login.</>}</p>
         </div>
-
-        {/* Everybody sees the same board — a reminder is no use only to the person who already
-            knows. Renders nothing when no date of birth has been recorded. */}
-        <Birthdays rows={birthdays || []} missing={birthdaysMissing} />
 
         <div className="section-label mb-3 px-1">Your tools</div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
