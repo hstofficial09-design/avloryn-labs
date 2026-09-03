@@ -39,4 +39,12 @@ export async function register() {
   const monitor = hit("/api/cron/monitor");
   setTimeout(monitor, 3 * 60 * 1000);
   setInterval(monitor, 60 * 60 * 1000);
+
+  // Birthday mail. Hourly rather than once a day on purpose: a deploy or a restart at the wrong
+  // moment would make a once-daily timer miss the day entirely, and a birthday email that arrives
+  // tomorrow is worse than none. The job holds itself until 09:00 IST and claims each send in the
+  // database, so running it twelve times a day still sends exactly once.
+  const birthdays = hit("/api/cron/birthdays");
+  setTimeout(birthdays, 4 * 60 * 1000);
+  setInterval(birthdays, 60 * 60 * 1000);
 }

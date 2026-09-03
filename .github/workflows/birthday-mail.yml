@@ -1,0 +1,41 @@
+name: Birthday mail
+
+# Backup only. The app schedules this itself every hour (instrumentation.ts), which is the reliable
+# path — measured over a week, a GitHub workflow asked to run hourly went 615, 638, 533 and 800
+# minutes between runs. This exists for the one failure the app cannot cover: its own timer dying
+# while the server stays up.
+#
+# Safe to run alongside the app's own schedule. Every send is claimed in the database before it
+# goes out, so the same birthday cannot be wished twice however many times this fires.
+#
+# Secret required: CRON_SECRET — the same value as on Railway (already set for the other jobs).
+
+on:
+  schedule:
+    - cron: "40 3 * * *" # 09:10 IST, shortly after the app's own 09:00 hold lifts
+  workflow_dispatch: {}
+
+concurrency:
+  group: birthday-mail
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send today's birthday mail
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET is not set — the endpoint would reject us. Add it in repo secrets."
+            exit 1
+          fi
+          out=$(curl -sS -m 120 -w "\n%{http_code}" -X POST \
+            -H "x-cron-secret: $CRON_SECRET" \
+            "https://avloryn.com/api/cron/birthdays")
+          code=$(echo "$out" | tail -n1)
+          echo "$out" | sed '$d'
+          echo "HTTP $code"
+          # "nothing to send today" is the normal answer on most days and is not a failure.
+          [ "$code" = "200" ] || exit 1

@@ -240,6 +240,15 @@ async function ensureSchema(c: PoolClient) {
   for (const rl of ["Campus Ambassador", "Influencer", "Thesis Writing Agency"]) {
     try { await c.query(`INSERT INTO partner_roles (role) VALUES ($1) ON CONFLICT DO NOTHING`, [rl]); } catch { /* */ }
   }
+  // One row per birthday email actually sent. The primary key is the whole point: the send is
+  // CLAIMED here before it goes out, so an hourly job that fires twice, or two servers running at
+  // once, cannot wish the same person twice on the same day.
+  await c.query(`CREATE TABLE IF NOT EXISTS birthday_sent (
+    on_date TEXT NOT NULL,
+    email TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    sent_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (on_date, email, kind))`);
   await c.query(`ALTER TABLE employee_commissions ADD COLUMN IF NOT EXISTS tier TEXT DEFAULT 'direct'`);
   // Network Partner/CA payout profile (bank + UPI) — so commission can be auto-paid; the partner fills these
   // in their own portal profile, or the owner sets them in the LivoDraft admin.
@@ -1281,6 +1290,44 @@ export async function listTeamBirthdays(): Promise<{ name: string; dob: string |
        WHERE id=1 AND full_name IS NOT NULL AND full_name <> ''`);
     return r.rows.map((x: any) => ({ name: x.name, dob: x.dob, kind: x.kind || null }));
   });
+}
+
+/**
+ * Everyone the birthday mail can reach: name, address and date, for staff, partners and the owner.
+ *
+ * Kept apart from the board's query on purpose. The board's rows are sent to a browser, and an
+ * email address has no business travelling with them — this one is only ever read on the server.
+ */
+export async function listTeamForMail(): Promise<{ name: string; email: string; dob: string | null; kind: string | null }[]> {
+  return withClient(async (c) => {
+    const r = await c.query(`
+      SELECT name, email, dob, emp_type AS kind FROM employees
+       WHERE deleted_at IS NULL AND COALESCE(active,1)=1 AND email IS NOT NULL AND email <> ''
+      UNION ALL
+      SELECT full_name AS name, email, dob, 'owner' AS kind FROM company_profile
+       WHERE id=1 AND email IS NOT NULL AND email <> ''`);
+    return r.rows.map((x: any) => ({ name: x.name || "", email: x.email, dob: x.dob, kind: x.kind || null }));
+  });
+}
+
+/**
+ * Claim a send before making it.
+ *
+ * Returns true only to the caller that won the row. A failed send deletes its claim so the next
+ * run tries again — claiming after sending would let a crash between the two send it twice, and
+ * nobody wants two birthday emails from their employer.
+ */
+export async function claimBirthdaySend(onDate: string, email: string, kind: string): Promise<boolean> {
+  return withClient(async (c) => {
+    const r = await c.query(
+      `INSERT INTO birthday_sent (on_date, email, kind) VALUES ($1,$2,$3)
+       ON CONFLICT DO NOTHING RETURNING 1`, [onDate, email.toLowerCase(), kind]);
+    return r.rows.length > 0;
+  });
+}
+export async function releaseBirthdaySend(onDate: string, email: string, kind: string) {
+  return withClient((c) => c.query(
+    `DELETE FROM birthday_sent WHERE on_date=$1 AND email=$2 AND kind=$3`, [onDate, email.toLowerCase(), kind]));
 }
 
 export async function saveCompanyProfile(f: { full_name?: string; email?: string; mobile?: string; dob?: string; address?: string; start_date?: string }) {

@@ -753,6 +753,39 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
   }
 }
 
+// ── R24 · birthday mail: once, at the right time, to the right people ────────────────────────
+// This job emails real people unprompted. Everything that can go wrong with it is embarrassing in
+// public, so the shape of it is fixed here.
+{
+  const mail = code("lib/birthday-mail.ts");
+
+  // 1. The send is CLAIMED before it goes out. Claiming afterwards means a crash in between wishes
+  //    somebody a happy birthday twice, and an hourly job makes that a matter of time.
+  const iClaim = mail.indexOf("claimBirthdaySend"), iSend = mail.indexOf("emails.send");
+  if (iClaim < 0 || iSend < 0 || iClaim > iSend)
+    fail("R24 a birthday email can be sent twice:", "the send must be claimed in the database first");
+
+  // 2. Held until the morning, in India's day — the server's own clock is UTC.
+  if (!/istHour\([^)]*\)\s*<\s*SEND_HOUR/.test(mail))
+    fail("R24 birthday mail no longer waits for the morning:", "it would go out in the middle of the night");
+
+  // 3. Network partners are outside recruiters; their address is held to pay them.
+  if (!/kind\s*!==\s*["']partner["']/.test(mail))
+    fail("R24 network partners are being sent the team announcement:", "their email is on file to pay them, not for this");
+
+  // No year of birth in what gets emailed is guarded in test_logic.ts instead, on the text the
+  // planner actually produces. A static version of it read the claim key's own date as an age.
+
+  // 4. Sending is the cron's job alone. A preview may be opened with an owner session; a real send
+  //    must not be, or one mistyped URL mails everybody.
+  const route = code("app/api/cron/birthdays/route.ts");
+  const tail = route.slice(route.indexOf("if (wantsPreview)"));
+  if (!/authorized\(req\)\)\s*return NextResponse\.json\(\{ error: "unauthorized" \}/.test(tail))
+    fail("R24 the birthday send is not behind the cron secret:", "a session could mail the whole team");
+  if (!/runBirthdayMail\(\{ preview: true/.test(route))
+    fail("R24 the owner preview can now send for real:", "a preview must never put mail in anybody's inbox");
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");

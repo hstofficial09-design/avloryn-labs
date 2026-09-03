@@ -47,6 +47,18 @@ export function dobMonthDay(dob?: string | null): { y: number; m: number; d: num
   return null;
 }
 
+/**
+ * A placeholder account rather than a person.
+ *
+ * Test logins carry real-looking rows — a name, an email somebody actually owns, a date of birth
+ * the form accepted. Announcing "It's tester's birthday today" on every dashboard is bad; emailing
+ * a stranger at that address to wish them many happy returns is worse. Matched on the NAME as a
+ * whole word, so a surname that merely contains the letters is untouched.
+ */
+export function isPlaceholderPerson(name?: string | null): boolean {
+  return /(^|[^a-z])(test|tester|testing|demo|dummy|sample)([^a-z]|$)/i.test(String(name || ""));
+}
+
 const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
 
 /**
@@ -88,7 +100,7 @@ export function upcomingBirthdays(people: BirthdayPerson[], now = istToday(), li
   for (const p of people || []) {
     const name = String(p?.name || "").trim();
     const md = dobMonthDay(p?.dob);
-    if (!name || !md) continue;
+    if (!name || !md || isPlaceholderPerson(name)) continue;
     // Nobody working here was born this year. Test accounts get whatever date the form accepted
     // — the demo partner's says 2026 — and "It's Demo Partner (test login)'s birthday today" on
     // everybody's dashboard is not the kind of thing you want to explain afterwards.

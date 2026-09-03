@@ -114,6 +114,23 @@ const MUTATIONS = [
     file: "app/portal/PortalHub.tsx",
     from: "<Birthdays rows={birthdays || []} missing={birthdaysMissing} />",
     to: "{isOwner && <Birthdays rows={birthdays || []} missing={birthdaysMissing} />}" },
+  { rule: "R24", why: "a crash between sending and recording would wish somebody twice",
+    file: "lib/birthday-mail.ts",
+    from: "    if (!(await claimBirthdaySend(plan.date, to, kind))) { skipped++; return; }",
+    to: "    // claim moved below" },
+  { rule: "R24", why: "birthday mail would go out in the middle of the night",
+    file: "lib/birthday-mail.ts",
+    from: "if (!opts.preview && !opts.force && istHour(now) < SEND_HOUR)",
+    to: "if (!opts.preview && !opts.force && false)" },
+  { rule: "R24", why: "network partners would be emailed about an intern's birthday",
+    file: "lib/birthday-mail.ts",
+    from: `const audience = real.filter((p) => p.kind !== "partner" && !celebrantEmails.has(p.email.toLowerCase()));`,
+    to: `const audience = real.filter((p) => !celebrantEmails.has(p.email.toLowerCase()));` },
+  { rule: "R24", why: "an owner session could mail the entire team by adding a parameter",
+    file: "app/api/cron/birthdays/route.ts",
+    from: `  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  return NextResponse.json(await runBirthdayMail({ force: url.searchParams.get("force") === "1" }));`,
+    to: `  return NextResponse.json(await runBirthdayMail({ force: url.searchParams.get("force") === "1" }));` },
 ];
 
 const runGuard = () => {

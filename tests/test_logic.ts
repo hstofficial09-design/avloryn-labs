@@ -14,7 +14,8 @@ import { shouldAlert, type Tracked } from "../lib/monitor/state";
 import { roleLabel } from "../lib/role-label";
 import { fillPlaceholders, tidySpan } from "../lib/intern-docs";
 import { probationEnds, probationStatus } from "../lib/probation";
-import { upcomingBirthdays, dobMonthDay, nextOccurrence, istToday } from "../lib/birthdays";
+import { upcomingBirthdays, dobMonthDay, nextOccurrence, istToday, isPlaceholderPerson } from "../lib/birthdays";
+import { planFor, nameList } from "../lib/birthday-mail";
 import { regKeyFrom } from "../lib/portal-db";
 import { shouldSignOut } from "../lib/session-ended";
 import { stillIgnored } from "../lib/monitor/state";
@@ -339,6 +340,14 @@ console.log("\n── whose birthday is next ──");
   ok(upcomingBirthdays([{ name: "Demo (test login)", dob: "2026-08-19" }], new Date(2026, 8, 4)).length === 0,
      "a date of birth in the future is not one");
 
+  // …and one with a plausible date is still not a person to wish, or to email.
+  ok(upcomingBirthdays([{ name: "tester", dob: "2000-01-01" }], new Date(2026, 8, 4)).length === 0,
+     "a placeholder account is not on the board");
+  ok(isPlaceholderPerson("tester") && isPlaceholderPerson("Demo Partner (test login)"),
+     "placeholder accounts are recognised");
+  ok(!isPlaceholderPerson("Testa Rossi") && !isPlaceholderPerson("Prakhar Agarwal") && !isPlaceholderPerson("Demoiselle Roy"),
+     "a real name that merely contains the letters is left alone");
+
   // 29 February. Somebody born on it should still be wished in a common year.
   const leap = nextOccurrence(2, 29, new Date(2027, 0, 5));
   ok(leap.getMonth() === 2 && leap.getDate() === 1, "29 Feb falls on 1 March in a common year", String(leap));
@@ -353,6 +362,48 @@ console.log("\n── whose birthday is next ──");
   const t = istToday(new Date("2026-09-04T20:00:00Z"));   // 05:30 IST on the 5th
   ok(t.getDate() === 5 && t.getMonth() === 8, "today is India's today, not the server's", String(t));
   ok(t.getHours() === 0 && t.getMinutes() === 0, "…and starts at midnight");
+}
+
+console.log("\n── who gets the birthday mail ──");
+{
+  const P = (name: string, email: string, dob: string | null, kind = "intern") => ({ name, email, dob, kind });
+  const team = [
+    P("Tavishi Bansal", "tavishi@x.com", "2007-09-04"),          // today
+    P("Prakhar Agarwal", "prakhar@x.com", "1999-09-05"),         // tomorrow
+    P("Amir Khurram", "amir@x.com", "2005-08-16"),
+    P("Renu Jakhar", "renu@x.com", "1994-09-04", "partner"),     // today, but a partner
+    P("Hardev Singh Thakur", "hardev@x.com", "2000-08-09", "owner"),
+    P("tester", "tester@x.com", "2000-09-04"),                   // placeholder, also today
+    P("No Email", "", "2001-09-04"),
+  ];
+  const now = new Date(2026, 8, 4);
+  const plan = planFor(team, now)!;
+  ok(!!plan, "a plan is made when somebody has a birthday");
+
+  const names = plan.celebrants.map((c) => c.name).sort();
+  ok(JSON.stringify(names) === JSON.stringify(["Renu Jakhar", "Tavishi Bansal"]),
+     "everyone with a birthday is wished, partner or staff", names.join(","));
+  ok(!names.includes("tester"), "a placeholder account is never emailed — that address belongs to somebody real");
+  ok(!plan.celebrants.some((c) => !c.email), "nobody without an address is queued for a send");
+
+  const aud = plan.audience.map((a) => a.email).sort();
+  ok(!aud.includes("tavishi@x.com") && !aud.includes("renu@x.com"),
+     "the people whose birthday it is are not told about their own birthday", aud.join(","));
+  ok(!aud.includes("renu@x.com") && !plan.audience.some((a) => a.kind === "partner"),
+     "network partners are not sent the team announcement — their address is held to pay them");
+  ok(aud.includes("hardev@x.com") && aud.includes("prakhar@x.com"), "the rest of the team is told", aud.join(","));
+  ok(!aud.includes("tester@x.com"), "…and placeholder accounts are not");
+
+  // What it actually says.
+  ok(/Tavishi/.test(plan.team.subject) || /Renu/.test(plan.team.subject), "the announcement names them", plan.team.subject);
+  ok(!/\b(19|20)\d{2}\b/.test(plan.team.text + plan.team.subject), "no year of birth in the announcement either");
+  ok(!/\b(he|she|his|her)\b/i.test(plan.team.text), "nothing assumes anybody's pronouns", plan.team.text);
+  const g = plan.greeting.text(plan.celebrants[0]);
+  ok(/Happy birthday/i.test(g) && !/\b(19|20)\d{2}\b/.test(g), "the greeting is a greeting, with no age in it");
+
+  ok(planFor(team, new Date(2026, 8, 6)) === null, "no birthdays, no plan and nothing sent");
+  ok(nameList(["A"]) === "A" && nameList(["A", "B"]) === "A and B" && nameList(["A", "B", "C"]) === "A, B and C",
+     "names read as a sentence");
 }
 
 console.log("\n── the week a task belongs to ──");
