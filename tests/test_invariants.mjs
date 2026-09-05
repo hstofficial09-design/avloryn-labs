@@ -801,6 +801,31 @@ for (const f of ["app/api/meet/reschedule/route.ts", "app/api/meet/admin/create-
     fail("R24 the owner preview can now send for real:", "a preview must never put mail in anybody's inbox");
 }
 
+// ── R25 · one meeting, one conversation ──────────────────────────────────────────────────────
+// A booking sends up to five emails. They each used to carry their own subject — "Confirmed: …",
+// "Reminder: … in 1 day", "Thanks for meeting…" — so every mail client filed them as separate
+// conversations: one meeting, five lines in an inbox, none of which go away afterwards. Mail
+// cannot be recalled from somebody else's mailbox, so the clutter itself is the only thing that
+// can be fixed.
+//
+// Two rules, and BOTH are needed. Zoho Mail groups largely by subject, so the subject has to stay
+// identical for the life of a booking; Gmail and Outlook thread on References, so every message
+// has to point at the same root. Either alone leaves half the recipients with five threads.
+{
+  const files = API.filter((f) => f.file.includes("/api/meet/") && f.src.includes("emails.send("));
+  for (const f of files) {
+    const sends = (f.src.match(/emails\.send\(/g) || []).length;
+    const threaded = (f.src.match(/threadHeaders\(/g) || []).length;
+    if (sends !== threaded)
+      fail("R25 a meeting email is not threaded:", `${f.file} — ${sends} send(s), ${threaded} with threading headers`);
+    // The state belongs in the body, where every one of these already has a heading for it.
+    const stateSubject = /subject:\s*`(Confirmed|Reminder|Cancelled|Rescheduled|Invitation|New booking|Approval needed|Request received|Thanks)/.exec(f.src);
+    if (stateSubject)
+      fail("R25 a meeting subject changes with the state:", `${f.file} — "${stateSubject[1]}…" starts a new conversation in Zoho`);
+  }
+  if (!files.length) fail("R25 found no meeting emails to check:", "the rule is pointing at nothing");
+}
+
 console.log(`[invariants] scanned ${API.length} API routes`);
 if (fails.length) {
   console.log("FAIL — class-guard violations:");

@@ -8,6 +8,7 @@ import { quote, verifySignature } from "@/lib/booking/pay";
 import { buildICS } from "@/lib/booking/ics";
 import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
 import { SITE_URL } from "@/lib/seo";
+import { threadHeaders, guestSubject, teamSubject } from "@/lib/booking/thread";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -119,11 +120,13 @@ export async function POST(req: Request) {
     }, "pending");
     try {
       if (key && EMAIL_RE.test(email)) {
-        await new Resend(key).emails.send({ from, to: email, subject: `Request received: ${mt.name}`,
+        await new Resend(key).emails.send({ from, to: email, subject: guestSubject(mt.name),
+          headers: threadHeaders(booking.id),
           text: `Hi ${name},\n\nWe've received your request for ${mt.name} on ${whenClient}. We'll confirm shortly by email.\n\n— Avloryn Labs` });
       }
       const to = Array.from(new Set([...memberEmails, process.env.CONTACT_TO_EMAIL].filter(Boolean))) as string[];
-      if (key && to.length) await new Resend(key).emails.send({ from, to, subject: `Approval needed: ${mt.name} — ${name}`,
+      if (key && to.length) await new Resend(key).emails.send({ from, to, subject: teamSubject(mt.name, name),
+        headers: threadHeaders(booking.id),
         text: `A booking is awaiting approval.\n\nClient: ${name} (${email})\nWhen: ${whenClient}\nWith: ${memberNames}\n\nApprove it in Scheduling → Bookings.` });
     } catch { /* best-effort */ }
     return NextResponse.json({ ok: true, pending: true, booking: { id: booking.id, startISO, endISO, cancelToken } });
@@ -204,7 +207,8 @@ export async function POST(req: Request) {
       });
       await new Resend(key).emails.send({
         from, to: email,
-        subject: `Confirmed: ${mt.name} with Avloryn Labs`,
+        subject: guestSubject(mt.name),
+        headers: threadHeaders(booking.id),
         html: meetingInviteHTML({ heading: "You're booked", title: mt.name, whenText: whenClient, withNames: memberNames || "Avloryn Labs", greetingName: name.split(" ")[0] || undefined, notes, meetLink, rescheduleUrl, cancelUrl }),
         text:
           `Hi ${name},\n\nYour ${mt.name} is confirmed.\n\n` +
@@ -226,7 +230,8 @@ export async function POST(req: Request) {
         // The same invitation the client gets, so this can be accepted and adds itself to
         // whichever calendar they use.
         attachments: [{ filename: "invite.ics", content: Buffer.from(inviteIcs).toString("base64") }],
-        subject: `New booking: ${mt.name} — ${name}`,
+        subject: teamSubject(mt.name, name),
+        headers: threadHeaders(booking.id),
         html: meetingInviteHTML({ heading: "New booking", title: `${mt.name} — ${name}`, whenText: whenIST(startISO), withNames: memberNames || "—", notes: [`Client: ${name} (${email})`, notes, answerLines].filter(Boolean).join(" · "), meetLink }),
         text:
           `New ${mt.name} booked.\n\n` +

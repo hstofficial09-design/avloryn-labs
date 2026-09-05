@@ -7,6 +7,7 @@ import { findClashes, clashMessage } from "@/lib/booking/clash";
 import { buildICS, icsSequence } from "@/lib/booking/ics";
 import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
 import { SITE_URL } from "@/lib/seo";
+import { threadHeaders, guestSubject, teamSubject } from "@/lib/booking/thread";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -103,7 +104,7 @@ export async function POST(req: Request) {
 
       if (EMAIL_RE.test(b.client_email)) {
         await rz.emails.send({
-          from, to: b.client_email, subject: `Rescheduled: ${title} with Avloryn Labs`,
+          from, to: b.client_email, subject: guestSubject(title), headers: threadHeaders(b.id),
           html: meetingInviteHTML({ heading: "Rescheduled · new time", title, whenText: clientWhen, withNames: memberNames || "Avloryn Labs", greetingName: (b.client_name || "").split(" ")[0] || undefined, meetLink: b.meet_link, rescheduleUrl, cancelUrl }),
           text: `Your ${title} has moved.\nNew time: ${clientWhen}\nWith: ${memberNames || "Avloryn Labs"}\n${b.meet_link ? `Join: ${b.meet_link}\n` : ""}Reschedule: ${rescheduleUrl}\nCancel: ${cancelUrl}`,
           attachments,
@@ -113,7 +114,7 @@ export async function POST(req: Request) {
         const em = byId.get(id)?.email;
         if (!em || !EMAIL_RE.test(em)) continue;
         await rz.emails.send({
-          from, to: em, subject: `Rescheduled: ${title}${b.client_name ? ` with ${b.client_name}` : ""}`,
+          from, to: em, subject: teamSubject(title, b.client_name), headers: threadHeaders(b.id),
           html: meetingInviteHTML({ heading: "Rescheduled · new time", title, whenText: whenIST(startISO), withNames: b.client_name || "—", greetingName: (byId.get(id)?.name || "").split(" ")[0] || undefined, meetLink: b.meet_link, rescheduleUrl, cancelUrl }),
           text: `${title}${b.client_name ? ` with ${b.client_name}` : ""} moved to ${whenIST(startISO)}. ${b.meet_link ? "Join: " + b.meet_link : ""}`,
           attachments,

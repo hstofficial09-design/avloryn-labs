@@ -18,7 +18,7 @@ import { upcomingBirthdays, dobMonthDay, nextOccurrence, istToday, isPlaceholder
 import { planFor, nameList } from "../lib/birthday-mail";
 import { regKeyFrom } from "../lib/portal-db";
 import { shouldSignOut } from "../lib/session-ended";
-import { stillIgnored } from "../lib/monitor/state";
+import { stillIgnored, beatChecks } from "../lib/monitor/state";
 
 let pass = 0;
 const fails: string[] = [];
@@ -427,6 +427,36 @@ console.log("\n── the week a task belongs to ──");
     task({ id: "out", assigned_at: "2026-08-25T05:00:00Z" }),
   ], monday);
   ok(inWeek.length === 1 && inWeek[0].id === "in", "only that week's tasks count towards its review");
+}
+
+console.log("\n── the watchdog reporting on itself ──");
+{
+  const recent = new Date(Date.now() - 5 * 60_000).toISOString();
+  const byId = (cs: ReturnType<typeof beatChecks>) => new Map(cs.map((c) => [c.id, c]));
+
+  // The bug: readBeats returned [] both when the table was empty AND when it could not be read.
+  // A failed read then reported every scheduled job as "has never reported in" — two invented
+  // CRITICAL alerts about jobs that had run minutes earlier.
+  const unreadable = beatChecks(null);
+  ok(unreadable.length === 1, "an unreadable heartbeat table produces ONE finding, not one per job");
+  ok(unreadable[0].id === "beat.unreadable" && unreadable[0].ok === null,
+     "…and it is unknown, not a failure — we have no evidence either way");
+  ok(!/never reported in/.test(unreadable[0].detail),
+     "…and it never claims a job has never run when we simply could not look");
+
+  // A genuinely empty table still means exactly what it used to.
+  const empty = byId(beatChecks([]));
+  ok(empty.get("beat.monitor")?.ok === null && /never reported in/.test(empty.get("beat.monitor")!.detail),
+     "an empty heartbeat table does still say the job has never reported in");
+
+  // And a job that beat minutes ago is passing, not silent.
+  const live = byId(beatChecks([{ name: "monitor", at: recent }, { name: "meet-reminders", at: recent }]));
+  ok(live.get("beat.monitor")?.ok === true, "a job that beat five minutes ago is running");
+  ok(live.get("beat.meet-reminders")?.ok === true, "…both of them");
+
+  // Silence beyond the grace window is still caught.
+  const old = byId(beatChecks([{ name: "monitor", at: new Date(Date.now() - 6 * 3_600_000).toISOString() }]));
+  ok(old.get("beat.monitor")?.ok === false, "a job silent for six hours is still reported as stopped");
 }
 
 console.log("\n" + "=".repeat(56));

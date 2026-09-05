@@ -10,6 +10,7 @@ import { deleteZohoEvents, createZohoForMembers, type ZohoEvent } from "@/lib/bo
 import { buildICS, icsSequence } from "@/lib/booking/ics";
 import { meetingCancelledHTML, whenIST } from "@/lib/booking/email";
 import { SITE_URL } from "@/lib/seo";
+import { threadHeaders, guestSubject, teamSubject } from "@/lib/booking/thread";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,7 +85,7 @@ export async function PATCH(req: Request) {
           method: "CANCEL", status: "CANCELLED", sequence: icsSequence(),
         })).toString("base64") }];
         if (b.client_email && EMAIL_RE.test(b.client_email)) {
-          await rz.emails.send({ from, to: b.client_email, subject: `Cancelled: ${title} with Avloryn Labs`,
+          await rz.emails.send({ from, to: b.client_email, subject: guestSubject(title), headers: threadHeaders(b.id),
             html: meetingCancelledHTML({ title, whenText: clientWhen, withNames: memberNames || "Avloryn Labs", greetingName: (b.client_name || "").split(" ")[0] || undefined }),
             text: `Your ${title} on ${clientWhen} has been cancelled and removed from the calendar. — Avloryn Labs`,
             attachments: cancelAttach });
@@ -92,7 +93,7 @@ export async function PATCH(req: Request) {
         for (const mid of b.member_ids) {
           const em = byId.get(mid)?.email;
           if (!em || !EMAIL_RE.test(em)) continue;
-          await rz.emails.send({ from, to: em, subject: `Cancelled: ${title}${b.client_name ? ` with ${b.client_name}` : ""}`,
+          await rz.emails.send({ from, to: em, subject: teamSubject(title, b.client_name), headers: threadHeaders(b.id),
             html: meetingCancelledHTML({ title, whenText: whenIST(b.start_utc), withNames: b.client_name || "—", greetingName: (byId.get(mid)?.name || "").split(" ")[0] || undefined }),
             text: `${title}${b.client_name ? ` with ${b.client_name}` : ""} on ${whenIST(b.start_utc)} has been cancelled and removed from the calendar.`,
             attachments: cancelAttach });
@@ -133,7 +134,7 @@ export async function PATCH(req: Request) {
         const when = new Date(b.start_utc).toLocaleString("en-IN", { timeZone: b.client_timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" });
         const ics = buildICS({ uid: b.id, startISO: b.start_utc, endISO: b.end_utc, summary: `${title} — Avloryn Labs`, description: (meetLink ? `Join Google Meet: ${meetLink}\n\n` : "") + baseDesc, location: meetLink || "Online", organizerName: "Avloryn Labs", organizerEmail: memberEmails[0] || undefined, attendeeEmails: [b.client_email, ...memberEmails] });
         await new Resend(key).emails.send({
-          from, to: b.client_email, subject: `Confirmed: ${title} with Avloryn Labs`,
+          from, to: b.client_email, subject: guestSubject(title), headers: threadHeaders(b.id),
           text: `Hi ${b.client_name},\n\nGood news — your ${title} is confirmed.\n\nWhen: ${when}\nWith: ${memberNames || "Avloryn Labs"}\n` + (meetLink ? `Join (Google Meet): ${meetLink}\n` : "") + `\nReschedule: ${SITE_URL}/meet/reschedule?t=${b.cancel_token}\nCancel: ${SITE_URL}/meet/cancel?t=${b.cancel_token}\n\n— Avloryn Labs`,
           attachments: [{ filename: "invite.ics", content: Buffer.from(ics).toString("base64") }],
         });

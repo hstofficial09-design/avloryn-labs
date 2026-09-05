@@ -5,6 +5,7 @@ import { deleteMeetingEvent, deleteMeetingEvents, type MemberEvent } from "@/lib
 import { deleteZohoEvents, type ZohoEvent } from "@/lib/booking/zoho";
 import { buildICS, icsSequence } from "@/lib/booking/ics";
 import { meetingCancelledHTML, whenIST } from "@/lib/booking/email";
+import { threadHeaders, guestSubject, teamSubject } from "@/lib/booking/thread";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
       const cancelAttach = [{ filename: "invite.ics", content: Buffer.from(cancelIcs).toString("base64") }];
       if (b.client_email && EMAIL_RE.test(b.client_email)) {
         await rz.emails.send({
-          from, to: b.client_email, subject: `Cancelled: ${title} with Avloryn Labs`,
+          from, to: b.client_email, subject: guestSubject(title), headers: threadHeaders(b.id),
           html: meetingCancelledHTML({ title, whenText: clientWhen, withNames: memberNames || "Avloryn Labs", greetingName: (b.client_name || "").split(" ")[0] || undefined }),
           text: `Your ${title} on ${clientWhen} has been cancelled and removed from the calendar. — Avloryn Labs`,
           attachments: cancelAttach,
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
         const em = byId.get(id)?.email;
         if (!em || !EMAIL_RE.test(em)) continue;
         await rz.emails.send({
-          from, to: em, subject: `Cancelled: ${title}${b.client_name ? ` with ${b.client_name}` : ""}`,
+          from, to: em, subject: teamSubject(title, b.client_name), headers: threadHeaders(b.id),
           html: meetingCancelledHTML({ title, whenText: whenIST(b.start_utc), withNames: b.client_name || "—", greetingName: (byId.get(id)?.name || "").split(" ")[0] || undefined }),
           text: `${title}${b.client_name ? ` with ${b.client_name}` : ""} on ${whenIST(b.start_utc)} has been cancelled and removed from the calendar.`,
           attachments: cancelAttach,

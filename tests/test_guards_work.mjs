@@ -139,6 +139,14 @@ const MUTATIONS = [
     file: "app/portal/PortalHub.tsx",
     from: "  const pwInput = \"w-full text-[13px] neu-inset",
     to: "  const today = new Date().toLocaleDateString();\n  const pwInput = \"w-full text-[13px] neu-inset" },
+  { rule: "R25", why: "a reminder would arrive as its own conversation instead of joining the thread",
+    file: "app/api/meet/cron/reminders/route.ts",
+    from: "from, to: b.client_email, subject: guestSubject(mTitle), headers: threadHeaders(b.id),",
+    to: "from, to: b.client_email, subject: guestSubject(mTitle)," },
+  { rule: "R25", why: "a changing subject would split the thread in Zoho however good the headers are",
+    file: "app/api/meet/cancel/route.ts",
+    from: "from, to: b.client_email, subject: guestSubject(title), headers: threadHeaders(b.id),",
+    to: "from, to: b.client_email, subject: `Cancelled: ${title} with Avloryn Labs`, headers: threadHeaders(b.id)," },
 ];
 
 const runGuard = () => {

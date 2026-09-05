@@ -9,6 +9,7 @@ import { findClashes, clashMessage } from "@/lib/booking/clash";
 import { buildICS } from "@/lib/booking/ics";
 import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
 import { SITE_URL } from "@/lib/seo";
+import { threadHeaders, guestSubject, teamSubject } from "@/lib/booking/thread";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -122,7 +123,7 @@ export async function POST(req: Request) {
 
       if (guest) {
         await rz.emails.send({
-          from, to: guest, subject: `Invitation: ${title} with Avloryn Labs`,
+          from, to: guest, subject: guestSubject(title), headers: threadHeaders(booking.id),
           html: meetingInviteHTML({ heading: "You're invited", title, whenText: when, withNames: memberNames || "Avloryn Labs", greetingName: clientName || undefined, notes, meetLink, rescheduleUrl, cancelUrl }),
           text: `You're invited to ${title}.\nWhen: ${when}\nWith: ${memberNames || "Avloryn Labs"}\n${meetLink ? `Join: ${meetLink}\n` : ""}Reschedule: ${rescheduleUrl}\nCancel: ${cancelUrl}`,
           attachments,
@@ -135,7 +136,7 @@ export async function POST(req: Request) {
         if (!mem?.email || !EMAIL_RE.test(mem.email)) continue;
         const others = [clientName, ...memberIds.filter((x) => x !== id).map((x) => byId.get(x)?.name)].filter(Boolean).join(", ");
         await rz.emails.send({
-          from, to: mem.email, subject: `Meeting: ${title}${clientName ? ` — ${clientName}` : ""}`,
+          from, to: mem.email, subject: teamSubject(title, clientName), headers: threadHeaders(booking.id),
           html: meetingInviteHTML({ heading: "New meeting", title, whenText: when, withNames: others || "—", greetingName: (mem.name || "").split(" ")[0] || undefined, notes, meetLink, rescheduleUrl, cancelUrl }),
           text: `Meeting: ${title}\nWhen: ${when}\nWith: ${others || "—"}\n${meetLink ? `Join: ${meetLink}\n` : ""}Reschedule: ${rescheduleUrl}\nCancel: ${cancelUrl}`,
           attachments,

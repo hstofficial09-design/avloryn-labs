@@ -8,6 +8,7 @@ import { meetingInviteHTML, whenIST } from "@/lib/booking/email";
 import { syncCalendarChanges } from "@/lib/booking/sync";
 import { beat } from "@/lib/monitor/state";
 import { SITE_URL } from "@/lib/seo";
+import { threadHeaders, guestSubject, teamSubject } from "@/lib/booking/thread";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /**
@@ -82,7 +83,7 @@ async function run() {
         const label = toEmail >= 1440 ? `${Math.round(toEmail / 1440)} day${toEmail >= 2880 ? "s" : ""}` : toEmail >= 60 ? `${Math.round(toEmail / 60)} hour${toEmail >= 120 ? "s" : ""}` : `${toEmail} min`;
         if (b.client_email && EMAIL_RE.test(b.client_email)) {
           await resend.emails.send({
-            from, to: b.client_email, subject: `Reminder: ${mTitle} in ${label}`,
+            from, to: b.client_email, subject: guestSubject(mTitle), headers: threadHeaders(b.id),
             html: meetingInviteHTML({ heading: `Reminder · in ${label}`, title: mTitle, whenText: clientWhen, withNames: withWho || "Avloryn Labs", greetingName: (b.client_name || "").split(" ")[0] || undefined, meetLink: b.meet_link, rescheduleUrl, cancelUrl }),
             text: `Reminder: ${mTitle} in ${label}.\nWhen: ${clientWhen}\n${b.meet_link ? `Join: ${b.meet_link}\n` : ""}Reschedule: ${rescheduleUrl}\nCancel: ${cancelUrl}`,
           });
@@ -91,7 +92,7 @@ async function run() {
           const em = memberEmail.get(id);
           if (!em || !EMAIL_RE.test(em)) continue;
           await resend.emails.send({
-            from, to: em, subject: `Reminder: ${mTitle} with ${b.client_name} in ${label}`,
+            from, to: em, subject: teamSubject(mTitle, b.client_name), headers: threadHeaders(b.id),
             html: meetingInviteHTML({ heading: `Reminder · in ${label}`, title: mTitle, whenText: whenIST(b.start_utc), withNames: b.client_name || "—", greetingName: (memberName.get(id) || "").split(" ")[0] || undefined, meetLink: b.meet_link, rescheduleUrl, cancelUrl }),
             text: `Reminder: ${mTitle} with ${b.client_name} in ${label}. ${b.meet_link ? "Join: " + b.meet_link : ""}`,
           });
@@ -108,7 +109,8 @@ async function run() {
       if (t?.followup_enabled && resend && b.client_email) {
         await resend.emails.send({
           from, to: b.client_email,
-          subject: `Thanks for meeting with Avloryn Labs`,
+          subject: guestSubject(typeById.get(b.meeting_type_id || "")?.name || "Meeting"),
+          headers: threadHeaders(b.id),
           text:
             `Hi ${b.client_name},\n\nThank you for your time today. It was great connecting.\n\n` +
             `If anything came up that we can help with, just reply to this email.\n\n— Avloryn Labs`,
