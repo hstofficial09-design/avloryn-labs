@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "guard": "node tests/run_all.mjs"
+    "guard": "node tests/run_all.mjs",
+    "check:committed": "sh scripts/check-committed.sh"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",

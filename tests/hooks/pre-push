@@ -3,6 +3,17 @@
 # The suite is fast and touches no database, no calendar and no network.
 # Override (NOT recommended): git push --no-verify
 
+# What is being pushed has to compile ON ITS OWN. tsc in the working tree cannot tell you that:
+# a commit can lean on an uncommitted edit sitting beside it and look perfectly healthy here while
+# failing to build on the server, where the previous version quietly keeps serving.
+echo "Type-checking the committed tree…"
+if ! npm run --silent check:committed; then
+  echo ""
+  echo "✋ push blocked: HEAD does not type-check on its own."
+  echo "   Something committed depends on a change that is still uncommitted in this tree."
+  exit 1
+fi
+
 echo "Running regression guards before push…"
 if ! npm run --silent guard; then
   echo ""
